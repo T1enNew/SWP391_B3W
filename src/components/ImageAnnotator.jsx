@@ -1,0 +1,1061 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Box,
+  Paper,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Typography,
+  Alert,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+} from '@mui/material';
+import {
+  Undo as UndoIcon,
+} from '@mui/icons-material';
+
+const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], onSubmit, readOnly = false }) => {
+  const [annotations, setAnnotations] = useState(initialAnnotations);
+  const [annotationHistory, setAnnotationHistory] = useState([initialAnnotations]); // History for undo
+  const [historyIndex, setHistoryIndex] = useState(0); // Current position in history
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState(null);
+  const [dragStart, setDragStart] = useState(null);
+  const [currentBox, setCurrentBox] = useState(null);
+  const [selectedAnnotation, setSelectedAnnotation] = useState(null);
+  const [showAnswerDialog, setShowAnswerDialog] = useState(false);
+  const [activeLabel, setActiveLabel] = useState('');
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingAnnotation, setEditingAnnotation] = useState(null);
+  const [pendingAnnotation, setPendingAnnotation] = useState(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState(null);
+  const [moveStart, setMoveStart] = useState(null);
+  const imageRef = useRef(null);
+  const containerRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const isSyncingFromParentRef = useRef(false); // Track if we're syncing from parent props
+
+  const saveToHistory = useCallback((newAnnotations) => {
+    const base = annotationHistory.slice(0, historyIndex + 1);
+    base.push(JSON.parse(JSON.stringify(newAnnotations || [])));
+    setAnnotationHistory(base);
+    setHistoryIndex(base.length - 1);
+  }, [annotationHistory, historyIndex]);
+
+  // Sync initialAnnotations with state when imageUrl changes (new task loaded)
+  const prevImageUrlRef = useRef(imageUrl);
+  const prevInitialAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
+  
+  useEffect(() => {
+    const imageChanged = prevImageUrlRef.current !== imageUrl;
+    const initialChanged = prevInitialAnnotationsRef.current !== JSON.stringify(initialAnnotations || []);
+    
+    if (imageChanged || initialChanged) {
+      prevImageUrlRef.current = imageUrl;
+      prevInitialAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Mark that we're syncing from parent to prevent infinite loop
+      isSyncingFromParentRef.current = true;
+      
+      if (imageChanged) {
+        // New task/image: reset full tool state
+      setAnnotations(initialAnnotations || []);
+      setAnnotationHistory([initialAnnotations || []]);
+      setHistoryIndex(0);
+      setSelectedAnnotation(null);
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      setCurrentBox(null);
+      setPendingAnnotation(null);
+      setShowAnswerDialog(false);
+        setActiveLabel('');
+      setShowEditDialog(false);
+      
+      if (containerRef.current) {
+        containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+      } else {
+        // Same image/task: only sync annotations, keep currently selected label
+        setAnnotations(initialAnnotations || []);
+      }
+
+      prevAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Reset sync flag after a short delay to allow state to update
+      setTimeout(() => {
+        isSyncingFromParentRef.current = false;
+      }, 0);
+    }
+  }, [imageUrl, initialAnnotations]);
+
+  // Use ref to track previous annotations to avoid unnecessary calls
+  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
+  
+  useEffect(() => {
+    // Only call onAnnotationsChange if annotations actually changed AND we're not syncing from parent
+    if (isSyncingFromParentRef.current) {
+      // Update prevAnnotationsRef even during sync to prevent false positives later
+      prevAnnotationsRef.current = JSON.stringify(annotations);
+      return; // Skip calling onAnnotationsChange during sync from parent
+    }
+    
+    const currentAnnotationsStr = JSON.stringify(annotations);
+    if (prevAnnotationsRef.current !== currentAnnotationsStr) {
+      prevAnnotationsRef.current = currentAnnotationsStr;
+      if (onAnnotationsChange) {
+        onAnnotationsChange(annotations);
+      }
+    }
+  }, [annotations, onAnnotationsChange]);
+
+  const getImageCoordinates = (e) => {
+    if (!imageRef.current || !containerRef.current) return null;
+
+    const imageRect = imageRef.current.getBoundingClientRect();
+
+    // Use image bounding rect to avoid scroll/offset drift on very tall images
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
+    // Convert to image local (after transform), then invert transform
+    const localX = (clientX - imageRect.left) / zoom;
+    const localY = (clientY - imageRect.top) / zoom;
+
+    const displayWidth = imageRef.current.offsetWidth;
+    const displayHeight = imageRef.current.offsetHeight;
+    if (!displayWidth || !displayHeight) return null;
+
+    const x = (localX / displayWidth) * 100;
+    const y = (localY / displayHeight) * 100;
+
+    return {
+      x: Math.max(0, Math.min(100, x)),
+      y: Math.max(0, Math.min(100, y)),
+    };
+  };
+
+  const handleMouseDown = (e) => {
+    if (readOnly) return;
+
+    // Space + drag OR middle mouse drag => pan
+    const shouldPan = spacePressed || e.button === 1;
+
+    // Prevent default to avoid text selection / middle click autoscroll
+    if (shouldPan) {
+      e.preventDefault();
+    }
+
+    if (shouldPan) {
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX,
+        y: e.clientY,
+        startPosX: position.x,
+        startPosY: position.y,
+      });
+      return;
+    }
+
+    // Left click draw bbox (only when clicking the image)
+    if (e.button !== 0) return;
+
+    // If clicking outside the image, do nothing (allow normal scroll)
+    if (e.target !== imageRef.current && !imageRef.current?.contains(e.target)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const coords = getImageCoordinates(e);
+    if (coords) {
+      setIsDrawing(true);
+      setIsDragging(false);
+      setDrawStart(coords);
+      setCurrentBox({ ...coords, width: 0, height: 0 });
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (readOnly) return;
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    animationFrameRef.current = requestAnimationFrame(() => {
+      if (isResizing || isMoving) {
+        handleAnnotationMouseMove(e);
+        return;
+      }
+
+      if (isDrawing && drawStart) {
+        const coords = getImageCoordinates(e);
+        if (coords) {
+          const width = coords.x - drawStart.x;
+          const height = coords.y - drawStart.y;
+          setCurrentBox({
+            x: drawStart.x,
+            y: drawStart.y,
+            width,
+            height,
+          });
+        }
+        return;
+      }
+
+      if (isDragging && dragStart) {
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        setPosition({
+          x: dragStart.startPosX + dx,
+          y: dragStart.startPosY + dy,
+        });
+      }
+    });
+  };
+
+  const handleMouseUp = (e) => {
+    if (readOnly) return;
+
+    if (isResizing || isMoving) {
+      handleAnnotationMouseUp();
+      return;
+    }
+
+    if (isDrawing && drawStart && currentBox) {
+      const coords = getImageCoordinates(e);
+      if (coords && Math.abs(currentBox.width) > 1 && Math.abs(currentBox.height) > 1) {
+        if (!activeLabel) {
+          alert('Vui lòng chọn label trước khi khoanh vùng.');
+          setIsDrawing(false);
+          setDrawStart(null);
+          setCurrentBox(null);
+          return;
+        }
+
+        const bbox = [
+          Math.min(drawStart.x, coords.x),
+          Math.min(drawStart.y, coords.y),
+          Math.max(drawStart.x, coords.x),
+          Math.max(drawStart.y, coords.y),
+        ];
+
+        const newAnnotation = {
+          id: Date.now(),
+          label: activeLabel,
+          bbox,
+          confidence: 1.0,
+          type: 'bbox',
+          answer: null,
+        };
+
+        if (questions && questions.length > 0) {
+          setPendingAnnotation(newAnnotation);
+          setShowAnswerDialog(true);
+      } else {
+          const updatedAnnotations = [...annotations, newAnnotation];
+          saveToHistory(updatedAnnotations);
+          setAnnotations(updatedAnnotations);
+        }
+      }
+
+        setIsDrawing(false);
+        setDrawStart(null);
+        setCurrentBox(null);
+    }
+
+    if (isDragging) {
+      setIsDragging(false);
+      setDragStart(null);
+    }
+  };
+
+
+  const handleSelectAnswer = (answer) => {
+    if (readOnly) return;
+    if (!pendingAnnotation) return;
+    
+    const finalAnnotation = {
+      ...pendingAnnotation,
+      answer: answer, // Can be null if no questions, or object if has questions
+    };
+    
+    const updatedAnnotations = [...annotations, finalAnnotation];
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
+    setShowAnswerDialog(false);
+    setPendingAnnotation(null);
+  };
+
+  const handleDeleteAnnotation = (id) => {
+    if (readOnly) return;
+    const updatedAnnotations = annotations.filter(ann => ann.id !== id);
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
+    if (selectedAnnotation?.id === id) {
+      setSelectedAnnotation(null);
+    }
+  };
+
+  const handleEditAnnotation = (annotation) => {
+    if (readOnly) return;
+    setEditingAnnotation({ ...annotation });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateAnnotation = () => {
+    if (readOnly) return;
+    if (!editingAnnotation) return;
+    
+    const updatedAnnotations = annotations.map(ann => 
+      ann.id === editingAnnotation.id 
+        ? { ...ann, label: editingAnnotation.label, answer: editingAnnotation.answer }
+        : ann
+    );
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
+    setShowEditDialog(false);
+    setEditingAnnotation(null);
+  };
+
+  const handleResizeStart = (e, annotationId, handle) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    const annotation = annotations.find(a => a.id === annotationId);
+    if (annotation) {
+      setIsResizing(true);
+      setResizeHandle(handle);
+      setSelectedAnnotation(annotation);
+      const coords = getImageCoordinates(e);
+      if (coords) {
+        setMoveStart({
+          annotationId,
+          startX: coords.x,
+          startY: coords.y,
+          bbox: [...annotation.bbox],
+        });
+      }
+    }
+  };
+
+  const handleMoveStart = (e, annotationId) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    if (e.target.closest('.resize-handle')) return; // Don't move if clicking resize handle
+    
+    const annotation = annotations.find(a => a.id === annotationId);
+    if (annotation) {
+      setIsMoving(true);
+      setSelectedAnnotation(annotation);
+      const coords = getImageCoordinates(e);
+      if (coords) {
+        setMoveStart({
+          annotationId,
+          startX: coords.x,
+          startY: coords.y,
+          bbox: [...annotation.bbox],
+        });
+      }
+    }
+  };
+
+  const handleAnnotationMouseMove = (e) => {
+    if (isResizing && moveStart && resizeHandle) {
+      const coords = getImageCoordinates(e);
+      if (coords) {
+        const [x1, y1, x2, y2] = moveStart.bbox;
+        let newBbox = [...moveStart.bbox];
+        
+        switch (resizeHandle) {
+          case 'nw': // top-left
+            newBbox = [coords.x, coords.y, x2, y2];
+            break;
+          case 'ne': // top-right
+            newBbox = [x1, coords.y, coords.x, y2];
+            break;
+          case 'sw': // bottom-left
+            newBbox = [coords.x, y1, x2, coords.y];
+            break;
+          case 'se': // bottom-right
+            newBbox = [x1, y1, coords.x, coords.y];
+            break;
+        }
+        
+        // Ensure valid bbox
+        newBbox[0] = Math.max(0, Math.min(100, newBbox[0]));
+        newBbox[1] = Math.max(0, Math.min(100, newBbox[1]));
+        newBbox[2] = Math.max(0, Math.min(100, newBbox[2]));
+        newBbox[3] = Math.max(0, Math.min(100, newBbox[3]));
+        
+        // Swap if needed
+        if (newBbox[0] > newBbox[2]) [newBbox[0], newBbox[2]] = [newBbox[2], newBbox[0]];
+        if (newBbox[1] > newBbox[3]) [newBbox[1], newBbox[3]] = [newBbox[3], newBbox[1]];
+        
+        // Ensure minimum size
+        if (Math.abs(newBbox[2] - newBbox[0]) < 1) {
+          if (resizeHandle === 'nw' || resizeHandle === 'sw') {
+            newBbox[0] = newBbox[2] - 1;
+          } else {
+            newBbox[2] = newBbox[0] + 1;
+          }
+        }
+        if (Math.abs(newBbox[3] - newBbox[1]) < 1) {
+          if (resizeHandle === 'nw' || resizeHandle === 'ne') {
+            newBbox[1] = newBbox[3] - 1;
+          } else {
+            newBbox[3] = newBbox[1] + 1;
+          }
+        }
+        
+        setAnnotations(annotations.map(ann => 
+          ann.id === moveStart.annotationId 
+            ? { ...ann, bbox: newBbox }
+            : ann
+        ));
+      }
+    } else if (isMoving && moveStart) {
+      const coords = getImageCoordinates(e);
+      if (coords) {
+        const deltaX = coords.x - moveStart.startX;
+        const deltaY = coords.y - moveStart.startY;
+        const [x1, y1, x2, y2] = moveStart.bbox;
+        const width = x2 - x1;
+        const height = y2 - y1;
+        
+        let newX1 = x1 + deltaX;
+        let newY1 = y1 + deltaY;
+        let newX2 = newX1 + width;
+        let newY2 = newY1 + height;
+        
+        // Keep within bounds
+        if (newX1 < 0) {
+          newX1 = 0;
+          newX2 = width;
+        }
+        if (newX2 > 100) {
+          newX2 = 100;
+          newX1 = 100 - width;
+        }
+        if (newY1 < 0) {
+          newY1 = 0;
+          newY2 = height;
+        }
+        if (newY2 > 100) {
+          newY2 = 100;
+          newY1 = 100 - height;
+        }
+        
+        setAnnotations(annotations.map(ann => 
+          ann.id === moveStart.annotationId 
+            ? { ...ann, bbox: [newX1, newY1, newX2, newY2] }
+            : ann
+        ));
+      }
+    }
+  };
+
+  const handleAnnotationMouseUp = () => {
+    // Save to history when resize/move is complete
+    if (isResizing || isMoving) {
+      saveToHistory(annotations);
+    }
+    setIsResizing(false);
+    setIsMoving(false);
+    setResizeHandle(null);
+    setMoveStart(null);
+  };
+
+
+
+  const handleReset = () => {
+    if (readOnly) return;
+    // Reset zoom and position
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+    // Clear all annotations
+    const emptyAnnotations = [];
+    saveToHistory(emptyAnnotations);
+    setAnnotations(emptyAnnotations);
+    setSelectedAnnotation(null);
+  };
+
+  const handleUndo = () => {
+    if (readOnly) return;
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setAnnotations(JSON.parse(JSON.stringify(annotationHistory[newIndex]))); // Deep copy
+      setSelectedAnnotation(null);
+    }
+  };
+
+  // Keyboard: hold Space to pan
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === 'Space') {
+        // Prevent page scroll
+        e.preventDefault();
+        setSpacePressed(true);
+      }
+    };
+
+    const onKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setSpacePressed(false);
+        setIsDragging(false);
+        setDragStart(null);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { passive: false });
+    window.addEventListener('keyup', onKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
+
+  const getAnnotationStyle = (annotation) => {
+    const [x1, y1, x2, y2] = annotation.bbox;
+    const width = Math.max(Math.abs(x2 - x1), 1);
+    const height = Math.max(Math.abs(y2 - y1), 1);
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+
+    const labelInfo = labelSet.find(l => (l.name || l) === annotation.label);
+    const borderColor = labelInfo?.color || '#1976d2';
+    const isSelected = selectedAnnotation?.id === annotation.id;
+
+    // Bounding box coordinates are stored as percentage (0-100%) of the original image
+    // When rendering, we apply the same transform as the image so it scales correctly
+    return {
+      position: 'absolute',
+      left: `${left}%`,
+      top: `${top}%`,
+      width: `${width}%`,
+      height: `${height}%`,
+      transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+      transformOrigin: 'top left',
+      border: isSelected ? '3px solid' : '2px solid',
+      borderColor: borderColor,
+      backgroundColor: `${borderColor}${isSelected ? '30' : '20'}`,
+      cursor: isMoving ? 'grabbing' : 'grab',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '4px',
+      transition: isResizing || isMoving ? 'none' : 'transform 0.1s ease-out',
+      zIndex: isSelected ? 10 : 1,
+      pointerEvents: 'auto',
+      '&:hover': {
+        transform: isResizing || isMoving 
+          ? `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)` 
+          : `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px) scale(1.02)`,
+        zIndex: 10,
+      },
+    };
+  };
+
+  const getResizeHandleStyle = (position) => {
+    const baseStyle = {
+      position: 'absolute',
+      width: '12px',
+      height: '12px',
+      backgroundColor: '#fff',
+      border: '2px solid #1976d2',
+      borderRadius: '50%',
+      cursor: `${position}-resize`,
+      zIndex: 20,
+    };
+
+    const positions = {
+      nw: { top: '-6px', left: '-6px', cursor: 'nw-resize' },
+      ne: { top: '-6px', right: '-6px', cursor: 'ne-resize' },
+      sw: { bottom: '-6px', left: '-6px', cursor: 'sw-resize' },
+      se: { bottom: '-6px', right: '-6px', cursor: 'se-resize' },
+    };
+
+    return { ...baseStyle, ...positions[position] };
+  };
+
+  const getCurrentBoxStyle = () => {
+    if (!currentBox || !imageRef.current) return null;
+    
+    return {
+      position: 'absolute',
+      left: `${currentBox.x}%`,
+      top: `${currentBox.y}%`,
+      width: `${Math.abs(currentBox.width)}%`,
+      height: `${Math.abs(currentBox.height)}%`,
+      transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+      transformOrigin: 'top left',
+      border: '2px dashed #1976d2',
+      backgroundColor: 'rgba(25, 118, 210, 0.1)',
+      pointerEvents: 'none',
+    };
+  };
+
+  return (
+    <Box sx={{ width: '100%', overflowX: 'hidden' }}>
+      <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, width: '65%', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', md: 'center' },
+            flexDirection: { xs: 'column', md: 'row' },
+            gap: 1.5,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h6">Image Annotation Tool</Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' }, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <FormControl size="small" sx={{ minWidth: 220 }} disabled={readOnly || labelSet.length === 0}>
+              <InputLabel id="active-label-select">Label đang chọn</InputLabel>
+              <Select
+                labelId="active-label-select"
+                value={activeLabel}
+                label="Label đang chọn"
+                onChange={(e) => setActiveLabel(e.target.value)}
+              >
+                {labelSet.map((label, idx) => (
+                  <MenuItem key={idx} value={label.name || label}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {label.color && (
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            bgcolor: label.color,
+                            borderRadius: '50%',
+                            border: '1px solid #ccc',
+                          }}
+                        />
+                      )}
+                      <Typography variant="body2">{label.name || label}</Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Typography variant="body2" sx={{ alignSelf: 'center', whiteSpace: 'nowrap' }}>
+              {activeLabel ? 'Đã chọn label, kéo chuột để khoanh vùng' : 'Chọn label trước rồi mới khoanh vùng'}
+            </Typography>
+            <Button 
+              size="small" 
+              onClick={handleUndo}
+              disabled={readOnly || historyIndex <= 0}
+              startIcon={<UndoIcon />}
+            >
+              Undo
+            </Button>
+            <Button 
+              size="small" 
+              onClick={handleReset}
+              color="error"
+              disabled={readOnly}
+            >
+              Reset
+            </Button>
+
+            {onSubmit && (
+              <Button 
+                variant="contained" 
+                color="success"
+                onClick={onSubmit}
+                disabled={readOnly}
+                sx={{ 
+                  ml: 2,
+                  px: 3,
+                  py: 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Submit
+              </Button>
+            )}
+          </Box>
+        </Box>
+
+        <Box
+          ref={containerRef}
+          sx={{
+            position: 'relative',
+            overflow: 'auto',
+            border: '2px solid #ccc',
+            borderRadius: 1,
+            cursor: isDrawing ? 'crosshair' : (isDragging ? 'grabbing' : (spacePressed ? 'grab' : 'default')),
+            maxHeight: '80vh',
+            minHeight: '400px',
+            backgroundColor: '#f5f5f5',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            width: '100%',
+            padding: 0,
+          }}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={(e) => {
+            if (!containerRef.current) return;
+            if (!e.ctrlKey && !e.metaKey) return; // require Ctrl/Cmd + wheel to zoom
+            e.preventDefault();
+
+            const nextZoom = e.deltaY < 0 ? Math.min(zoom + 0.1, 5) : Math.max(zoom - 0.1, 0.1);
+
+            const rect = containerRef.current.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
+            const mouseY = e.clientY - rect.top + containerRef.current.scrollTop;
+
+            // Keep the point under cursor stable
+            const contentX = (mouseX - position.x) / zoom;
+            const contentY = (mouseY - position.y) / zoom;
+
+            setZoom(nextZoom);
+            setPosition({
+              x: mouseX - contentX * nextZoom,
+              y: mouseY - contentY * nextZoom,
+            });
+          }}
+          onMouseDown={handleMouseDown}
+        >
+          <Box
+            component="img"
+            ref={imageRef}
+            src={imageUrl}
+            alt="Annotate"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              if (isDrawing) {
+                setIsDrawing(false);
+                setDrawStart(null);
+                setCurrentBox(null);
+              }
+            }}
+            onLoad={() => {
+              // Reset zoom and position when image loads
+              if (imageRef.current && containerRef.current) {
+                setZoom(1);
+                setPosition({ x: 0, y: 0 });
+                // Scroll to top-left to ensure full image is visible
+                setTimeout(() => {
+                  if (containerRef.current) {
+                    containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                  }
+                }, 100);
+              }
+            }}
+            sx={{
+              display: 'block',
+              width: '100%',
+              height: 'auto',
+              maxWidth: '100%',
+              maxHeight: 'none',
+              objectFit: 'contain',
+              transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+              transformOrigin: 'top left',
+              cursor: isDrawing ? 'crosshair' : 'default',
+              userSelect: 'none',
+              pointerEvents: 'auto',
+              transition: isDrawing || isDragging || isResizing || isMoving ? 'none' : 'transform 0.1s ease-out',
+              flexShrink: 0,
+            }}
+            draggable={false}
+          />
+          
+          {/* Current drawing box */}
+          {currentBox && (
+            <Box sx={getCurrentBoxStyle()} />
+          )}
+          
+          {/* Existing annotations */}
+          {annotations.map((annotation) => {
+            const labelInfo = labelSet.find(l => (l.name || l) === annotation.label);
+            const borderColor = labelInfo?.color || '#1976d2';
+            const isSelected = selectedAnnotation?.id === annotation.id;
+            
+            return (
+              <Box
+                key={annotation.id}
+                data-annotation-id={annotation.id}
+                sx={{
+                  ...getAnnotationStyle(annotation),
+                  borderColor: borderColor,
+                  backgroundColor: `${borderColor}${isSelected ? '30' : '20'}`,
+                }}
+                onMouseDown={(e) => {
+                  if (!e.target.closest('.resize-handle') && !e.target.closest('.chip')) {
+                    handleMoveStart(e, annotation.id);
+                  }
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  handleEditAnnotation(annotation);
+                }}
+                onClick={(e) => {
+                  if (!e.target.closest('.resize-handle') && !e.target.closest('.chip')) {
+                    e.stopPropagation();
+                    setSelectedAnnotation(annotation);
+                  }
+                }}
+              >
+                <Chip
+                  label={`${annotation.label}${annotation.answer ? ` (${typeof annotation.answer === 'object' ? Object.values(annotation.answer).join(', ') : annotation.answer})` : ''}`}
+                  size="small"
+                  className="chip"
+                  sx={{ 
+                    pointerEvents: 'auto',
+                    bgcolor: borderColor,
+                    color: 'white',
+                    fontWeight: 'bold',
+                    maxWidth: '90%',
+                  }}
+                  onDelete={() => handleDeleteAnnotation(annotation.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditAnnotation(annotation);
+                  }}
+                />
+                {isSelected && (
+                  <>
+                    <Box
+                      className="resize-handle"
+                      sx={getResizeHandleStyle('nw')}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        handleResizeStart(e, annotation.id, 'nw');
+                      }}
+                    />
+                    <Box
+                      className="resize-handle"
+                      sx={getResizeHandleStyle('ne')}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        handleResizeStart(e, annotation.id, 'ne');
+                      }}
+                    />
+                    <Box
+                      className="resize-handle"
+                      sx={getResizeHandleStyle('sw')}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        handleResizeStart(e, annotation.id, 'sw');
+                      }}
+                    />
+                    <Box
+                      className="resize-handle"
+                      sx={getResizeHandleStyle('se')}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        handleResizeStart(e, annotation.id, 'se');
+                      }}
+                    />
+                  </>
+                )}
+              </Box>
+            );
+          })}
+        </Box>
+
+      </Paper>
+
+
+
+      {/* Answer Selection Dialog */}
+      <Dialog open={showAnswerDialog} onClose={() => {
+        setShowAnswerDialog(false);
+        setPendingAnnotation(null);
+      }} maxWidth="sm" fullWidth>
+        <DialogTitle>Chọn đáp án</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" gutterBottom>
+            Label đã chọn: <strong>{pendingAnnotation?.label}</strong>
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 2, mb: 2 }}>
+            Vui lòng trả lời câu hỏi sau:
+          </Typography>
+          {questions && questions.length > 0 ? (
+            questions.map((question, qIdx) => (
+              <FormControl key={qIdx} component="fieldset" fullWidth sx={{ mt: qIdx > 0 ? 3 : 0 }}>
+                <FormLabel component="legend" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  {question.question || `Câu hỏi ${qIdx + 1}`}
+                </FormLabel>
+                <RadioGroup
+                  value={pendingAnnotation?.answer?.[qIdx] || ''}
+                  onChange={(e) => {
+                    const newAnswer = { ...(pendingAnnotation?.answer || {}) };
+                    newAnswer[qIdx] = e.target.value;
+                    setPendingAnnotation({
+                      ...pendingAnnotation,
+                      answer: newAnswer,
+                    });
+                  }}
+                >
+                  {question.options && question.options.map((option, optIdx) => (
+                    <FormControlLabel
+                      key={optIdx}
+                      value={option.key}
+                      control={<Radio />}
+                      label={`${option.key}. ${option.value || `Đáp án ${option.key}`}`}
+                    />
+                  ))}
+                </RadioGroup>
+              </FormControl>
+            ))
+          ) : (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Không có câu hỏi nào. Manager cần thêm câu hỏi vào project.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowAnswerDialog(false);
+            setPendingAnnotation(null);
+          }}>
+            Hủy
+          </Button>
+          <Button
+            onClick={() => {
+              // If no questions, allow saving with null answer
+              // If has questions, must have all answers
+              if (!questions || questions.length === 0) {
+                handleSelectAnswer(null);
+              } else if (pendingAnnotation?.answer && Object.keys(pendingAnnotation.answer).length >= questions.length) {
+                handleSelectAnswer(pendingAnnotation.answer);
+              }
+            }}
+            variant="contained"
+            disabled={
+              questions && questions.length > 0 && 
+              (!pendingAnnotation?.answer || Object.keys(pendingAnnotation.answer).length < questions.length)
+            }
+          >
+            Xác nhận
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Annotation Dialog */}
+      <Dialog open={showEditDialog} onClose={() => {
+        setShowEditDialog(false);
+        setEditingAnnotation(null);
+      }} maxWidth="sm" fullWidth>
+        <DialogTitle>Chỉnh sửa Annotation</DialogTitle>
+        <DialogContent>
+          {editingAnnotation && (
+            <>
+              <FormControl fullWidth sx={{ mt: 2 }}>
+                <InputLabel>Label *</InputLabel>
+                <Select
+                  value={editingAnnotation.label || ''}
+                  onChange={(e) => {
+                    setEditingAnnotation({ ...editingAnnotation, label: e.target.value });
+                  }}
+                  label="Label *"
+                >
+                  {labelSet.map((label, idx) => (
+                    <MenuItem key={idx} value={label.name || label}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {label.color && (
+                          <Box
+                            sx={{
+                              width: 16,
+                              height: 16,
+                              bgcolor: label.color,
+                              borderRadius: '50%',
+                              border: '1px solid #ccc',
+                            }}
+                          />
+                        )}
+                        <Typography>{label.name || label}</Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {questions && questions.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Câu hỏi và Đáp án:
+                  </Typography>
+                  {questions.map((question, qIdx) => (
+                    <FormControl key={qIdx} component="fieldset" fullWidth sx={{ mt: 2 }}>
+                      <FormLabel component="legend" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        {question.question || `Câu hỏi ${qIdx + 1}`}
+                      </FormLabel>
+                      <RadioGroup
+                        value={editingAnnotation.answer?.[qIdx] || ''}
+                        onChange={(e) => {
+                          const newAnswer = { ...(editingAnnotation.answer || {}) };
+                          newAnswer[qIdx] = e.target.value;
+                          setEditingAnnotation({ ...editingAnnotation, answer: newAnswer });
+                        }}
+                      >
+                        {question.options && question.options.map((option, optIdx) => (
+                          <FormControlLabel
+                            key={optIdx}
+                            value={option.key}
+                            control={<Radio />}
+                            label={`${option.key}. ${option.value || `Đáp án ${option.key}`}`}
+                          />
+                        ))}
+                      </RadioGroup>
+                    </FormControl>
+                  ))}
+                </Box>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowEditDialog(false);
+            setEditingAnnotation(null);
+          }}>
+            Hủy
+          </Button>
+          <Button onClick={handleUpdateAnnotation} variant="contained">
+            Lưu thay đổi
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default ImageAnnotator;
