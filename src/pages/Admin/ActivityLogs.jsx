@@ -24,6 +24,7 @@ import {
 import { History as HistoryIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const ActivityLogs = () => {
   const [logs, setLogs] = useState([]);

@@ -65,21 +65,18 @@ const AdminDashboard = () => {
           axios.get(`${API_URL}/api/datasets`),
         ]);
 
-        const users = usersRes.data || [];
+        const users = usersRes.data?.users || usersRes.data || [];
         const projects = projectsRes.data?.projects || projectsRes.data || [];
-        const datasets = datasetsRes.data || [];
+        const datasets = datasetsRes.data?.datasets || datasetsRes.data || [];
 
-        const activeUsers = users.filter((u) => u.isActive).length;
-        const annotators = users.filter((u) => u.role === 'annotator').length;
-        const reviewers = users.filter((u) => u.role === 'reviewer').length;
-        const managers = users.filter((u) => u.role === 'manager').length;
+        const activeUsers = (users || []).filter((u) => u.is_active).length;
+        const annotators = (users || []).filter((u) => u.role === 'annotator').length;
+        const reviewers = (users || []).filter((u) => u.role === 'reviewer').length;
+        const managers = (users || []).filter((u) => u.role === 'manager').length;
 
-        const activeProjects = projects.filter((p) => p.status === 'active').length;
-        const completedTasks = tasks.filter((t) => t.status === 'completed').length;
-        const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
-        const inProgressTasks = tasks.filter((t) => t.status === 'in_progress').length;
+        const activeProjects = (projects || []).filter((p) => p.status === 'active').length;
 
-        const totalStorage = datasets.reduce((acc, d) => acc + (d.fileCount || 0) * 1024 * 1024 * 5, 0);
+        const totalStorage = (datasets || []).reduce((acc, d) => acc + (d.fileCount || 0) * 1024 * 1024 * 5, 0);
 
         setStats({
           totalUsers: users.length,

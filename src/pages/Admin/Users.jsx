@@ -21,6 +21,7 @@ import {
 import { Edit as EditIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
@@ -33,7 +34,7 @@ const AdminUsers = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`);
-      setUsers(response.data?.users || response.data || []);
+      setUsers(getArray(response.data));
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -100,15 +101,15 @@ const AdminUsers = () => {
           </TableHead>
           <TableBody>
             {users.map((user) => (
-              <TableRow key={user._id}>
+              <TableRow key={user.id}>
                 <TableCell>{user.username}</TableCell>
-                <TableCell>{user.fullName}</TableCell>
+                <TableCell>{user.full_name}</TableCell>
                 <TableCell>{user.email}</TableCell>
                 <TableCell>
                   <FormControl size="small" sx={{ minWidth: 120 }}>
                     <Select
                       value={user.role}
-                      onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                      onChange={(e) => handleRoleChange(user.id, e.target.value)}
                     >
                       <MenuItem value="admin">Admin</MenuItem>
                       <MenuItem value="manager">Manager</MenuItem>
@@ -119,14 +120,14 @@ const AdminUsers = () => {
                 </TableCell>
                 <TableCell>
                   <Switch
-                    checked={user.isActive}
-                    onChange={() => handleToggleActive(user._id, user.isActive)}
+                    checked={user.is_active}
+                    onChange={() => handleToggleActive(user.id, user.is_active)}
                   />
                 </TableCell>
                 <TableCell>
                   <Chip
-                    label={user.isActive ? 'Active' : 'Inactive'}
-                    color={user.isActive ? 'success' : 'default'}
+                    label={user.is_active ? 'Active' : 'Inactive'}
+                    color={user.is_active ? 'success' : 'default'}
                     size="small"
                   />
                 </TableCell>

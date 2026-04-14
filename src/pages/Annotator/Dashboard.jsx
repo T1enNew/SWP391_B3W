@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const fmtDate = (d) => {
   if (!d) return null;
@@ -134,7 +135,7 @@ const AnnotatorDashboard = () => {
     setError('');
     try {
       const res = await axios.get(`${API_URL}/api/projects`);
-      setProjects(res.data.projects || res.data || []);
+      setProjects(getArray(res.data));
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc project');
     } finally {

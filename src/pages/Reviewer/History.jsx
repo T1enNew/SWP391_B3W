@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
 
 const fmtShortDate = (d) => {
   if (!d) return '-';

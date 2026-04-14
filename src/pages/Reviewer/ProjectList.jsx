@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -154,7 +155,7 @@ const ReviewerProjectList = () => {
         axios.get(`${API_URL}/api/projects`),
         axios.get(`${API_URL}/api/activity-logs/stats`),
       ]);
-      const projectList = projectsRes.data.projects || projectsRes.data || [];
+      const projectList = getArray(projectsRes.data);
       const statsMap = {};
       (allStatsRes.data?.counts || []).forEach((s) => { statsMap[s.project_id || s.resourceId] = s; });
 

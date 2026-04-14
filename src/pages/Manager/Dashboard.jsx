@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 
@@ -90,8 +91,8 @@ const ManagerDashboard = () => {
           axios.get(`${API_URL}/api/projects`, { headers }),
           axios.get(`${API_URL}/api/datasets`, { headers }),
         ]);
-        const projectList = projectsRes.data?.projects || projectsRes.data || [];
-        const datasetList = datasetsRes.data?.datasets || datasetsRes.data || [];
+        const projectList = projectsRes.data?.data || [];
+        let datasetList = datasetsRes.data?.data || [];
 
         const statusEntries = await Promise.all(
           datasetList.map(async (ds) => {

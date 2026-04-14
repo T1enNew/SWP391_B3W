@@ -17,6 +17,7 @@ import {
   FilterList as FilterIcon, Sort as SortIcon, AccessTime as TimeIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import { getArray } from '../../utils/api';
 import { API_URL } from '../../config/api';
 import { getTopics, getSubtopics } from '../../services/TopicService';
 
@@ -154,7 +155,7 @@ const Datasets = () => {
   const fetchDatasets = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/datasets`);
-      const all = res.data?.datasets || res.data || [];
+      const all = getArray(res.data);
       setDatasets(all);
       const entries = await Promise.all(all.map(async (ds) => {
         try {

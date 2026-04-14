@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { getArray } from '../../utils/api';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -57,8 +58,8 @@ const ReviewerDashboard = () => {
         axios.get(`${API_URL}/api/reviews/reviewed`),
       ]);
       setAllTasks({
-        pending: pendingRes.data.reviews || [],
-        reviewed: reviewedRes.data.reviews || [],
+        pending: getArray(pendingRes.data),
+        reviewed: getArray(reviewedRes.data),
       });
     } catch (err) { setError(err.response?.data?.message || 'Failed'); } finally { setLoading(false); }
   };

@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
@@ -35,8 +36,8 @@ const ReviewerOverview = () => {
           axios.get(`${API_URL}/api/reviews/pending`),
           axios.get(`${API_URL}/api/reviews/reviewed`),
         ]);
-        setPendingTasks(pendingRes.data?.reviews || []);
-        setReviewedTasks(reviewedRes.data?.reviews || []);
+        setPendingTasks(getArray(pendingRes.data));
+        setReviewedTasks(getArray(reviewedRes.data));
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {

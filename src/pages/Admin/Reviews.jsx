@@ -38,6 +38,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const AdminReviews = () => {
   const [reviews, setReviews] = useState([]);
@@ -62,8 +63,8 @@ const AdminReviews = () => {
         axios.get(`${API_URL}/api/reviews/reviewed`),
       ]);
 
-      const pending = pendingRes.data.reviews || [];
-      const reviewed = reviewedRes.data.reviews || [];
+      const pending = getArray(pendingRes.data);
+      const reviewed = getArray(reviewedRes.data);
       const allTasks = [...pending, ...reviewed];
       
       setReviews(allTasks);

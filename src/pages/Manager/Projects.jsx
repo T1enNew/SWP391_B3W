@@ -27,6 +27,7 @@ import {
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+import { getArray } from '../../utils/api';
 
 const panelSx = {
   borderRadius: 3,
@@ -60,7 +61,7 @@ const ManagerProjects = () => {
   const fetchProjects = async () => {
     try {
       const projectsRes = await axios.get(`${API_URL}/api/projects`);
-      const projectList = projectsRes.data?.projects || projectsRes.data || [];
+      const projectList = getArray(projectsRes.data);
       setProjects(projectList);
 
       const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { limit: 1000 } });

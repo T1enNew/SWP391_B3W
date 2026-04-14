@@ -2,6 +2,7 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
 
 const buildFileUrl = (dataItem) => {
