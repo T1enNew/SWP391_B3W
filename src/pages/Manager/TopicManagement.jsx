@@ -47,7 +47,7 @@ const AssetThumb = ({ asset, onDelete, onPreview }) => {
         )}
       </Box>
       <Box className="del-btn" sx={{ position: 'absolute', top: 2, right: 2, opacity: 0, transition: 'opacity 0.2s' }}>
-        <IconButton size="small" sx={{ bgcolor: 'rgba(0,0,0,0.6)', color: '#f87171', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }} onClick={() => onDelete(asset._id)}>
+        <IconButton size="small" sx={{ bgcolor: 'rgba(0,0,0,0.6)', color: '#f87171', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }} onClick={() => onDelete(asset.id)}>
           <DeleteIcon sx={{ fontSize: 14 }} />
         </IconButton>
       </Box>
@@ -68,7 +68,7 @@ const SubtopicCard = ({ subtopic, selected, onSelect, onEdit, onDelete }) => (
       <Typography variant="caption" sx={{ color: '#64748b' }}>{subtopic.assets?.length || 0} Assets</Typography>
     </Box>
     <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={e => { e.stopPropagation(); onEdit(subtopic); }}><EditIcon sx={{ fontSize: 16 }} /></IconButton>
-    <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); onDelete(subtopic._id); }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton>
+    <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); onDelete(subtopic.id); }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton>
   </Box>
 );
 
@@ -103,13 +103,13 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
       loadLabelSets();
       loadAssets();
     }
-  }, [selectedSubtopic?._id]);
+  }, [selectedSubtopic?.id]);
 
   const loadLabelSets = async () => {
     setLabelSetsLoading(true);
     try {
-      const r = await axios.get(API_URL + '/api/labelsets?subtopicId=' + selectedSubtopic._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setLabelSets(Array.isArray(r.data) ? r.data : []);
+      const r = await axios.get(`${API_URL}/api/labelsets?subtopicId=${selectedSubtopic.id}`);
+      setLabelSets(Array.isArray(r.data?.label_sets) ? r.data.label_sets : Array.isArray(r.data) ? r.data : []);
     } catch { setLabelSets([]); }
     setLabelSetsLoading(false);
     setDataLoaded(true);
@@ -118,8 +118,8 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const loadAssets = async () => {
     setAssetsLoading(true);
     try {
-      const r = await axios.get(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setAssets(Array.isArray(r.data) ? r.data : []);
+      const r = await axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`);
+      setAssets(Array.isArray(r.data?.assets) ? r.data.assets : []);
     } catch { setAssets([]); }
     setAssetsLoading(false);
     setDataLoaded(true);
@@ -128,9 +128,9 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const saveLabelSet = async () => {
     try {
       if (labelDialog.edit)
-        await axios.put(API_URL + '/api/labelsets/' + labelDialog.data._id, labelDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.put(`${API_URL}/api/labelsets/${labelDialog.data.id}`, labelDialog.data);
       else
-        await axios.post(API_URL + '/api/labelsets', { ...labelDialog.data, subtopicId: selectedSubtopic._id }, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.post(`${API_URL}/api/labelsets`, { ...labelDialog.data, subtopic_id: selectedSubtopic.id });
       setLabelDialog({ open: false, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } });
       loadLabelSets();
       setSnackbar({ open: true, message: 'Luu labelset thanh cong!', severity: 'success' });
@@ -150,7 +150,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const handleDeleteLabelSet = async (id) => {
     if (!confirm('Xoa labelset?')) return;
     try {
-      await axios.delete(API_URL + '/api/labelsets/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.delete(`${API_URL}/api/labelsets/${id}`);
       loadLabelSets();
       setSnackbar({ open: true, message: 'Xoa labelset thanh cong!', severity: 'success' });
     } catch (e) {
@@ -177,7 +177,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
     try {
       const fd = new FormData();
       uploadFiles.forEach(f => fd.append('files', f));
-      await axios.post(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets', fd, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.post(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`, fd);
       setUploadFiles([]);
       loadAssets();
       onSubtopicUpdate();
@@ -191,7 +191,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const handleDeleteAsset = async (assetId) => {
     if (!confirm('Xoa asset?')) return;
     try {
-      await axios.delete(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets/' + assetId, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.delete(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets/${assetId}`);
       loadAssets();
       onSubtopicUpdate();
     } catch (e) {
@@ -385,25 +385,25 @@ const TopicManagement = () => {
   const loadTopics = async () => {
     setLoading(true);
     try {
-      const r = await axios.get(API_URL + '/api/topics', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setTopics(Array.isArray(r.data) ? r.data : []);
+      const r = await axios.get(`${API_URL}/api/topics`);
+      setTopics(Array.isArray(r.data?.topics) ? r.data.topics : Array.isArray(r.data) ? r.data : []);
     } catch { setTopics([]); }
     setLoading(false);
   };
 
   const loadSubtopicsForTopic = async (topic) => {
     try {
-      const r = await axios.get(API_URL + '/api/subtopics?topicId=' + topic._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      return Array.isArray(r.data) ? r.data : [];
+      const r = await axios.get(`${API_URL}/api/subtopics?topicId=${topic.id}`);
+      return Array.isArray(r.data?.subtopics) ? r.data.subtopics : Array.isArray(r.data) ? r.data : [];
     } catch { return []; }
   };
 
   const saveTopic = async () => {
     try {
       if (topicDialog.edit)
-        await axios.put(API_URL + '/api/topics/' + selectedTopic._id, topicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.put(`${API_URL}/api/topics/${selectedTopic.id}`, topicDialog.data);
       else
-        await axios.post(API_URL + '/api/topics', topicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.post(`${API_URL}/api/topics`, topicDialog.data);
       setTopicDialog({ ...topicDialog, open: false });
       loadTopics();
       setSnackbar({ open: true, message: topicDialog.edit ? 'Cap nhat topic thanh cong!' : 'Tao topic thanh cong!', severity: 'success' });
@@ -415,8 +415,8 @@ const TopicManagement = () => {
   const handleDeleteTopic = async (id) => {
     if (!confirm('Xoa topic nay?')) return;
     try {
-      await axios.delete(API_URL + '/api/topics/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      if (selectedTopic?._id === id) {
+      await axios.delete(`${API_URL}/api/topics/${id}`);
+      if (selectedTopic?.id === id) {
         setSelectedTopic(null);
         setSelectedSubtopic(null);
       }
@@ -431,9 +431,9 @@ const TopicManagement = () => {
     if (!selectedTopic) return;
     try {
       if (subtopicDialog.edit)
-        await axios.put(API_URL + '/api/subtopics/' + selectedSubtopic._id, subtopicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.put(`${API_URL}/api/subtopics/${selectedSubtopic.id}`, subtopicDialog.data);
       else
-        await axios.post(API_URL + '/api/subtopics', { ...subtopicDialog.data, topicId: selectedTopic._id }, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        await axios.post(`${API_URL}/api/subtopics`, { ...subtopicDialog.data, topic_id: selectedTopic.id });
       setSubtopicDialog({ ...subtopicDialog, open: false });
       const subs = await loadSubtopicsForTopic(selectedTopic);
       setExpandedTopic({ ...selectedTopic, subtopics: subs });
@@ -448,7 +448,7 @@ const TopicManagement = () => {
   const handleDeleteSubtopic = async (id) => {
     if (!confirm('Xoa subtopic nay?')) return;
     try {
-      await axios.delete(API_URL + '/api/subtopics/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.delete(`${API_URL}/api/subtopics/${id}`);
       if (selectedSubtopic?._id === id) setSelectedSubtopic(null);
       if (expandedTopic) {
         const subs = await loadSubtopicsForTopic(expandedTopic);
@@ -462,7 +462,7 @@ const TopicManagement = () => {
   };
 
   const handleTopicClick = async (topic) => {
-    if (selectedTopic?._id === topic._id) {
+    if (selectedTopic?.id === topic.id) {
       setSelectedTopic(null);
       setSelectedSubtopic(null);
       setExpandedTopic(null);

@@ -153,10 +153,8 @@ const AnnotatorProjectDetail = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/annotator-projects`);
-      const allProjects = res.data || [];
-      const found = allProjects.find((p) => p.projectId === projectId || p._id === projectId);
-      setProject(found || null);
+      const res = await axios.get(`${API_URL}/api/projects/${projectId}`);
+      setProject(res.data || null);
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc thong tin project');
     } finally {

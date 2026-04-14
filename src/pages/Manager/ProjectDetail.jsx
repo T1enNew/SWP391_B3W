@@ -591,12 +591,12 @@ const ManagerProjectDetail = () => {
     try {
       const [projectRes, datasetsRes, tasksRes] = await Promise.all([
         axios.get(`${API_URL}/api/projects/${id}`),
-        axios.get(`${API_URL}/api/datasets/project/${id}`),
-        axios.get(`${API_URL}/api/tasks/my-tasks`),
+        axios.get(`${API_URL}/api/datasets`, { params: { project_id: id } }),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { project_id: id, limit: 1000 } }),
       ]);
       setProject(projectRes.data.project || projectRes.data);
-      setDatasets(datasetsRes.data || []);
-      setTasks((tasksRes.data || []).filter((t) => (t.projectId?._id || t.projectId) === id));
+      setDatasets(datasetsRes.data?.datasets || datasetsRes.data || []);
+      setTasks((tasksRes.data?.data || []).filter((t) => t.project?.id === id));
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -607,11 +607,11 @@ const ManagerProjectDetail = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`);
-      const userList = Array.isArray(response.data) ? response.data : [];
-      setAnnotators(userList.filter((u) => u.role === 'annotator' && u.isActive));
+      const userList = response.data?.users || response.data || [];
+      setAnnotators(userList.filter((u) => u.role === 'annotator' && u.is_active));
       setReviewers(
         userList
-          .filter((u) => u.role === 'reviewer' && u.isActive)
+          .filter((u) => u.role === 'reviewer' && u.is_active)
           .map((u) => ({ ...u, specialty: u.specialty || 'general' }))
       );
     } catch (error) {

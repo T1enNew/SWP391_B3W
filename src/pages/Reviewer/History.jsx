@@ -53,10 +53,8 @@ const ReviewerHistory = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(API_URL + '/api/reviews/reviewed', {
-          headers: { Authorization: 'Bearer ' + getAuthToken() }
-        });
-        setReviewedTasks(res.data || []);
+        const res = await axios.get(`${API_URL}/api/reviews/reviewed`);
+        setReviewedTasks(res.data?.reviews || []);
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {

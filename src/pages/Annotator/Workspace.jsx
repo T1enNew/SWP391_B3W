@@ -91,13 +91,13 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
       <div className="flex-1 overflow-y-auto">
         {sortedTasks.map((task, idx) => {
           const cfg = getStatusConfig(task.status);
-          const isActive = task._id === currentTaskId;
+          const isActive = task.id === currentTaskId;
           const filename = task.dataItem?.originalName || task.dataItem?.filename || `Item ${idx + 1}`;
           const kind = getTaskKind(task);
           return (
             <div
-              key={task._id}
-              onClick={() => onSelect(task._id)}
+              key={task.id}
+              onClick={() => onSelect(task.id)}
               className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-l-2 ${
                 isActive ? 'bg-blue-600/15 border-blue-500' : 'border-transparent hover:bg-gray-800/60 hover:border-gray-600'
               }`}
@@ -557,7 +557,7 @@ const Workspace = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId } });
-      const taskList = res.data || [];
+      const taskList = res.data.data || [];
       if (!isMountedRef.current) return;
       setTasks(taskList);
       if (taskList.length > 0) {
@@ -664,8 +664,8 @@ const Workspace = () => {
       else if (kind === 'text') labelsPayload = { spans: textSpans.map(({ id, ...rest }) => rest), note: annotationNote?.trim() || '' };
       else if (kind === 'audio') labelsPayload = { segments: labels.segments || [], note: annotationNote?.trim() || '' };
       else labelsPayload = { note: annotationNote?.trim() || '', label: labels.label || '' };
-      await axios.put(`${API_URL}/api/tasks/${task._id}/label`, { labels: labelsPayload });
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'in_progress' } : t));
+      await axios.put(`${API_URL}/api/tasks/${task.id}/save`, { annotation_data: labelsPayload });
+      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'in_progress' } : t));
     } catch { /* silent auto-save */ }
   }, [task, annotations, labels, textSpans, annotationNote]);
 
@@ -678,9 +678,9 @@ const Workspace = () => {
     setSaving(true);
     try {
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'completed' } : t));
-      setTask((prev) => prev ? { ...prev, status: 'completed' } : null);
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'submitted' } : t));
+      setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
       setSavingMessage('Da danh dau hoan thanh!');
       setTimeout(() => setSavingMessage(''), 3000);
     } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
@@ -694,8 +694,8 @@ const Workspace = () => {
     setShowSubmitConfirm(false); setSaving(true);
     try {
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'submitted' } : t));
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'submitted' } : t));
       setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
       setSavingMessage('Da nop thanh cong!');
       setTimeout(() => setSavingMessage(''), 3000);

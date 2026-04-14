@@ -75,10 +75,10 @@ const AnnotatorAuditDetail = () => {
         axios.get(`${API_URL}/api/tasks/my-tasks`),
       ]);
 
-      setProject(projectRes.data.project);
-      setAnnotator(annotatorRes.data);
-      const projectTasks = (tasksRes.data || []).filter(
-        (t) => t.projectId?._id === projectId && (t.annotatorId?._id === annotatorId || t.annotatorId === annotatorId)
+      setProject(projectRes.data);
+      setAnnotator(annotatorRes.data?.user || annotatorRes.data);
+      const projectTasks = (tasksRes.data?.data || []).filter(
+        (t) => t.project?.id === projectId && t.annotator?.id === annotatorId
       );
       setTasks(projectTasks);
     } catch (error) {

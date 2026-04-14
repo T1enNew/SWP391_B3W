@@ -226,7 +226,7 @@ const DatasetItemDetail = () => {
 
   const normalizedAnnotations = displayAnnotations.map((ann, idx) => ({
     ...ann,
-    id: (ann.annotatorId?._id || ann.annotatorId || ann.annotator || `annotator-${idx}`)?.toString?.(),
+    id: (ann.annotatorId || ann.annotator || `annotator-${idx}`)?.toString?.(),
     name: ann.annotator || ann.annotatorId?.fullName || ann.annotatorId?.username || 'Unknown annotator',
     labels: ann.labels || {},
   }));
@@ -343,10 +343,8 @@ const DatasetItemDetail = () => {
       try {
         setLoading(true);
         const token = sessionStorage.getItem('token');
-        const resp = await axios.get(`${API_URL}/api/datasets/${datasetId}/items`, {
-          headers: { Authorization: 'Bearer ' + token },
-        });
-        let items = resp.data?.items || [];
+        const resp = await axios.get(`${API_URL}/api/datasets/${datasetId}`);
+        let items = resp.data?.data_items || [];
         setAllDatasetItems(items);
         const decodedId = itemId ? decodeURIComponent(itemId) : '';
         // Prioritize path match (handles items from both Tasks and dataset.files[]),
@@ -420,7 +418,7 @@ const DatasetItemDetail = () => {
           const rejected = allDatasetItems.filter(i => i.status === 'rejected').length;
           const bySubtopic = {};
           allDatasetItems.forEach(it => {
-            const sid = it.subtopicId?._id || it.subtopicId || 'unknown';
+            const sid = it.subtopic_id || it.subtopicId || 'unknown';
             const sname = it.subtopicId?.name || 'Subtopic';
             if (!bySubtopic[sid]) bySubtopic[sid] = { name: sname, total: 0, pending: 0, submitted: 0, approved: 0, rejected: 0 };
             bySubtopic[sid].total++;

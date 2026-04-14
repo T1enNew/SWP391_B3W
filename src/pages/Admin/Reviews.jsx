@@ -57,10 +57,13 @@ const AdminReviews = () => {
   const fetchReviews = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/reviews/all`);
-      
-      const pending = response.data?.pending || [];
-      const reviewed = response.data?.reviewed || [];
+      const [pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/reviews/pending`),
+        axios.get(`${API_URL}/api/reviews/reviewed`),
+      ]);
+
+      const pending = pendingRes.data.reviews || [];
+      const reviewed = reviewedRes.data.reviews || [];
       const allTasks = [...pending, ...reviewed];
       
       setReviews(allTasks);

@@ -343,9 +343,8 @@ const AnnotatorTask = () => {
         };
       }
 
-      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels: labelsPayload,
-        status: 'in_progress',
+      await axios.put(`${API_URL}/api/tasks/${id}/save`, {
+        annotation_data: labelsPayload,
       });
       setMessage('Đã lưu thành công!');
       setTimeout(() => setMessage(''), 3000);
@@ -378,10 +377,10 @@ const AnnotatorTask = () => {
     try {
       await handleSave();
 
-      await axios.post(`${API_URL}/api/tasks/${id}/complete`);
+      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
 
       const updatedBatchTasks = batchTasks.map((t) =>
-        t._id === id ? { ...t, status: 'completed' } : t
+        t._id === id ? { ...t, status: 'submitted' } : t
       );
       setBatchTasks(updatedBatchTasks);
       setTask((prev) => (prev ? { ...prev, status: 'completed' } : null));
@@ -451,9 +450,10 @@ const AnnotatorTask = () => {
 
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/tasks/submit-batch`, {
-        datasetId: task.datasetId._id || task.datasetId,
-      });
+      // Submit each task individually
+      await Promise.all(
+        batchTasks.map((t) => axios.post(`${API_URL}/api/tasks/${t.id}/submit`))
+      );
       alert('Nộp bài thành công! Đang quay về trang dashboard.');
       navigate('/annotator/tasks');
     } catch (error) {
@@ -471,13 +471,13 @@ const AnnotatorTask = () => {
     if (task.status !== 'completed') {
       try {
         await handleSave();
-        await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
-        setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
+        await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+        setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
         setBatchTasks((list) =>
-          list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t))
+          list.map((t) => (t._id === task.id ? { ...t, status: 'submitted' } : t))
         );
       } catch (err) {
-        console.error('Error completing task before submit:', err);
+        console.error('Error submitting task before submit:', err);
       }
     }
 
@@ -492,7 +492,7 @@ const AnnotatorTask = () => {
     setSaving(true);
     try {
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
       setShowSubmitConfirm(false);
       navigate('/annotator/tasks', { replace: true });
     } catch (error) {
@@ -507,12 +507,12 @@ const AnnotatorTask = () => {
     if (
       saveCurrent &&
       task &&
-      task._id !== taskId &&
+      task.id !== taskId &&
       task.status !== 'submitted' &&
       task.status !== 'approved'
     ) {
       try {
-        await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/label`, {
           labels,
           status: 'in_progress',
         });

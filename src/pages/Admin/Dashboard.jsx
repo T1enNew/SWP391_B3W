@@ -59,16 +59,14 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [usersRes, projectsRes, tasksRes, datasetsRes] = await Promise.all([
+        const [usersRes, projectsRes, datasetsRes] = await Promise.all([
           axios.get(`${API_URL}/api/users`),
           axios.get(`${API_URL}/api/projects`),
-          axios.get(`${API_URL}/api/tasks/my-tasks`),
           axios.get(`${API_URL}/api/datasets`),
         ]);
 
         const users = usersRes.data || [];
-        const projects = projectsRes.data || [];
-        const tasks = tasksRes.data || [];
+        const projects = projectsRes.data?.projects || projectsRes.data || [];
         const datasets = datasetsRes.data || [];
 
         const activeUsers = users.filter((u) => u.isActive).length;
@@ -91,10 +89,6 @@ const AdminDashboard = () => {
           managers,
           totalProjects: projects.length,
           activeProjects,
-          totalTasks: tasks.length,
-          completedTasks,
-          pendingTasks,
-          inProgressTasks,
           totalDatasets: datasets.length,
           totalStorage,
           storageLimit: 10 * 1024 * 1024 * 1024,
@@ -118,8 +112,8 @@ const AdminDashboard = () => {
   };
 
   const getTaskCompletionRate = () => {
-    if (!stats || stats.totalTasks === 0) return 0;
-    return Math.round((stats.completedTasks / stats.totalTasks) * 100);
+    if (!stats || stats.totalProjects === 0) return 0;
+    return Math.round((stats.activeProjects / stats.totalProjects) * 100);
   };
 
   const getStorageUsagePercent = () => {
@@ -167,9 +161,9 @@ const AdminDashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Total Tasks"
-            value={stats?.totalTasks || 0}
-            subtitle={`${stats?.completedTasks || 0} completed`}
+            title="Total Projects"
+            value={stats?.totalProjects || 0}
+            subtitle={`${stats?.activeProjects || 0} active`}
             icon={<AssignmentIcon />}
             color="info"
           />
@@ -233,21 +227,21 @@ const AdminDashboard = () => {
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Chip
                     icon={<CheckCircleIcon />}
-                    label={`${stats?.completedTasks || 0} Done`}
+                    label={`${stats?.activeProjects || 0} Active`}
                     size="small"
                     color="success"
                     variant="outlined"
                   />
                   <Chip
                     icon={<ScheduleIcon />}
-                    label={`${stats?.inProgressTasks || 0} In Progress`}
+                    label={`${(stats?.totalProjects || 0) - (stats?.activeProjects || 0)} Draft/Hidden`}
                     size="small"
                     color="warning"
                     variant="outlined"
                   />
                   <Chip
                     icon={<WarningIcon />}
-                    label={`${stats?.pendingTasks || 0} Pending`}
+                    label={`${stats?.totalUsers || 0} Users`}
                     size="small"
                     color="error"
                     variant="outlined"
@@ -345,7 +339,7 @@ const AdminDashboard = () => {
                   <TrendingUpIcon color="success" />
                   <Box>
                     <Typography variant="body2" fontWeight="bold">
-                      {stats?.completedTasks || 0} tasks completed
+                      {stats?.totalProjects || 0} total projects
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       Across all projects

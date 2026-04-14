@@ -151,16 +151,16 @@ const ReviewerProjectList = () => {
     setError('');
     try {
       const [projectsRes, allStatsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/reviews/projects`),
-        axios.get(`${API_URL}/api/reviews/projects/all-stats`),
+        axios.get(`${API_URL}/api/projects`),
+        axios.get(`${API_URL}/api/activity-logs/stats`),
       ]);
-      const projectList = projectsRes.data || [];
+      const projectList = projectsRes.data.projects || projectsRes.data || [];
       const statsMap = {};
-      (allStatsRes.data?.stats || []).forEach((s) => { statsMap[s.projectId] = s; });
+      (allStatsRes.data?.counts || []).forEach((s) => { statsMap[s.project_id || s.resourceId] = s; });
 
       const enriched = projectList.map((p) => ({
         ...p,
-        stats: statsMap[p._id] || { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
+        stats: statsMap[p.id] || { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
       }));
 
       setProjects(enriched);

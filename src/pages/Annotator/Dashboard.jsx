@@ -133,8 +133,8 @@ const AnnotatorDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/annotator-projects`);
-      setProjects(res.data || []);
+      const res = await axios.get(`${API_URL}/api/projects`);
+      setProjects(res.data.projects || res.data || []);
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc project');
     } finally {

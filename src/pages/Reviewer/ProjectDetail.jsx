@@ -150,39 +150,16 @@ const ReviewerProjectDetail = () => {
     setLoading(true);
     setError('');
     try {
-      // Fetch project detail
-      const projRes = await axios.get(`${API_URL}/api/reviews/projects/${projectId}`);
+      const projRes = await axios.get(`${API_URL}/api/projects/${projectId}`);
       setProject(projRes.data);
 
-      // Fetch review stats
       const statsRes = await axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`);
       setStats(statsRes.data || { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 });
 
-      // Fetch subtopic breakdown
-      const subRes = await axios.get(`${API_URL}/api/reviews/projects/${projectId}/subtopics`);
-      setSubtopics(subRes.data || []);
-
-      // Fetch review summary for project finalize
-      try {
-        const summaryRes = await axios.get(`${API_URL}/api/projects/${projectId}/review-summary`, {
-          headers: { Authorization: 'Bearer ' + getAuthToken() }
-        });
-        setReviewSummary(summaryRes.data.stats);
-        setCanFinalize(summaryRes.data.canFinalize);
-      } catch (e) {
-        // reviewer-summary endpoint may not exist, ignore
-      }
+      const subRes = await axios.get(`${API_URL}/api/subtopics`);
+      setSubtopics(subRes.data?.subtopics || []);
     } catch (err) {
-      // If subtopics endpoint doesn't exist, derive from tasks
-      try {
-        const projRes = await axios.get(`${API_URL}/api/reviews/projects/${projectId}`);
-        setProject(projRes.data);
-
-        const statsRes = await axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`);
-        setStats(statsRes.data || {});
-      } catch (e) {
-        setError(err.response?.data?.message || e.response?.data?.message || 'Khong tai duoc thong tin project');
-      }
+      setError(err.response?.data?.message || 'Khong tai duoc thong tin project');
     } finally {
       setLoading(false);
     }
@@ -207,7 +184,6 @@ const ReviewerProjectDetail = () => {
       const res = await axios.post(
         `${API_URL}/api/projects/${projectId}/${endpoint}`,
         { comment: finalizeComment },
-        { headers: { Authorization: 'Bearer ' + getAuthToken() } }
       );
       setToast({ type: 'success', message: res.data.message });
       setFinalizeConfirm(null);

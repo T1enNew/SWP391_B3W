@@ -33,7 +33,7 @@ const AdminUsers = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`);
-      setUsers(response.data);
+      setUsers(response.data?.users || response.data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -44,7 +44,7 @@ const AdminUsers = () => {
   const handleToggleActive = async (userId, currentStatus) => {
     try {
       await axios.put(`${API_URL}/api/users/${userId}`, {
-        isActive: !currentStatus,
+        is_active: !currentStatus,
       });
       fetchUsers();
     } catch (error) {
@@ -55,7 +55,7 @@ const AdminUsers = () => {
   const handleRoleChange = async (userId, newRole) => {
     try {
       await axios.put(`${API_URL}/api/users/${userId}`, {
-        role: newRole,
+        role: newRole.toLowerCase(),
       });
       fetchUsers();
     } catch (error) {

@@ -25,21 +25,24 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
   }, []);
 
+  // Restore session synchronously on mount — sets axios headers BEFORE any component mounts
   useEffect(() => {
     const tabToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
 
     if (tabToken) {
+      // Set axios header immediately so any API call during render is authenticated
       axios.defaults.headers.common.Authorization = `Bearer ${tabToken}`;
-      // Decode user from JWT directly — instant, no API call needed
+
+      // Decode user from JWT — instant, no API call needed
       try {
         const payload = JSON.parse(atob(tabToken.split('.')[1]));
-        if (payload && payload._id) {
+        if (payload && payload.sub) {
           setUser({
-            _id: payload._id,
-            email: payload.email,
-            role: payload.role,
-            username: payload.username,
-            fullName: payload.fullName,
+            id:        payload.sub,
+            email:     payload.email,
+            role:      (payload.role || '').toLowerCase(),
+            username:  payload.username,
+            fullName:  payload.full_name,
           });
           setLoading(false);
           return;
@@ -74,10 +77,14 @@ export const AuthProvider = ({ children }) => {
       password,
     });
 
-    const { token, user: loggedInUser } = response.data;
+    // Backend returns: { access_token, refresh_token, expires_in, user }
+    const { access_token, refresh_token, user: loggedInUser } = response.data;
 
-    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+    sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
+    if (refresh_token) {
+      sessionStorage.setItem('refresh_token', refresh_token);
+    }
+    axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
     setUser(loggedInUser);
     setLoading(false);
 
@@ -86,18 +93,27 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     const response = await axios.post(`${API_URL}/api/auth/register`, userData);
-    const { token, user: registeredUser } = response.data;
+    const { access_token, refresh_token, user: registeredUser } = response.data;
 
-    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+    sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
+    if (refresh_token) {
+      sessionStorage.setItem('refresh_token', refresh_token);
+    }
+    axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
     setUser(registeredUser);
     setLoading(false);
 
     return registeredUser;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await axios.post(`${API_URL}/api/auth/logout`);
+    } catch {
+      // Ignore logout API errors
+    }
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem('refresh_token');
     delete axios.defaults.headers.common.Authorization;
     setUser(null);
   };

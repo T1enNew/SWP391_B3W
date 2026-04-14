@@ -90,15 +90,15 @@ const ManagerDashboard = () => {
           axios.get(`${API_URL}/api/projects`, { headers }),
           axios.get(`${API_URL}/api/datasets`, { headers }),
         ]);
-        const projectList = projectsRes.data || [];
-        const datasetList = datasetsRes.data || [];
+        const projectList = projectsRes.data?.projects || projectsRes.data || [];
+        const datasetList = datasetsRes.data?.datasets || datasetsRes.data || [];
 
         const statusEntries = await Promise.all(
           datasetList.map(async (ds) => {
             try {
-              const s = await axios.get(`${API_URL}/api/datasets/${ds._id}/status`, { headers });
-              return [ds._id, s.data];
-            } catch { return [ds._id, null]; }
+              const s = await axios.get(`${API_URL}/api/datasets/${ds.id}`);
+              return [ds.id, s.data];
+            } catch { return [ds.id, null]; }
           })
         );
         const statusMap = Object.fromEntries(statusEntries);

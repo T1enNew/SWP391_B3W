@@ -56,7 +56,7 @@ const ActivityLogs = () => {
       const response = await axios.get(`${API_URL}/api/activity-logs?${params}`);
       console.log('Activity logs response:', response.data);
       setLogs(response.data.logs || []);
-      setTotalPages(response.data.totalPages || 1);
+      setTotalPages(Math.ceil((response.data.count || 0) / 20) || 1);
       
       if (response.data.logs && response.data.logs.length === 0) {
         console.log('No activity logs found');

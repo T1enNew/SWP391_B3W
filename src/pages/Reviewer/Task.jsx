@@ -551,14 +551,9 @@ const ReviewerWorkspace = () => {
     setFetchError(null);
     try {
       const params = {};
-      if (subtopicFilter) params.subtopicId = subtopicFilter;
+      if (projectId) params.project_id = projectId;
       const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
-      let taskList = res.data || [];
-
-      // Client-side filter: chi lay tasks thuoc project hien tai
-      if (projectId) {
-        taskList = taskList.filter(t => t.projectId?._id === projectId);
-      }
+      let taskList = res.data?.reviews || [];
 
       // Client-side filter: neu co subtopicFilter, chi lay tasks thuoc subtopic do
       if (subtopicFilter) {
@@ -660,7 +655,7 @@ const ReviewerWorkspace = () => {
     if (!submission?.task) return;
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { reviewComments: feedback });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback });
       doUpdateItem(submission, 'approved', '');
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
@@ -675,7 +670,7 @@ const ReviewerWorkspace = () => {
     setShowRejectConfirm(false);
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { reviewComments: feedback, errorCategory: errorCategory || 'other' });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' });
       doUpdateItem(submission, 'rejected', feedback);
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');

@@ -59,15 +59,16 @@ const ManagerProjects = () => {
 
   const fetchProjects = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/projects`);
-      setProjects(response.data || []);
+      const projectsRes = await axios.get(`${API_URL}/api/projects`);
+      const projectList = projectsRes.data?.projects || projectsRes.data || [];
+      setProjects(projectList);
 
-      const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`);
-      const allTasks = tasksRes.data || [];
+      const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { limit: 1000 } });
+      const allTasks = tasksRes.data?.data || [];
 
       const tasksData = {};
-      for (const project of response.data || []) {
-        const projectTasks = allTasks.filter((t) => (t.projectId?._id || t.projectId) === project._id);
+      for (const project of projectList) {
+        const projectTasks = allTasks.filter((t) => t.project?.id === project.id);
 
         const annotatorNames = [
           ...new Set(projectTasks.map((t) => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)),
@@ -81,7 +82,7 @@ const ManagerProjects = () => {
           ),
         ];
 
-        tasksData[project._id] = {
+        tasksData[project.id] = {
           annotators: annotatorNames,
           reviewers: reviewerNames,
         };
@@ -232,18 +233,18 @@ const ManagerProjects = () => {
                         })
                       : '-';
 
-                    const projectData = projectsWithTasks[project._id] || { annotators: [], reviewers: [] };
+                    const projectData = projectsWithTasks[project.id] || { annotators: [], reviewers: [] };
                     const statusStyle = getStatusChipStyles(project.status);
 
                     return (
                       <TableRow
-                        key={project._id}
+                        key={project.id}
                         hover
                         sx={{
                           cursor: 'pointer',
                           '&:hover': { bgcolor: '#1f2937' },
                         }}
-                        onClick={() => navigate(`/manager/projects/${project._id}`)}
+                        onClick={() => navigate(`/manager/projects/${project.id}`)}
                       >
                         <TableCell>
                           <Box>
@@ -387,7 +388,7 @@ const ManagerProjects = () => {
                                   <IconButton
                                     size="small"
                                     sx={{ color: '#9ca3af', '&:hover': { bgcolor: '#1f2937', color: '#e5e7eb' } }}
-                                    onClick={() => navigate(`/manager/projects/${project._id}`)}
+                                    onClick={() => navigate(`/manager/projects/${project.id}`)}
                                   >
                                     <EditIcon fontSize="small" />
                                   </IconButton>
@@ -396,7 +397,7 @@ const ManagerProjects = () => {
                                   <IconButton
                                     size="small"
                                     sx={{ color: '#fb7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.12)' } }}
-                                    onClick={() => handleDelete(project._id)}
+                                    onClick={() => handleDelete(project.id)}
                                   >
                                     <DeleteIcon fontSize="small" />
                                   </IconButton>

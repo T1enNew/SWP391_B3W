@@ -52,10 +52,13 @@ const ReviewerDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(API_URL + '/api/reviews/all', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      const [pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/reviews/pending`),
+        axios.get(`${API_URL}/api/reviews/reviewed`),
+      ]);
       setAllTasks({
-        pending: res.data.pending || [],
-        reviewed: res.data.reviewed || [],
+        pending: pendingRes.data.reviews || [],
+        reviewed: reviewedRes.data.reviews || [],
       });
     } catch (err) { setError(err.response?.data?.message || 'Failed'); } finally { setLoading(false); }
   };

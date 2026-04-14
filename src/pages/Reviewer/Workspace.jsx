@@ -564,15 +564,14 @@ const ReviewerWorkspace = () => {
     setFetchError(null);
     try {
       const params = {};
-      if (subtopicFilter) params.subtopicId = subtopicFilter;
-      if (projectId) params.projectId = projectId;
+      if (projectId) params.project_id = projectId;
       const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
-      const taskList = res.data || [];
+      const taskList = res.data?.reviews || [];
 
       const itemMap = new Map();
       taskList.forEach((task) => {
-        const itemKey = task.dataItem?.filename || task.dataItem?.path || task._id;
-        const color = stringToColor(task.annotatorId?._id || task.annotatorId || task._id);
+        const itemKey = task.data_item?.filename || task.data_item?.storage_path || task.id;
+        const color = stringToColor(task.annotator?.id || task.annotator_id || task.id);
 
         if (!itemMap.has(itemKey)) {
           itemMap.set(itemKey, {
@@ -582,9 +581,9 @@ const ReviewerWorkspace = () => {
             kind: getTaskKind(task),
             status: 'pending_review',
             projectName: task.projectId?.name || '',
-            projectId: task.projectId?._id,
+            projectId: task.projectId?.id,
             subtopicName: task.subtopicId?.name || task.subtopicName || '',
-            subtopicId: task.subtopicId?._id,
+            subtopicId: task.subtopicId?.id,
             guideline: task.projectId?.guidelines || '',
             availableLabels: task.availableLabels || task.projectId?.availableLabels || task.labelsetId?.labels || [],
             submissions: [],
@@ -593,8 +592,8 @@ const ReviewerWorkspace = () => {
 
         const item = itemMap.get(itemKey);
         item.submissions.push({
-          submissionId: task._id,
-          annotatorId: task.annotatorId?._id || task.annotatorId,
+          submissionId: task.id,
+          annotatorId: task.annotatorId?.id || task.annotatorId,
           annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
           status: getAnnotatorStatus(task),
           labels: task.labels || {},
@@ -632,34 +631,30 @@ const ReviewerWorkspace = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await axios.get(`${API_URL}/api/reviews/task/${taskId}`, {
-        headers: { Authorization: 'Bearer ' + (sessionStorage.getItem('token') || localStorage.getItem('token')) }
-      });
+      const res = await axios.get(`${API_URL}/api/reviews/task/${taskId}`);
       const task = res.data;
       if (!task) { setFetchError('Task not found'); setLoading(false); return; }
 
-      const itemKey = task.dataItem?.filename || task.dataItem?.path || task._id;
-      const color = stringToColor(task.annotatorId?._id || task.annotatorId || task._id);
+      const itemKey = task.data_item?.filename || task.data_item?.storage_path || task.id;
+      const color = stringToColor(task.annotator?.id || task.annotator_id || task.id);
 
       const item = {
         itemId: itemKey,
-        filename: task.dataItem?.filename || 'Unknown',
-        imageUrl: buildFileUrl(task.dataItem),
+        filename: task.data_item?.filename || 'Unknown',
+        imageUrl: buildFileUrl(task.data_item),
         kind: getTaskKind(task),
         status: task.status === 'approved' ? 'fully_reviewed' : (task.status === 'rejected' ? 'waiting_rework' : 'pending_review'),
-        projectName: task.projectId?.name || '',
-        projectId: task.projectId?._id,
-        subtopicName: task.subtopicId?.name || '',
-        subtopicId: task.subtopicId?._id,
-        guideline: task.projectId?.guidelines || '',
-        availableLabels: task.availableLabels || task.projectId?.availableLabels || [],
+        projectName: task.project?.name || '',
+        projectId: task.project?.id,
+        guideline: task.project?.guidelines || '',
+        availableLabels: [],
         submissions: [{
-          submissionId: task._id,
-          annotatorId: task.annotatorId?._id || task.annotatorId,
-          annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
+          submissionId: task.id,
+          annotatorId: task.annotator?.id || task.annotator_id,
+          annotatorName: task.annotator?.full_name || task.annotator?.username || 'Annotator',
           status: getAnnotatorStatus(task),
-          labels: task.labels || {},
-          feedback: task.reviewComments || '',
+          labels: task.annotation_data || {},
+          feedback: task.review_comments || '',
           color,
           task,
         }],
@@ -669,8 +664,8 @@ const ReviewerWorkspace = () => {
       setItems([item]);
       setCurrentItemId(item.itemId);
       setCurrentItem(item);
-      setActiveAnnotatorId(task.annotatorId?._id || task.annotatorId);
-      setVisibleAnnotators([task.annotatorId?._id || task.annotatorId]);
+      setActiveAnnotatorId(task.annotator?.id || task.annotator_id);
+      setVisibleAnnotators([task.annotator?.id || task.annotator_id]);
     } catch (err) {
       setFetchError(err.response?.data?.message || 'Không tải được task');
     } finally {
@@ -720,7 +715,7 @@ const ReviewerWorkspace = () => {
     if (!submission?.task) return;
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { reviewComments: feedback });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback });
       doUpdateItem(submission, 'approved', '');
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
@@ -735,7 +730,7 @@ const ReviewerWorkspace = () => {
     setShowRejectConfirm(false);
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { reviewComments: feedback, errorCategory: errorCategory || 'other' });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' });
       doUpdateItem(submission, 'rejected', feedback);
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');

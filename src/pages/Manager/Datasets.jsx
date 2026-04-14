@@ -153,14 +153,14 @@ const Datasets = () => {
 
   const fetchDatasets = async () => {
     try {
-      const res = await axios.get(API_URL + '/api/datasets', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      const all = res.data || [];
+      const res = await axios.get(`${API_URL}/api/datasets`);
+      const all = res.data?.datasets || res.data || [];
       setDatasets(all);
       const entries = await Promise.all(all.map(async (ds) => {
         try {
-          const s = await axios.get(API_URL + '/api/datasets/' + ds._id + '/status', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-          return [ds._id, s.data];
-        } catch { return [ds._id, null]; }
+          const s = await axios.get(`${API_URL}/api/datasets/${ds.id}`);
+          return [ds.id, s.data];
+        } catch { return [ds.id, null]; }
       }));
       setStatusByDs(Object.fromEntries(entries));
     } catch (err) {
@@ -224,11 +224,11 @@ const Datasets = () => {
       const results = {};
       await Promise.all(ids.map(async (id) => {
         const [assetRes, labelRes] = await Promise.all([
-          axios.get(API_URL + '/api/subtopics/' + id + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-          axios.get(API_URL + '/api/labelsets?subtopicId=' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+          axios.get(`${API_URL}/api/subtopics/${id}/assets`),
+          axios.get(`${API_URL}/api/labelsets?subtopicId=${id}`),
         ]);
-        const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
-        const labels = Array.isArray(labelRes.data) ? labelRes.data : [];
+        const assets = assetRes.data?.assets || assetRes.data || [];
+        const labels = labelRes.data?.label_sets || labelRes.data || [];
         const imgs = assets.filter(a => a.type === 'image').length;
         const txts = assets.filter(a => a.type === 'text').length;
         const auds = assets.filter(a => a.type === 'audio').length;
@@ -261,15 +261,15 @@ const Datasets = () => {
       r = r.filter(ds => ds.name?.toLowerCase().includes(t) || ds.description?.toLowerCase().includes(t));
     }
     if (filterType !== 'all') r = r.filter(ds => ds.type === filterType);
-    if (filterStatus !== 'all') r = r.filter(ds => getDsStatus(statusByDs[ds._id]).status === filterStatus);
+    if (filterStatus !== 'all') r = r.filter(ds => getDsStatus(statusByDs[ds.id]).status === filterStatus);
     r.sort((a, b) => {
       let av, bv;
       if (sortBy === 'name') { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); return sortOrder === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av); }
-      if (sortBy === 'items') { av = statusByDs[a._id]?.totalRawItems || 0; bv = statusByDs[b._id]?.totalRawItems || 0; } else
-      if (sortBy === 'approved') { av = statusByDs[a._id]?.counts?.approved || 0; bv = statusByDs[b._id]?.counts?.approved || 0; } else
+      if (sortBy === 'items') { av = statusByDs[a.id]?.totalRawItems || 0; bv = statusByDs[b.id]?.totalRawItems || 0; } else
+      if (sortBy === 'approved') { av = statusByDs[a.id]?.counts?.approved || 0; bv = statusByDs[b.id]?.counts?.approved || 0; } else
       if (sortBy === 'progress') {
         const sg = (id) => { const s = statusByDs[id]; const raw = s?.totalRawItems || 0; const ap = s?.counts?.approved || 0; return raw > 0 ? (ap / raw) * 100 : 0; };
-        av = sg(a._id); bv = sg(b._id);
+        av = sg(a.id); bv = sg(b.id);
       } else { av = new Date(a.createdAt || 0); bv = new Date(b.createdAt || 0); }
       if (typeof av === 'number') return sortOrder === 'asc' ? av - bv : bv - av;
       return sortOrder === 'asc' ? av - bv : bv - av;
@@ -312,7 +312,7 @@ const Datasets = () => {
         subtopicIds: selectedSubtopicIds,
         description: form.description.trim(),
       };
-      const cr = await axios.post(API_URL + '/api/datasets', payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      const cr = await axios.post(`${API_URL}/api/datasets`, payload);
       const created = cr.data;
       setForm({ name: '', description: '', type: 'image', subtopicId: '' });
       setSelectedTopicId('');
@@ -321,10 +321,10 @@ const Datasets = () => {
       setSubtopicData({});
       setCreateOpen(false);
       await fetchDatasets();
-      if (created?._id) {
+      if (created?.id) {
         navigate('/manager/projects', {
           state: {
-            highlightDsId: created._id,
+            highlightDsId: created.id,
             highlightDsName: created.name,
             selectedTopicId: selectedTopicId,
             selectedSubtopicId: selectedSubtopicIds[0] || '',
@@ -342,7 +342,7 @@ const Datasets = () => {
   const handleDelete = async () => {
     if (!selectedDs) return;
     try {
-      await axios.delete(API_URL + '/api/datasets/' + selectedDs._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.delete(`${API_URL}/api/datasets/${selectedDs.id}`);
       setDeleteOpen(false);
       setSelectedDs(null);
       fetchDatasets();
@@ -363,9 +363,8 @@ const Datasets = () => {
 
     if (ds.subtopicId) {
       try {
-        const subRes = await axios.get(API_URL + '/api/subtopics/' + ds.subtopicId, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-        const topicId = subRes?.data?.subtopic?.topicId?._id || subRes?.data?.subtopic?.topicId || '';
-        const topicName = subRes?.data?.subtopic?.topicId?.name || '';
+        const subRes = await axios.get(`${API_URL}/api/subtopics/${ds.subtopicId}`);
+        const topicId = subRes?.data?.topic_id || '';
         if (topicId) {
           setSelectedTopicId(topicId);
           setEditTopicName(topicName);
@@ -393,7 +392,7 @@ const Datasets = () => {
         subtopicIds: selectedSubtopicIds,
       };
 
-      await axios.put(API_URL + '/api/datasets/' + editingDs._id, payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      await axios.put(`${API_URL}/api/datasets/${editingDs.id}`, payload);
       setEditOpen(false);
       setEditingDs(null);
       await fetchDatasets();
@@ -413,13 +412,11 @@ const Datasets = () => {
     setDetailTab(0);
     setDetailSubtopicFilter('__all__');
     try {
-      const [sRes, iRes] = await Promise.all([
-        axios.get(API_URL + '/api/datasets/' + ds._id + '/status', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-        axios.get(API_URL + '/api/datasets/' + ds._id + '/items', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+      const [dsRes] = await Promise.all([
+        axios.get(`${API_URL}/api/datasets/${ds.id}`),
       ]);
-      setDetailDs(prev => ({ ...prev, ...sRes.data, statusData: sRes.data }));
-      setDetailItems(iRes.data?.items || []);
-      setDetailSubtopicSummary(iRes.data?.subtopicSummary || []);
+      setDetailDs(prev => ({ ...prev, ...dsRes.data, statusData: dsRes.data }));
+      setDetailItems(dsRes.data?.data_items || []);
     } catch {} finally { setDetailLoading(false); setDetailItemsLoading(false); }
   };
 
@@ -430,7 +427,7 @@ const Datasets = () => {
     setExportLoading(true);
     setExportPreview(null);
     try {
-      const s = statusByDs[ds._id];
+      const s = statusByDs[ds.id];
       const previewItems = (s?.finalItems || []).slice(0, 5).map(item => {
         const labels = item.labels?.objects || item.labels?.spans || item.labels?.label || [];
         const arr = Array.isArray(labels) ? labels : [labels];
@@ -448,7 +445,7 @@ const Datasets = () => {
   const handleExport = async () => {
     if (!exportDs) return;
     try {
-      const resp = await axios.get(API_URL + '/api/datasets/' + exportDs._id + '/final-export', { responseType: 'blob', headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      const resp = await axios.get(`${API_URL}/api/projects/${exportDs.id}/export`, { responseType: 'blob' });
       const blob = new Blob([resp.data], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -538,14 +535,14 @@ const Datasets = () => {
           {viewMode === 'card' ? (
             <Grid container spacing={2.5}>
               {filtered.map(ds => {
-                const stat = statusByDs[ds._id];
+                const stat = statusByDs[ds.id];
                 const raw = stat?.totalRawItems || ds.totalItems || ds.files?.length || 0;
                 const approved = stat?.counts?.approved || 0;
                 const pct = raw > 0 ? Math.min(Math.round((approved / raw) * 100), 100) : 0;
                 const si = getDsStatus(stat);
                 return (
-                  <Grid item xs={12} sm={6} lg={4} key={ds._id}>
-                    <Card sx={{ ...cardSx, border: highlightedDsId === ds._id ? '2px solid #22c55e' : cardSx.border, boxShadow: highlightedDsId === ds._id ? '0 0 20px rgba(34,197,94,0.4)' : cardSx.boxShadow }} id={'dataset-card-' + ds._id}>
+                  <Grid item xs={12} sm={6} lg={4} key={ds.id}>
+                    <Card sx={{ ...cardSx, border: highlightedDsId === ds.id ? '2px solid #22c55e' : cardSx.border, boxShadow: highlightedDsId === ds.id ? '0 0 20px rgba(34,197,94,0.4)' : cardSx.boxShadow }} id={'dataset-card-' + ds.id}>
                       <CardContent>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
@@ -608,14 +605,14 @@ const Datasets = () => {
                 </TableHead>
                 <TableBody>
                   {filtered.map(ds => {
-                    const stat = statusByDs[ds._id];
+                    const stat = statusByDs[ds.id];
                     const raw = stat?.totalRawItems || ds.totalItems || ds.files?.length || 0;
                     const approved = stat?.counts?.approved || 0;
                     const rejected = stat?.counts?.rejected || 0;
                     const pct = raw > 0 ? Math.min(Math.round((approved / raw) * 100), 100) : 0;
                     const si = getDsStatus(stat);
                     return (
-                      <TableRow key={ds._id} hover sx={{ '&:hover': { bgcolor: '#1e293b' } }}>
+                      <TableRow key={ds.id} hover sx={{ '&:hover': { bgcolor: '#1e293b' } }}>
                         <TableCell sx={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.8rem' }}>{ds.name}</TableCell>
                         <TableCell><TypeBadge type={ds.type} /></TableCell>
                         <TableCell sx={{ color: '#94a3b8', fontSize: '0.75rem' }}>{raw}</TableCell>
@@ -843,7 +840,7 @@ const Datasets = () => {
                         const anns = (item.annotations || []).filter(a => a.status === 'approved');
                         return (
                           <Grid item xs={4} sm={3} md={2} key={item.id || idx}>
-                            <Box onClick={() => navigate(`/manager/datasets/${detailDs?._id}/items/${item.id || idx}`, { state: { item, datasetName: detailDs?.name } })} sx={{ position: 'relative', width: '100%', paddingTop: '100%', overflow: 'hidden', borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a', cursor: 'pointer', transition: 'all 0.2s', '&:hover': { borderColor: '#3b82f6', transform: 'scale(1.05)' } }}>
+                            <Box onClick={() => navigate(`/manager/datasets/${detailDs?.id}/items/${item.id || idx}`, { state: { item, datasetName: detailDs?.name } })} sx={{ position: 'relative', width: '100%', paddingTop: '100%', overflow: 'hidden', borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a', cursor: 'pointer', transition: 'all 0.2s', '&:hover': { borderColor: '#3b82f6', transform: 'scale(1.05)' } }}>
                               {src ? <Box component="img" src={src} alt={fn} sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                                : isText ? <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b' }}><Typography sx={{ color: '#60a5fa', fontSize: 20, fontWeight: 700 }}>T</Typography><Typography sx={{ color: '#94a3b8', fontSize: 8 }}>Text</Typography></Box>
                                : isAudio ? <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b' }}><Typography sx={{ color: '#f472b6', fontSize: 20, fontWeight: 700 }}>♪</Typography><Typography sx={{ color: '#94a3b8', fontSize: 8 }}>Audio</Typography></Box>
@@ -946,7 +943,7 @@ const Datasets = () => {
               <InputLabel>Topic *</InputLabel>
               <Select value={selectedTopicId} label="Topic *" onChange={e => setSelectedTopicId(e.target.value)}>
                 <MenuItem value=""><em>Khong chon</em></MenuItem>
-                {topics.map(t => <MenuItem key={t._id} value={t._id}>{t.name}</MenuItem>)}
+                {topics.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
               </Select>
             </FormControl>
             {selectedTopicId && (
@@ -964,13 +961,13 @@ const Datasets = () => {
                   }}
                   renderValue={(selected) => {
                     const selectedSet = new Set(selected);
-                    const names = subtopics.filter(s => selectedSet.has(s._id)).map(s => s.name);
+                    const names = subtopics.filter(s => selectedSet.has(s.id)).map(s => s.name);
                     return names.length > 0 ? names.join(', ') : 'Khong chon';
                   }}
                 >
                   {subtopics.map(s => (
-                    <MenuItem key={s._id} value={s._id}>
-                      <Checkbox checked={selectedSubtopicIds.indexOf(s._id) > -1} />
+                    <MenuItem key={s.id} value={s.id}>
+                      <Checkbox checked={selectedSubtopicIds.indexOf(s.id) > -1} />
                       <ListItemText primary={s.name} />
                     </MenuItem>
                   ))}
@@ -989,10 +986,10 @@ const Datasets = () => {
             <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a' }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#94a3b8', mb: 1.5 }}>Subtopics ({selectedSubtopicIds.length})</Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {subtopics.filter(s => selectedSubtopicIds.includes(s._id)).map((sub) => {
-                  const subInfo = subtopicData[sub._id] || {};
+                {subtopics.filter(s => selectedSubtopicIds.includes(s.id)).map((sub) => {
+                  const subInfo = subtopicData[sub.id] || {};
                   return (
-                    <Box key={sub._id} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#1e293b' }}>
+                    <Box key={sub.id} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#1e293b' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#3b82f6' }} />
                         <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{sub.name}</Typography>
@@ -1007,7 +1004,7 @@ const Datasets = () => {
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                           {subInfo.labels.map(ls => (
                             <Chip
-                              key={ls._id}
+                              key={ls.id}
                               label={ls.name}
                               size="small"
                               sx={{ bgcolor: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontWeight: 600, fontSize: '0.65rem', height: 18 }}
@@ -1075,13 +1072,13 @@ const Datasets = () => {
                 }}
                 renderValue={(selected) => {
                   const selectedSet = new Set(selected);
-                  const names = subtopics.filter(s => selectedSet.has(s._id)).map(s => s.name);
+                  const names = subtopics.filter(s => selectedSet.has(s.id)).map(s => s.name);
                   return names.length > 0 ? names.join(', ') : 'Khong chon subtopic';
                 }}
               >
                 {subtopics.map(s => (
-                  <MenuItem key={s._id} value={s._id}>
-                    <Checkbox checked={selectedSubtopicIds.indexOf(s._id) > -1} />
+                  <MenuItem key={s.id} value={s.id}>
+                    <Checkbox checked={selectedSubtopicIds.indexOf(s.id) > -1} />
                     <ListItemText primary={s.name} />
                   </MenuItem>
                 ))}

@@ -142,13 +142,13 @@ const CreateProject = () => {
         const subtopicInfoList = [];
         for (const stId of subtopicIds) {
           try {
-            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`, { headers: getAuthHeaders() });
+            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`);
             console.log('Subtopic response:', stId, stRes.data);
-            const stData = stRes.data?.subtopic || stRes.data || {};
-            const topicInfo = stData.topicId?._id ? { _id: stData.topicId._id, name: stData.topicId.name } : null;
-            const lsRes = await axios.get(`${API_URL}/api/labelsets?subtopicId=${stId}`, { headers: getAuthHeaders() });
+            const stData = stRes.data || {};
+            const topicInfo = stData.topic_id ? { id: stData.topic_id, name: stData.name } : null;
+            const lsRes = await axios.get(`${API_URL}/api/labelsets?subtopicId=${stId}`);
             console.log('Labelsets response for', stId, ':', lsRes.data);
-            const labels = Array.isArray(lsRes.data) ? lsRes.data : [];
+            const labels = Array.isArray(lsRes.data?.label_sets) ? lsRes.data.label_sets : Array.isArray(lsRes.data) ? lsRes.data : [];
             subtopicInfoList.push({
               _id: stId,
               name: stData.name || stId,
@@ -176,13 +176,11 @@ const CreateProject = () => {
 
   const fetchDatasets = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/datasets`, {
-        headers: getAuthHeaders()
-      });
-      const allDatasets = response.data || [];
+      const response = await axios.get(`${API_URL}/api/datasets`);
+      const allDatasets = response.data?.datasets || response.data || [];
       console.log('All datasets from API:', JSON.stringify(allDatasets, null, 2));
       // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
-      const unassignedDatasets = allDatasets.filter(ds => !ds.projectId || ds.projectId === null);
+      const unassignedDatasets = allDatasets.filter(ds => !ds.project_id || ds.project_id === null);
       console.log('Unassigned datasets:', unassignedDatasets);
       setDatasets(unassignedDatasets);
     } catch (error) {
@@ -194,9 +192,9 @@ const CreateProject = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`);
-      const allUsers = Array.isArray(response.data) ? response.data : [];
-      setAnnotators(allUsers.filter(u => u.role === 'annotator' && u.isActive));
-      setReviewers(allUsers.filter(u => u.role === 'reviewer' && u.isActive));
+      const allUsers = response.data?.users || response.data || [];
+      setAnnotators(allUsers.filter(u => u.role === 'annotator' && u.is_active));
+      setReviewers(allUsers.filter(u => u.role === 'reviewer' && u.is_active));
     } catch (error) {
       console.error('Error fetching users:', error);
       setError('Không thể tải danh sách users. Vui lòng kiểm tra kết nối.');
@@ -254,13 +252,13 @@ const CreateProject = () => {
         name: formData.name.trim(),
         description: formData.description?.trim() || '',
         guidelines: formData.guidelines.trim(),
-        questions: formData.questions || [],
-        status: 'draft',
-        reviewPolicy: formData.reviewPolicy,
         deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: getAuthHeaders()
+        export_format: formData.exportFormat || 'JSON',
+        review_policy: {
+          mode: formData.reviewPolicy?.mode || 'full',
+          sample_rate: formData.reviewPolicy?.sampleRate || 1,
+          reviewers_per_item: formData.reviewPolicy?.reviewersPerItem || 1,
+        },
       });
       showNotification('Đã lưu draft thành công!');
       navigate('/manager/projects');
@@ -311,34 +309,31 @@ const CreateProject = () => {
         name: formData.name.trim(),
         description: formData.description?.trim() || '',
         guidelines: formData.guidelines.trim(),
-        questions: formData.questions || [],
-        status: 'active',
-        reviewPolicy: formData.reviewPolicy,
         deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: getAuthHeaders()
+        export_format: formData.exportFormat || 'JSON',
+        review_policy: {
+          mode: formData.reviewPolicy?.mode || 'full',
+          sample_rate: formData.reviewPolicy?.sampleRate || 1,
+          reviewers_per_item: formData.reviewPolicy?.reviewersPerItem || 1,
+        },
       });
-      const projectId = projectRes.data._id;
+      const projectId = projectRes.data.id;
 
       // Step 2: Link selected datasets to project
       for (const datasetId of selectedDatasets) {
         await axios.put(`${API_URL}/api/datasets/${datasetId}`, {
-          projectId: projectId
-        }, {
-          headers: getAuthHeaders()
+          project_id: projectId
         });
       }
 
       // Step 3: Assign tasks for each selected dataset
       for (const datasetId of selectedDatasets) {
         await axios.post(`${API_URL}/api/tasks/assign`, {
-          projectId,
-          datasetId: datasetId,
-          annotatorIds: selectedAnnotators,
-          reviewerIds: selectedReviewers,
-        }, {
-          headers: getAuthHeaders()
+          project_id: projectId,
+          dataset_id: datasetId,
+          annotator_id: selectedAnnotators[0] || null,
+          reviewer_ids: selectedReviewers,
+          data_item_ids: [],  // will be filled by backend from dataset
         });
       }
 

@@ -32,11 +32,11 @@ const ReviewerOverview = () => {
       setLoading(true);
       try {
         const [pendingRes, reviewedRes] = await Promise.all([
-          axios.get(API_URL + '/api/reviews/pending', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-          axios.get(API_URL + '/api/reviews/reviewed', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+          axios.get(`${API_URL}/api/reviews/pending`),
+          axios.get(`${API_URL}/api/reviews/reviewed`),
         ]);
-        setPendingTasks(pendingRes.data || []);
-        setReviewedTasks(reviewedRes.data || []);
+        setPendingTasks(pendingRes.data?.reviews || []);
+        setReviewedTasks(reviewedRes.data?.reviews || []);
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {
