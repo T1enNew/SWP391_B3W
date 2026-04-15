@@ -51,13 +51,13 @@ const ActivityLogs = () => {
       });
       
       if (filters.action) params.append('action', filters.action);
-      if (filters.userId) params.append('userId', filters.userId);
-      if (filters.resourceType) params.append('resourceType', filters.resourceType);
+      if (filters.userId) params.append('user_id', filters.userId);
+      if (filters.resourceType) params.append('resource_type', filters.resourceType);
 
       const response = await axios.get(`${API_URL}/api/activity-logs?${params}`);
       console.log('Activity logs response:', response.data);
-      setLogs(response.data.logs || []);
-      setTotalPages(Math.ceil((response.data.count || 0) / 20) || 1);
+      setLogs(response.data.data || response.data || []);
+      setTotalPages(Math.ceil((response.data.total || 0) / 50) || 1);
       
       if (response.data.logs && response.data.logs.length === 0) {
         console.log('No activity logs found');

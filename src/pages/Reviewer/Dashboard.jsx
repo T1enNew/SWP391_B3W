@@ -54,8 +54,8 @@ const ReviewerDashboard = () => {
     setLoading(true);
     try {
       const [pendingRes, reviewedRes] = await Promise.all([
-        axios.get(`${API_URL}/api/reviews/pending`),
-        axios.get(`${API_URL}/api/reviews/reviewed`),
+        axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 } }),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } }),
       ]);
       setAllTasks({
         pending: getArray(pendingRes.data),

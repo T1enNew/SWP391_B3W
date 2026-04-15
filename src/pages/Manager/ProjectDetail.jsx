@@ -637,10 +637,11 @@ const ManagerProjectDetail = () => {
       await axios.post(
         `${API_URL}/api/tasks/assign`,
         {
-          projectId: id,
-          datasetId: selectedDataset,
-          annotatorIds: selectedAnnotators,
-          reviewerIds: selectedReviewers,
+          project_id: id,
+          dataset_id: selectedDataset,
+          annotator_id: selectedAnnotators[0] || null,
+          reviewer_ids: selectedReviewers,
+          data_item_ids: [],
         },
         {
           headers: {

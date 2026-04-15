@@ -54,8 +54,8 @@ const ReviewerHistory = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(`${API_URL}/api/reviews/reviewed`);
-        setReviewedTasks(res.data?.reviews || []);
+        const res = await axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } });
+        setReviewedTasks(getArray(res.data));
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {

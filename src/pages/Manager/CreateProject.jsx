@@ -145,10 +145,10 @@ const CreateProject = () => {
             const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`);
             console.log('Subtopic response:', stId, stRes.data);
             const stData = stRes.data || {};
-            const topicInfo = stData.topic_id ? { id: stData.topic_id, name: stData.name } : null;
-            const lsRes = await axios.get(`${API_URL}/api/labelsets?subtopicId=${stId}`);
+            const topicInfo = stData.topic ? { id: stData.topic.id, name: stData.topic.name } : null;
+            const lsRes = await axios.get(`${API_URL}/api/subtopics/${stId}/labelsets`);
             console.log('Labelsets response for', stId, ':', lsRes.data);
-            const labels = Array.isArray(lsRes.data?.label_sets) ? lsRes.data.label_sets : Array.isArray(lsRes.data) ? lsRes.data : [];
+            const labels = Array.isArray(lsRes.data) ? lsRes.data : [];
             subtopicInfoList.push({
               _id: stId,
               name: stData.name || stId,

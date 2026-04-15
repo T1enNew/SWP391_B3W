@@ -13,10 +13,11 @@ const btnSecondary = { borderRadius: 2, textTransform: 'none', fontWeight: 700, 
 const modalSx = { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' };
 const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
 
-const getImgUrl = (path) => {
-  if (!path) return '';
+const getImgUrl = (storageUrl) => {
+  if (!storageUrl) return '';
+  if (storageUrl.startsWith('http')) return storageUrl;
   const base = API_URL.replace(/\/+$/, '');
-  return base + '/' + path.replace(/^\/+/, '');
+  return base + '/' + storageUrl.replace(/^\/+/, '');
 };
 
 const getFileIcon = (filename) => {
@@ -30,8 +31,8 @@ const getFileIcon = (filename) => {
 };
 
 const AssetThumb = ({ asset, onDelete, onPreview }) => {
-  const url = getImgUrl(asset.path);
-  const filename = asset.originalName || asset.path || '';
+  const url = getImgUrl(asset.storage_url);
+  const filename = asset.original_name || asset.filename || '';
   const ext = filename.split('.').pop()?.toLowerCase();
   const isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
 
@@ -108,8 +109,8 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const loadLabelSets = async () => {
     setLabelSetsLoading(true);
     try {
-      const r = await axios.get(`${API_URL}/api/labelsets?subtopicId=${selectedSubtopic.id}`);
-      setLabelSets(Array.isArray(r.data?.label_sets) ? r.data.label_sets : Array.isArray(r.data) ? r.data : []);
+      const r = await axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/labelsets`);
+      setLabelSets(Array.isArray(r.data) ? r.data : []);
     } catch { setLabelSets([]); }
     setLabelSetsLoading(false);
     setDataLoaded(true);
@@ -119,7 +120,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
     setAssetsLoading(true);
     try {
       const r = await axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`);
-      setAssets(Array.isArray(r.data?.assets) ? r.data.assets : []);
+      setAssets(Array.isArray(r.data) ? r.data : []);
     } catch { setAssets([]); }
     setAssetsLoading(false);
     setDataLoaded(true);
@@ -130,7 +131,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
       if (labelDialog.edit)
         await axios.put(`${API_URL}/api/labelsets/${labelDialog.data.id}`, labelDialog.data);
       else
-        await axios.post(`${API_URL}/api/labelsets`, { ...labelDialog.data, subtopic_id: selectedSubtopic.id });
+        await axios.post(`${API_URL}/api/subtopics/${selectedSubtopic.id}/labelsets`, labelDialog.data);
       setLabelDialog({ open: false, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } });
       loadLabelSets();
       setSnackbar({ open: true, message: 'Luu labelset thanh cong!', severity: 'success' });
@@ -284,7 +285,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
               ) : (
                 <Grid container spacing={1}>
                   {filteredAssets.map(a => (
-                    <Grid item xs={4} sm={3} key={a._id}>
+                    <Grid item xs={4} sm={3} key={a.id}>
                       <AssetThumb asset={a} onDelete={handleDeleteAsset} onPreview={setPreviewAsset} />
                     </Grid>
                   ))}
@@ -307,16 +308,16 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
                   <Typography variant="body2" sx={{ color: '#64748b' }}>Chua co labelset nao</Typography>
                 </Box>
               ) : labelSets.map(ls => (
-                <Box key={ls._id} sx={{ mb: 2 }}>
+                <Box key={ls.id} sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="caption" fontWeight={700} sx={{ color: '#60a5fa', textTransform: 'uppercase' }}>{ls.name} ({ls.labels?.length || 0})</Typography>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                       <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setLabelDialog({ open: true, edit: true, data: ls })}><EditIcon sx={{ fontSize: 14 }} /></IconButton>
-                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => handleDeleteLabelSet(ls._id)}><DeleteIcon sx={{ fontSize: 14 }} /></IconButton>
+                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => handleDeleteLabelSet(ls.id)}><DeleteIcon sx={{ fontSize: 14 }} /></IconButton>
                     </Box>
                   </Box>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap' }}>
-                    {(ls.labels || []).map(l => <LabelChip key={l.name} label={l} />)}
+                    {(ls.labels || []).map(l => <LabelChip key={l.id || l.name} label={l} />)}
                   </Box>
                 </Box>
               ))}
@@ -357,8 +358,8 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {previewAsset && (
             <img
-              src={getImgUrl(previewAsset.path)}
-              alt={previewAsset.originalName || 'preview'}
+              src={getImgUrl(previewAsset.storage_url)}
+              alt={previewAsset.original_name || 'preview'}
               style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8, border: '2px solid #334155', objectFit: 'contain', cursor: 'pointer' }}
               onClick={() => setPreviewAsset(null)}
             />
@@ -386,15 +387,15 @@ const TopicManagement = () => {
     setLoading(true);
     try {
       const r = await axios.get(`${API_URL}/api/topics`);
-      setTopics(Array.isArray(r.data?.topics) ? r.data.topics : Array.isArray(r.data) ? r.data : []);
+      setTopics(Array.isArray(r.data) ? r.data : []);
     } catch { setTopics([]); }
     setLoading(false);
   };
 
   const loadSubtopicsForTopic = async (topic) => {
     try {
-      const r = await axios.get(`${API_URL}/api/subtopics?topicId=${topic.id}`);
-      return Array.isArray(r.data?.subtopics) ? r.data.subtopics : Array.isArray(r.data) ? r.data : [];
+      const r = await axios.get(`${API_URL}/api/subtopics?topic_id=${topic.id}`);
+      return Array.isArray(r.data) ? r.data : [];
     } catch { return []; }
   };
 
@@ -449,7 +450,7 @@ const TopicManagement = () => {
     if (!confirm('Xoa subtopic nay?')) return;
     try {
       await axios.delete(`${API_URL}/api/subtopics/${id}`);
-      if (selectedSubtopic?._id === id) setSelectedSubtopic(null);
+      if (selectedSubtopic?.id === id) setSelectedSubtopic(null);
       if (expandedTopic) {
         const subs = await loadSubtopicsForTopic(expandedTopic);
         setExpandedTopic({ ...expandedTopic, subtopics: subs });
@@ -506,8 +507,8 @@ const TopicManagement = () => {
               {filteredTopics.length === 0 ? (
                 <Alert severity="info" sx={{ borderRadius: 2 }}>Chua co topic nao</Alert>
               ) : filteredTopics.map(t => (
-                <Box key={t._id} sx={{ mb: 1 }}>
-                  <Box onClick={() => handleTopicClick(t)} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 2, cursor: 'pointer', bgcolor: selectedTopic?._id === t._id ? 'rgba(59,130,246,0.15)' : 'transparent', border: '1px solid', borderColor: selectedTopic?._id === t._id ? '#3b82f6' : '#334155', '&:hover': { borderColor: '#3b82f6', bgcolor: selectedTopic?._id === t._id ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.05)' } }}>
+                <Box key={t.id} sx={{ mb: 1 }}>
+                  <Box onClick={() => handleTopicClick(t)} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 2, cursor: 'pointer', bgcolor: selectedTopic?.id === t.id ? 'rgba(59,130,246,0.15)' : 'transparent', border: '1px solid', borderColor: selectedTopic?.id === t.id ? '#3b82f6' : '#334155', '&:hover': { borderColor: '#3b82f6', bgcolor: selectedTopic?.id === t.id ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.05)' } }}>
                     <FolderIcon sx={{ color: t.color || '#3b82f6', flexShrink: 0 }} />
                     <Box sx={{ flex: 1, overflow: 'hidden' }}>
                       <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</Typography>
@@ -517,13 +518,13 @@ const TopicManagement = () => {
                       <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={e => { e.stopPropagation(); setTopicDialog({ open: true, edit: true, data: t }); }}>
                         <EditIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); handleDeleteTopic(t._id); }}>
+                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); handleDeleteTopic(t.id); }}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Box>
                   </Box>
 
-                  {selectedTopic?._id === t._id && expandedTopic && (
+                  {selectedTopic?.id === t.id && expandedTopic && (
                     <Box sx={{ pl: 3, mt: 1 }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                         <Typography variant="caption" fontWeight={700} sx={{ color: '#60a5fa', textTransform: 'uppercase', fontSize: '0.65rem' }}>Subtopics ({expandedTopic.subtopics?.length || 0})</Typography>
@@ -536,7 +537,7 @@ const TopicManagement = () => {
                       {(!expandedTopic.subtopics || expandedTopic.subtopics.length === 0) ? (
                         <Typography variant="caption" sx={{ color: '#64748b', pl: 1 }}>Chua co subtopic</Typography>
                       ) : expandedTopic.subtopics.map(s => (
-                        <SubtopicCard key={s._id} subtopic={s} selected={selectedSubtopic?._id === s._id} onSelect={() => setSelectedSubtopic(prev => prev?._id === s._id ? null : s)} onEdit={() => setSubtopicDialog({ open: true, edit: true, data: s })} onDelete={handleDeleteSubtopic} />
+                        <SubtopicCard key={s.id} subtopic={s} selected={selectedSubtopic?.id === s.id} onSelect={() => setSelectedSubtopic(prev => prev?.id === s.id ? null : s)} onEdit={() => setSubtopicDialog({ open: true, edit: true, data: s })} onDelete={handleDeleteSubtopic} />
                       ))}
                     </Box>
                   )}

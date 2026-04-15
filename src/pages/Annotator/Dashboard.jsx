@@ -145,7 +145,7 @@ const AnnotatorDashboard = () => {
 
   const handleStart = async (sub) => {
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId: sub.subtopicId } });
+      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopic_id: sub.subtopicId } });
       const tasks = res.data || [];
       const target = tasks.find((t) => t.status !== 'approved' && t.status !== 'submitted') || tasks[0];
       if (target) navigate(`/annotator/tasks/${target._id}`);

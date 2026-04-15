@@ -238,7 +238,7 @@ const AnnotatorTask = () => {
 
       if (response.data.datasetId) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { datasetId: response.data.datasetId._id || response.data.datasetId },
+          params: { dataset_id: response.data.datasetId._id || response.data.datasetId },
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);

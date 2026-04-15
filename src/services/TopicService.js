@@ -33,7 +33,7 @@ export const deleteTopic = (id) => api.delete(`/topics/${id}`).then((r) => r.dat
 
 // ── Subtopics ─────────────────────────────────────────────────
 export const getSubtopics  = (topicId) =>
-  topicId ? api.get(`/subtopics?topicId=${topicId}`).then((r) => r.data)
+  topicId ? api.get(`/subtopics?topic_id=${topicId}`).then((r) => r.data)
           : api.get('/subtopics').then((r) => r.data);
 export const getSubtopic   = (id) => api.get(`/subtopics/${id}`).then((r) => r.data);
 export const createSubtopic = (data) => api.post('/subtopics', data).then((r) => r.data);
@@ -41,8 +41,9 @@ export const updateSubtopic = (id, data) => api.put(`/subtopics/${id}`, data).th
 export const deleteSubtopic = (id) => api.delete(`/subtopics/${id}`).then((r) => r.data);
 
 // ── Label Sets ────────────────────────────────────────────────
+// List label sets for a subtopic: GET /api/subtopics/:id/labelsets
 export const getLabelSets = (subtopicId) =>
-  subtopicId ? api.get(`/labelsets?subtopicId=${subtopicId}`).then((r) => r.data)
+  subtopicId ? api.get(`/subtopics/${subtopicId}/labelsets`).then((r) => r.data)
               : api.get('/labelsets').then((r) => r.data);
 export const getLabelSet  = (id) => api.get(`/labelsets/${id}`).then((r) => r.data);
 export const createLabelSet = (data) => api.post('/labelsets', data).then((r) => r.data);
