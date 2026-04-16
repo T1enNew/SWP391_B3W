@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+
+const getAuthToken = () => sessionStorage.getItem('token');
 import {
   Box,
   Typography,
@@ -243,11 +245,11 @@ const ManagerProjectDetail = () => {
 
   useEffect(() => {
     if (tasks.length > 0) {
-      const annotatorIds = [...new Set(tasks.map((t) => t.annotatorId?._id || t.annotatorId).filter(Boolean))];
+      const annotatorIds = [...new Set(tasks.map((t) => t.annotatorId?.id || t.annotatorId).filter(Boolean))];
       const reviewerIds = [
         ...new Set(
           tasks.flatMap((t) =>
-            (t.reviewers || []).map((r) => r.reviewerId?._id || r.reviewerId).filter(Boolean)
+            (t.reviewers || []).map((r) => r.reviewerId?.id || r.reviewerId).filter(Boolean)
           )
         ),
       ];
@@ -317,11 +319,11 @@ const ManagerProjectDetail = () => {
     const map = new Map();
     approvedTasks.forEach((task) => {
       const dataItem = task.dataItem || task.datasetItemId || task.itemId || {};
-      const key = dataItem?._id
+      const key = dataItem?.id
         || dataItem?.imageUrl
         || dataItem?.path
         || dataItem?.filename
-        || task?._id;
+        || task?.id;
       if (!key) return;
 
       const imageUrl =
@@ -382,8 +384,8 @@ const ManagerProjectDetail = () => {
           fileUrl: mediaInfo.fileUrl,
           annotators: annotatorName ? [annotatorName] : [],
           annotatorLabels: annotatorName ? [{ name: annotatorName, labels, annotations, isPrimary }] : [],
-          datasetId: task.datasetId?._id || task.datasetId,
-          itemId: dataItem?._id || task.datasetItemId?._id || task.itemId?._id || task._id,
+          datasetId: task.datasetId?.id || task.datasetId,
+          itemId: dataItem?.id || task.datasetItemId?.id || task.itemId?.id || task.id,
         });
       } else {
         const entry = map.get(key);
@@ -470,7 +472,7 @@ const ManagerProjectDetail = () => {
   const groupedByAnnotator = useMemo(() => {
     const groupsMap = new Map();
     tasks.forEach((t) => {
-      const key = t.annotatorId?._id || 'unassigned';
+      const key = t.annotatorId?.id || 'unassigned';
       if (!groupsMap.has(key)) {
         groupsMap.set(key, {
           id: key,
@@ -494,7 +496,7 @@ const ManagerProjectDetail = () => {
     const groupsMap = new Map();
     tasks.forEach((t) => {
       (t.reviewers || []).forEach((rv) => {
-        const rid = rv.reviewerId?._id || rv.reviewerId;
+        const rid = rv.reviewerId?.id || rv.reviewerId;
         if (!rid) return;
         const key = rid.toString();
         if (!groupsMap.has(key)) {
@@ -530,31 +532,31 @@ const ManagerProjectDetail = () => {
         // Check multiple possible paths for datasetId
         let dsId = null;
         if (t.datasetItemId?.datasetId) {
-          dsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
-        } else if (t.datasetId?._id) {
-          dsId = t.datasetId._id;
+          dsId = t.datasetItemId.datasetId.id || t.datasetItemId.datasetId;
+        } else if (t.datasetId?.id) {
+          dsId = t.datasetId.id;
         } else if (t.datasetId) {
           dsId = t.datasetId;
         }
         if (dsId) datasetIds.add(dsId);
       }
     });
-    return datasets.filter((ds) => datasetIds.has(ds._id));
+    return datasets.filter((ds) => datasetIds.has(ds.id));
   }, [datasets, tasks]);
 
   // Get approved datasets with their labels
   const approvedDatasetsWithLabels = useMemo(() => {
     return approvedDatasets.map(ds => {
-      const dsId = ds._id;
+      const dsId = ds.id;
       const approvedTasksInDs = tasks.filter(t => {
         if (t.status !== 'approved') return false;
-        
+
         // Check multiple possible paths for datasetId
         let taskDsId = null;
         if (t.datasetItemId?.datasetId) {
-          taskDsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
-        } else if (t.datasetId?._id) {
-          taskDsId = t.datasetId._id;
+          taskDsId = t.datasetItemId.datasetId.id || t.datasetItemId.datasetId;
+        } else if (t.datasetId?.id) {
+          taskDsId = t.datasetId.id;
         } else if (t.datasetId) {
           taskDsId = t.datasetId;
         }
@@ -590,9 +592,9 @@ const ManagerProjectDetail = () => {
   const fetchData = async () => {
     try {
       const [projectRes, datasetsRes, tasksRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects/${id}`),
-        axios.get(`${API_URL}/api/datasets`, { params: { project_id: id } }),
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { project_id: id, limit: 1000 } }),
+        axios.get(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+        axios.get(`${API_URL}/api/datasets`, { params: { project_id: id }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { project_id: id, limit: 1000 }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
       ]);
       setProject(projectRes.data.project || projectRes.data);
       setDatasets(datasetsRes.data?.datasets || datasetsRes.data || []);
@@ -606,7 +608,7 @@ const ManagerProjectDetail = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/users`);
+      const response = await axios.get(`${API_URL}/api/users`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       const userList = response.data?.users || response.data || [];
       setAnnotators(userList.filter((u) => u.role === 'annotator' && u.is_active));
       setReviewers(
@@ -621,7 +623,7 @@ const ManagerProjectDetail = () => {
 
   const fetchQualityStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/projects/${id}/quality`);
+      const response = await axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       setQualityStats(response.data);
     } catch (error) {
       console.error('Error fetching quality stats:', error);
@@ -696,6 +698,7 @@ const ManagerProjectDetail = () => {
       const response = await axios.get(`${API_URL}/api/projects/${id}/export`, {
         params: { format },
         responseType: 'blob',
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
 
       const contentType = response.headers['content-type'] || 'application/octet-stream';
@@ -818,7 +821,7 @@ const ManagerProjectDetail = () => {
                           </Box>
                         </TableCell>
                         <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
-                        <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?._id}`)}>DETAILS</Button></TableCell>
+                        <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?.id}`)}>DETAILS</Button></TableCell>
                       </TableRow>
                 );
               })}
@@ -843,7 +846,7 @@ const ManagerProjectDetail = () => {
               const isTextDs = ds.type === 'text';
               const isImageDs = ds.type === 'image';
               return (
-              <Grid item xs={12} sm={6} md={3} key={ds._id}>
+              <Grid item xs={12} sm={6} md={3} key={ds.id}>
                 <Card sx={{
                   ...cardSx,
                   border: '2px solid #22c55e',
@@ -1136,19 +1139,19 @@ const ManagerProjectDetail = () => {
             <FormControl fullWidth sx={inputSx}>
               <InputLabel>Dataset</InputLabel>
               <Select value={selectedDataset} label="Dataset" onChange={(e) => setSelectedDataset(e.target.value)}>
-                {filteredDatasets.map((ds) => <MenuItem key={ds._id} value={ds._id}>{ds.name} ({ds.type || 'unknown'})</MenuItem>)}
+                {filteredDatasets.map((ds) => <MenuItem key={ds.id} value={ds.id}>{ds.name} ({ds.type || 'unknown'})</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl fullWidth sx={inputSx}>
               <InputLabel>Annotators</InputLabel>
-              <Select multiple value={selectedAnnotators} label="Annotators" onChange={(e) => setSelectedAnnotators(e.target.value)} renderValue={(selected) => annotators.filter((a) => selected.includes(a._id)).map((a) => a.fullName || a.username).join(', ')}>
-                {annotators.map((a) => <MenuItem key={a._id} value={a._id}><Checkbox checked={selectedAnnotators.indexOf(a._id) > -1} /><ListItemText primary={a.fullName || a.username} secondary={a.email} /></MenuItem>)}
+              <Select multiple value={selectedAnnotators} label="Annotators" onChange={(e) => setSelectedAnnotators(e.target.value)} renderValue={(selected) => annotators.filter((a) => selected.includes(a.id)).map((a) => a.fullName || a.username).join(', ')}>
+                {annotators.map((a) => <MenuItem key={a.id} value={a.id}><Checkbox checked={selectedAnnotators.indexOf(a.id) > -1} /><ListItemText primary={a.fullName || a.username} secondary={a.email} /></MenuItem>)}
               </Select>
             </FormControl>
             <FormControl fullWidth sx={inputSx}>
               <InputLabel>Reviewers</InputLabel>
-              <Select multiple value={selectedReviewers} label="Reviewers" onChange={(e) => setSelectedReviewers(e.target.value)} renderValue={(selected) => reviewers.filter((r) => selected.includes(r._id)).map((r) => r.fullName || r.username).join(', ')}>
-                {reviewers.map((r) => <MenuItem key={r._id} value={r._id}><Checkbox checked={selectedReviewers.indexOf(r._id) > -1} /><ListItemText primary={r.fullName || r.username} secondary={r.email} /></MenuItem>)}
+              <Select multiple value={selectedReviewers} label="Reviewers" onChange={(e) => setSelectedReviewers(e.target.value)} renderValue={(selected) => reviewers.filter((r) => selected.includes(r.id)).map((r) => r.fullName || r.username).join(', ')}>
+                {reviewers.map((r) => <MenuItem key={r.id} value={r.id}><Checkbox checked={selectedReviewers.indexOf(r.id) > -1} /><ListItemText primary={r.fullName || r.username} secondary={r.email} /></MenuItem>)}
               </Select>
             </FormControl>
           </Stack>
@@ -1579,7 +1582,7 @@ const ManagerProjectDetail = () => {
                   ) : (
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {datasets.map((ds) => (
-                        <Paper key={ds._id} sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
+                        <Paper key={ds.id} sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                             <Typography variant="body2" fontWeight={600} color="#e2e8f0">{ds.name}</Typography>
                             <Chip
@@ -1615,8 +1618,8 @@ const ManagerProjectDetail = () => {
                     const topicMap = new Map();
                     tasks.forEach((task) => {
                       const subtopic = task.subtopicId;
-                      if (subtopic && subtopic._id) {
-                        const topicId = subtopic.topicId?._id || subtopic.topicId;
+                      if (subtopic && subtopic.id) {
+                        const topicId = subtopic.topicId?.id || subtopic.topic_id;
                         if (!topicMap.has(topicId)) {
                           topicMap.set(topicId, {
                             topicId,
@@ -1625,9 +1628,9 @@ const ManagerProjectDetail = () => {
                           });
                         }
                         const topicEntry = topicMap.get(topicId);
-                        if (!topicEntry.subtopics.has(subtopic._id)) {
-                          topicEntry.subtopics.set(subtopic._id, {
-                            _id: subtopic._id,
+                        if (!topicEntry.subtopics.has(subtopic.id)) {
+                          topicEntry.subtopics.set(subtopic.id, {
+                            id: subtopic.id,
                             name: subtopic.name,
                             description: subtopic.description,
                             guideline: subtopic.guideline,
@@ -1653,7 +1656,7 @@ const ManagerProjectDetail = () => {
                             </Box>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, pl: 2 }}>
                               {Array.from(topic.subtopics.values()).map((sub) => (
-                                <Box key={sub._id} sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                <Box key={sub.id} sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <Typography variant="body2" color="#94a3b8" fontWeight={600}>- {sub.name}</Typography>
                                     {sub.taskType && (

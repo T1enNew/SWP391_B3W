@@ -563,14 +563,14 @@ const Workspace = () => {
       if (taskList.length > 0) {
         const first = taskList[0];
         setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || '' });
-        setProjectInfo({ name: first.projectId?.name || '', id: first.projectId?._id || '' });
+        setProjectInfo({ name: first.projectId?.name || '', id: first.projectId?.id || '' });
       }
       if (initialTaskId) {
         setCurrentTaskId(initialTaskId);
       } else if (taskList.length > 0) {
         const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted'];
         const next = taskList.find((t) => priorityOrder.includes(t.status));
-        setCurrentTaskId(next?._id || taskList[0]._id);
+        setCurrentTaskId(next?.id || taskList[0].id);
       }
     } catch (err) {
       console.error('Error loading tasks:', err);
@@ -665,7 +665,7 @@ const Workspace = () => {
       else if (kind === 'audio') labelsPayload = { segments: labels.segments || [], note: annotationNote?.trim() || '' };
       else labelsPayload = { note: annotationNote?.trim() || '', label: labels.label || '' };
       await axios.put(`${API_URL}/api/tasks/${task.id}/save`, { annotation_data: labelsPayload });
-      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'in_progress' } : t));
+      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'in_progress' } : t));
     } catch { /* silent auto-save */ }
   }, [task, annotations, labels, textSpans, annotationNote]);
 
@@ -679,7 +679,7 @@ const Workspace = () => {
     try {
       await handleSave();
       await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
-      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'submitted' } : t));
+      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'submitted' } : t));
       setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
       setSavingMessage('Da danh dau hoan thanh!');
       setTimeout(() => setSavingMessage(''), 3000);
@@ -695,7 +695,7 @@ const Workspace = () => {
     try {
       await handleSave();
       await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
-      setTasks((prev) => prev.map((t) => t._id === task.id ? { ...t, status: 'submitted' } : t));
+      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'submitted' } : t));
       setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
       setSavingMessage('Da nop thanh cong!');
       setTimeout(() => setSavingMessage(''), 3000);
@@ -718,9 +718,9 @@ const Workspace = () => {
   }, [subtopicId, navigate]);
 
   const handleNavigateTask = useCallback((direction) => {
-    const currentIdx = tasks.findIndex((t) => t._id === currentTaskId);
-    if (direction === 'prev' && currentIdx > 0) handleTaskSelect(tasks[currentIdx - 1]._id);
-    else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1]._id);
+    const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
+    if (direction === 'prev' && currentIdx > 0) handleTaskSelect(tasks[currentIdx - 1].id);
+    else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1].id);
   }, [tasks, currentTaskId, handleTaskSelect]);
 
   // Keyboard shortcuts
@@ -737,7 +737,7 @@ const Workspace = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [loading, saving, task?.status, handleSave, handleSubmit, handleNavigateTask]);
 
-  const currentIdx = tasks.findIndex((t) => t._id === currentTaskId);
+  const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
   const completedCount = tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length;
   const pct = tasks.length > 0 ? Math.round(((currentIdx + 1) / tasks.length) * 100) : 0;
   const taskWithContent = task ? { ...task, _textContent: textContent } : null;

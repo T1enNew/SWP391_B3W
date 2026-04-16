@@ -227,7 +227,7 @@ const AnnotatorAuditDetail = () => {
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      const taskId = task._id?.toLowerCase() || '';
+      const taskId = task.id?.toLowerCase() || '';
       const filename = (task.dataItem?.filename || '').toLowerCase();
       return taskId.includes(term) || filename.includes(term);
     }
@@ -321,11 +321,11 @@ const AnnotatorAuditDetail = () => {
                 filteredTasks.map((task) => {
                   const kind = getTaskKind(task);
                   return (
-                    <TableRow key={task._id} hover>
+                    <TableRow key={task.id} hover>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 bg-slate-700 rounded flex items-center justify-center text-xs">{kind === 'image' ? '🖼️' : kind === 'text' ? '📄' : kind === 'audio' ? '🎵' : '📎'}</div>
-                          <span className="text-sm">#{task._id.slice(-6)}</span>
+                          <span className="text-sm">#{task.id.slice(-6)}</span>
                         </div>
                       </TableCell>
                       <TableCell>{kind === 'image' ? 'BBox Annotation' : kind === 'text' ? 'Text Span' : kind === 'audio' ? 'Audio Label' : 'Other'}</TableCell>
@@ -351,7 +351,7 @@ const AnnotatorAuditDetail = () => {
           <div className="relative bg-slate-100 w-full max-w-2xl h-full overflow-y-auto shadow-2xl">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Chi tiết task #{selectedTask._id.slice(-6)} ({getTaskKind(selectedTask).toUpperCase()})</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Chi tiết task #{selectedTask.id.slice(-6)} ({getTaskKind(selectedTask).toUpperCase()})</h2>
                 <p className="text-xs text-gray-500 mt-1">Hiển thị đầy đủ kết quả reviewer đã chấm: vote, comment và lỗi.</p>
               </div>
               <IconButton onClick={() => { setQuickViewOpen(false); setSelectedTask(null); }}>✕</IconButton>

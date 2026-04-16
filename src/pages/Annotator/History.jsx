@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 
@@ -34,9 +35,9 @@ const AnnotatorHistory = () => {
     const fetchTasks = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          headers: { Authorization: 'Bearer ' + getAuthToken() },
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
         });
-        const allTasks = res.data || [];
+        const allTasks = getArray(res.data);
         const historyTasks = allTasks.filter(t =>
           ['approved', 'rejected', 'submitted', 'revised', 'completed'].includes(t.status)
         );
@@ -123,9 +124,9 @@ const AnnotatorHistory = () => {
                 const st = STATUS_MAP[task.status] || STATUS_MAP.submitted;
                 return (
                   <div
-                    key={task._id}
+                    key={task.id}
                     className="rounded-xl border border-gray-700 bg-gray-800 p-4 cursor-pointer hover:border-gray-600 transition-all"
-                    onClick={() => task.status === 'revised' && navigate(`/annotator/workspace/${task.subtopicId?._id || task.subtopicId}`)}
+                    onClick={() => task.status === 'revised' && navigate(`/annotator/workspace/${task.subtopicId?.id || task.subtopicId}`)}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0 flex-1">

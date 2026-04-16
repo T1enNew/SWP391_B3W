@@ -151,20 +151,36 @@ const ReviewerProjectList = () => {
     setLoading(true);
     setError('');
     try {
-      const [projectsRes, allStatsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects`),
-        axios.get(`${API_URL}/api/activity-logs/stats`),
+      // Use /my-tasks which returns tasks scoped to this reviewer
+      const [tasksRes, pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/tasks/my-tasks`),
+        axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 } }),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } }),
       ]);
-      const projectList = getArray(projectsRes.data);
-      const statsMap = {};
-      (allStatsRes.data?.counts || []).forEach((s) => { statsMap[s.project_id || s.resourceId] = s; });
+      const tasks = getArray(tasksRes.data);
+      const pending = getArray(pendingRes.data);
+      const reviewed = getArray(reviewedRes.data);
 
-      const enriched = projectList.map((p) => ({
-        ...p,
-        stats: statsMap[p.id] || { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
-      }));
+      // Group by project from tasks visible to this reviewer
+      const projMap = {};
+      [...pending, ...reviewed].forEach((t) => {
+        const pid = t.projectId?.id || t.projectId;
+        if (!pid) return;
+        if (!projMap[pid]) {
+          projMap[pid] = {
+            id: pid,
+            name: t.projectId?.name || 'Unknown Project',
+            deadline: t.projectId?.deadline || null,
+            stats: { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
+          };
+        }
+        projMap[pid].stats.total += 1;
+        if (t.status === 'approved') projMap[pid].stats.approved += 1;
+        else if (t.status === 'rejected') projMap[pid].stats.rejected += 1;
+        else if (t.status === 'submitted') projMap[pid].stats.pending += 1;
+      });
 
-      setProjects(enriched);
+      setProjects(Object.values(projMap));
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc danh sach project');
     } finally {
@@ -175,7 +191,7 @@ const ReviewerProjectList = () => {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const handleOpenProject = (project) => {
-    navigate(`/reviewer/projects/${project._id}`);
+    navigate(`/reviewer/projects/${project.id}`);
   };
 
   const filtered = projects.filter((p) => {
@@ -297,7 +313,7 @@ const ReviewerProjectList = () => {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((p) => (
-              <ProjectCard key={p._id} project={p} onOpen={() => handleOpenProject(p)} />
+              <ProjectCard key={p.id} project={p} onOpen={() => handleOpenProject(p)} />
             ))}
           </div>
         )}

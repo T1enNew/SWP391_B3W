@@ -226,7 +226,7 @@ const Datasets = () => {
       await Promise.all(ids.map(async (id) => {
         const [assetRes, labelRes] = await Promise.all([
           axios.get(`${API_URL}/api/subtopics/${id}/assets`),
-          axios.get(`${API_URL}/api/labelsets?subtopicId=${id}`),
+          axios.get(`${API_URL}/api/subtopics/${id}/labelsets`),
         ]);
         const assets = assetRes.data?.assets || assetRes.data || [];
         const labels = labelRes.data?.label_sets || labelRes.data || [];

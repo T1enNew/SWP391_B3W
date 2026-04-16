@@ -167,7 +167,7 @@ const AnnotatorProjectDetail = () => {
   const handleStartSubtopic = async (sub) => {
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-        params: { subtopicId: sub.subtopicId || sub._id },
+        params: { subtopicId: sub.subtopicId || sub.id },
       });
       const tasks = res.data || [];
 
@@ -176,7 +176,7 @@ const AnnotatorProjectDetail = () => {
       let target = tasks.find((t) => priorityOrder.includes(t.status)) || tasks[0];
 
       if (target) {
-        navigate(`/annotator/workspace/${sub.subtopicId || sub._id}?taskId=${target._id}`);
+        navigate(`/annotator/workspace/${sub.subtopicId || sub.id}?taskId=${target.id}`);
       } else {
         alert('Khong co task nao trong subtopic nay.');
       }
@@ -374,7 +374,7 @@ const AnnotatorProjectDetail = () => {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {project.subtopics.map((sub) => (
                 <SubtopicCard
-                  key={sub.subtopicId || sub._id}
+                  key={sub.subtopicId || sub.id}
                   sub={sub}
                   onStart={handleStartSubtopic}
                 />

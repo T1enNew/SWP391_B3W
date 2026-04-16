@@ -559,15 +559,15 @@ const ReviewerWorkspace = () => {
       // Client-side filter: neu co subtopicFilter, chi lay tasks thuoc subtopic do
       if (subtopicFilter) {
         taskList = taskList.filter(t => {
-          const taskSubId = t.subtopicId?._id || t.subtopicId;
+          const taskSubId = t.subtopicId?.id || t.subtopicId;
           return taskSubId === subtopicFilter;
         });
       }
 
       const itemMap = new Map();
       taskList.forEach((task) => {
-        const itemKey = task.dataItem?.filename || task.dataItem?.path || task._id;
-        const color = stringToColor(task.annotatorId?._id || task.annotatorId || task._id);
+        const itemKey = task.dataItem?.filename || task.dataItem?.path || task.id;
+        const color = stringToColor(task.annotatorId?.id || task.annotatorId || task.id);
 
         if (!itemMap.has(itemKey)) {
           itemMap.set(itemKey, {
@@ -577,9 +577,9 @@ const ReviewerWorkspace = () => {
             kind: getTaskKind(task),
             status: 'pending_review',
             projectName: task.projectId?.name || '',
-            projectId: task.projectId?._id,
+            projectId: task.projectId?.id,
             subtopicName: task.subtopicId?.name || task.subtopicName || '',
-            subtopicId: task.subtopicId?._id,
+            subtopicId: task.subtopicId?.id,
             guideline: task.projectId?.guidelines || '',
             availableLabels: task.availableLabels || task.projectId?.availableLabels || task.labelsetId?.labels || [],
             submissions: [],
@@ -588,8 +588,8 @@ const ReviewerWorkspace = () => {
 
         const item = itemMap.get(itemKey);
         item.submissions.push({
-          submissionId: task._id,
-          annotatorId: task.annotatorId?._id || task.annotatorId,
+          submissionId: task.id,
+          annotatorId: task.annotatorId?.id || task.annotatorId,
           annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
           status: getAnnotatorStatus(task),
           labels: task.labels || {},

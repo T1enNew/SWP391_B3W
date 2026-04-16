@@ -135,8 +135,8 @@ const CreateProject = () => {
     try {
       const results = {};
       await Promise.all(datasetIds.map(async (dsId) => {
-        const ds = datasets.find(d => d._id === dsId) || {};
-        console.log('Dataset:', ds._id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId);
+        const ds = datasets.find(d => d.id === dsId) || {};
+        console.log('Dataset:', ds.id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId);
         const subtopicIds = ds.subtopicIds || (ds.subtopicId ? [ds.subtopicId] : []);
         console.log('Resolved subtopicIds:', subtopicIds);
         const subtopicInfoList = [];
@@ -233,7 +233,7 @@ const CreateProject = () => {
 
   const validDatasets = datasets.filter((ds) => isDatasetTypeConsistent(ds));
   const selectedDatasetObjects = selectedDatasets
-    .map((id) => validDatasets.find((d) => d._id === id))
+    .map((id) => validDatasets.find((d) => d.id === id))
     .filter(Boolean);
 
   const handleSaveDraft = async () => {
@@ -519,7 +519,7 @@ const CreateProject = () => {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {selectedDatasets.map(dsId => {
                     const info = datasetLabelsets[dsId] || {};
-                    const ds = datasets.find(d => d._id === dsId);
+                    const ds = datasets.find(d => d.id === dsId);
                     return (
                       <Box key={dsId} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#0f172a' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -530,7 +530,7 @@ const CreateProject = () => {
                         {info.subtopics && info.subtopics.length > 0 ? (
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                             {info.subtopics.map((sub) => (
-                              <Box key={sub._id} sx={{ p: 1.2, borderRadius: 1, border: '1px solid #334155', bgcolor: '#1e293b' }}>
+                              <Box key={sub.id} sx={{ p: 1.2, borderRadius: 1, border: '1px solid #334155', bgcolor: '#1e293b' }}>
                                 {sub.topic && (
                                   <Typography variant="caption" sx={{ color: '#a78bfa', fontWeight: 600, display: 'block', mb: 0.3 }}>
                                     Topic: {sub.topic.name || sub.topic}
@@ -543,7 +543,7 @@ const CreateProject = () => {
                                 {sub.labelsets && sub.labelsets.length > 0 ? (
                                   <Box sx={{ pl: 1.5 }}>
                                     {sub.labelsets.map((ls, lsIdx) => (
-                                      <Box key={ls._id || lsIdx} sx={{ mb: 0.5 }}>
+                                      <Box key={ls.id || lsIdx} sx={{ mb: 0.5 }}>
                                         <Typography variant="caption" fontWeight={600} sx={{ color: '#60a5fa' }}>
                                           LabelSet: {ls.name}
                                         </Typography>
@@ -551,7 +551,7 @@ const CreateProject = () => {
                                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.3, pl: 1 }}>
                                             {ls.labels.map((lbl, lIdx) => (
                                               <Chip
-                                                key={lbl._id || lIdx}
+                                                key={lbl.id || lIdx}
                                                 label={lbl.name || lbl}
                                                 size="small"
                                                 sx={{ bgcolor: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontWeight: 600, fontSize: '0.65rem', height: 18 }}
@@ -604,7 +604,7 @@ const CreateProject = () => {
                   </Alert>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                     {selectedDatasetObjects.map((ds) => (
-                      <Box key={ds._id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, border: '1px solid #334155', borderRadius: 2, bgcolor: '#0f172a' }}>
+                      <Box key={ds.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, border: '1px solid #334155', borderRadius: 2, bgcolor: '#0f172a' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Typography variant="body2">{ds.name}</Typography>
                           <Chip label={(ds.type || 'unknown').toUpperCase()} size="small" sx={{ bgcolor: '#1d4ed8', color: '#dbeafe' }} />
@@ -637,7 +637,7 @@ const CreateProject = () => {
                         </MenuItem>
                       ) : (
                         validDatasets.map((dataset) => (
-                          <MenuItem key={dataset._id} value={dataset._id}>
+                          <MenuItem key={dataset.id} value={dataset.id}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <span>{dataset.name}</span>
@@ -703,10 +703,10 @@ const CreateProject = () => {
                         </Typography>
                       ) : (
                         filteredAnnotators.map((ann) => {
-                          const isSelected = selectedAnnotators.includes(ann._id);
+                          const isSelected = selectedAnnotators.includes(ann.id);
                           return (
                             <Box
-                              key={ann._id}
+                              key={ann.id}
                               sx={{
                                 p: 1.5,
                                 mb: 1,
@@ -720,9 +720,9 @@ const CreateProject = () => {
                               }}
                               onClick={() => {
                                 if (isSelected) {
-                                  setSelectedAnnotators(selectedAnnotators.filter(id => id !== ann._id));
+                                  setSelectedAnnotators(selectedAnnotators.filter(id => id !== ann.id));
                                 } else {
-                                  setSelectedAnnotators([...selectedAnnotators, ann._id]);
+                                  setSelectedAnnotators([...selectedAnnotators, ann.id]);
                                 }
                               }}
                             >
@@ -773,10 +773,10 @@ const CreateProject = () => {
                         </Typography>
                       ) : (
                         filteredReviewers.map((rev) => {
-                          const isSelected = selectedReviewers.includes(rev._id);
+                          const isSelected = selectedReviewers.includes(rev.id);
                           return (
                             <Box
-                              key={rev._id}
+                              key={rev.id}
                               sx={{
                                 p: 1.5,
                                 mb: 1,
@@ -790,9 +790,9 @@ const CreateProject = () => {
                               }}
                               onClick={() => {
                                 if (isSelected) {
-                                  setSelectedReviewers(selectedReviewers.filter(id => id !== rev._id));
+                                  setSelectedReviewers(selectedReviewers.filter(id => id !== rev.id));
                                 } else {
-                                  setSelectedReviewers([...selectedReviewers, rev._id]);
+                                  setSelectedReviewers([...selectedReviewers, rev.id]);
                                 }
                               }}
                             >

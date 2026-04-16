@@ -181,7 +181,7 @@ const AnnotatorProjectList = () => {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const handleOpenProject = (project) => {
-    navigate(`/annotator/projects/${project.projectId || project._id}`);
+    navigate(`/annotator/projects/${project.projectId || project.id}`);
   };
 
   const filtered = projects.filter((p) => {
@@ -310,7 +310,7 @@ const AnnotatorProjectList = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((p) => (
               <ProjectCard
-                key={p.projectId || p._id}
+                key={p.projectId || p.id}
                 project={p}
                 onOpen={() => handleOpenProject(p)}
               />

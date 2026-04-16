@@ -168,7 +168,7 @@ const ReviewerProjectDetail = () => {
   useEffect(() => { fetchProject(); }, [fetchProject]);
 
   const handleStartReview = (sub) => {
-    navigate(`/reviewer/workspace/${projectId}?subtopicId=${sub.subtopicId || sub._id}`);
+    navigate(`/reviewer/workspace/${projectId}?subtopicId=${sub.subtopicId || sub.id}`);
   };
 
   const handleStartAllReview = () => {
@@ -532,7 +532,7 @@ const ReviewerProjectDetail = () => {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {subtopics.map((sub) => (
                 <SubtopicCard
-                  key={sub.subtopicId || sub._id}
+                  key={sub.subtopicId || sub.id}
                   sub={sub}
                   onStart={handleStartReview}
                 />

@@ -129,7 +129,7 @@ const ReviewMediaView = ({ task, annotations = [] }) => {
     setImgError(false);
     setImgLoaded(false);
     setImageSize({ width: 0, height: 0 });
-  }, [task?._id]);
+  }, [task?.id]);
 
   if (kind === 'image') {
     const imageUrl = buildFileUrl(task?.dataItem);

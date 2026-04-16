@@ -68,7 +68,7 @@ const ReviewerHistory = () => {
   const projects = useMemo(() => {
     const map = {};
     reviewedTasks.forEach(t => {
-      const pid = t.projectId?._id || t.projectId;
+      const pid = t.projectId?.id || t.projectId;
       if (pid) map[pid] = t.projectId?.name || 'Unknown';
     });
     return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -97,7 +97,7 @@ const ReviewerHistory = () => {
 
     if (projectFilter !== 'all') {
       result = result.filter(t => {
-        const pid = t.projectId?._id || t.projectId;
+        const pid = t.projectId?.id || t.projectId;
         return pid === projectFilter;
       });
     }
@@ -123,7 +123,7 @@ const ReviewerHistory = () => {
   };
 
   const handleViewDetail = (task) => {
-    window.location.href = '/reviewer/workspace/' + (task.projectId?._id || task.projectId) + '?taskId=' + task._id;
+    window.location.href = '/reviewer/workspace/' + (task.projectId?.id || task.projectId) + '?taskId=' + task.id;
   };
 
   if (loading) {
@@ -274,7 +274,7 @@ const ReviewerHistory = () => {
 
                     return (
                       <tr
-                        key={t._id}
+                        key={t.id}
                         className={`border-t border-gray-700/50 transition-colors hover:bg-gray-800/40 ${
                           idx % 2 === 0 ? 'bg-gray-800/20' : ''
                         }`}

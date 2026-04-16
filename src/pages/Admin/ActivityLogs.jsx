@@ -111,7 +111,7 @@ const ActivityLogs = () => {
                 <Typography variant="h6" gutterBottom>Top Actions</Typography>
                 {stats.actionStats?.slice(0, 5).map((stat, idx) => (
                   <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">{stat._id}</Typography>
+                    <Typography variant="body2">{stat.id}</Typography>
                     <Typography variant="body2" fontWeight="bold">{stat.count}</Typography>
                   </Box>
                 ))}
@@ -195,7 +195,7 @@ const ActivityLogs = () => {
               </TableRow>
             ) : (
               logs.map((log) => (
-                <TableRow key={log._id}>
+                <TableRow key={log.id}>
                   <TableCell>
                     {new Date(log.createdAt).toLocaleString()}
                   </TableCell>
