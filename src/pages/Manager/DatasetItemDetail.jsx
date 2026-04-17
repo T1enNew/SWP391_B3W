@@ -8,37 +8,27 @@ import AudioAnnotator from '../../components/AudioAnnotator';
 import { API_URL } from '../../config/api';
 
 const getFullImageUrl = (dataItem) => {
-  const baseUrl = API_URL.replace(/\/+$/, '');
   if (!dataItem) return '';
+  // Ưu tiên signed_url từ Supabase
+  if (dataItem.signed_url) return dataItem.signed_url;
 
+  const baseUrl = API_URL.replace(/\/+$/, '');
   const directUrl = dataItem?.url || dataItem?.imageUrl || '';
-  // Already a full HTTP(S) URL
   if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
 
   const filename = dataItem?.originalName || dataItem?.filename || '';
-
-  // Normalize path: convert backslashes, strip leading slashes
   const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
 
   if (rawPath) {
-    // Find uploads/ in the path (handles both relative and absolute paths)
     const uploadsIdx = rawPath.indexOf('uploads/');
     let relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
-
-    // Split to get the last segment (filename or subfolder)
     const parts = relativePath.split('/');
     const last = parts[parts.length - 1];
     const hasExt = /\.\w{1,10}$/i.test(last);
-
-    if (hasExt) {
-      // Last segment is a file — it IS the full path
-      return `${baseUrl}/${relativePath}`;
-    }
-    // Last segment is a directory — append filename if available
+    if (hasExt) return `${baseUrl}/${relativePath}`;
     return filename ? `${baseUrl}/${relativePath}/${filename}` : `${baseUrl}/${relativePath}`;
   }
 
-  // No path at all — use filename only
   return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
@@ -344,7 +334,7 @@ const DatasetItemDetail = () => {
         setLoading(true);
         const token = sessionStorage.getItem('token');
         const resp = await axios.get(`${API_URL}/api/datasets/${datasetId}`);
-        let items = resp.data?.data_items || [];
+        let items = resp.data?.items || resp.data?.data_items || [];
         setAllDatasetItems(items);
         const decodedId = itemId ? decodeURIComponent(itemId) : '';
         // Prioritize path match (handles items from both Tasks and dataset.files[]),

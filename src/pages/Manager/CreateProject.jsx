@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const CreateProject = () => {
   const navigate = useNavigate();
@@ -135,20 +136,54 @@ const CreateProject = () => {
     try {
       const results = {};
       await Promise.all(datasetIds.map(async (dsId) => {
-        const ds = datasets.find(d => d.id === dsId) || {};
-        console.log('Dataset:', ds.id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId);
-        const subtopicIds = ds.subtopicIds || (ds.subtopicId ? [ds.subtopicId] : []);
+        // Fetch fresh dataset detail to get authoritative subtopicIds
+        const dsRes = await axios.get(`${API_URL}/api/datasets/${dsId}`, { headers: getAuthHeaders() });
+        const ds = dsRes.data || {};
+        console.log('Dataset detail:', ds.id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId, 'topic_id:', ds.topic_id, 'subtopics:', ds.subtopics);
+
+        // Try multiple field names for subtopic IDs
+        let subtopicIds = Array.isArray(ds.subtopicIds) && ds.subtopicIds.length > 0
+          ? ds.subtopicIds
+          : ds.subtopicId
+            ? [ds.subtopicId]
+            : ds.subtopic_ids
+              ? ds.subtopic_ids
+              : [];
+
+        // If still empty but topic_id exists, fetch subtopics from that topic
+        if (subtopicIds.length === 0 && ds.topic_id) {
+          console.log('No subtopicIds found, fetching subtopics from topic:', ds.topic_id);
+          try {
+            const topicRes = await axios.get(`${API_URL}/api/subtopics?topic_id=${ds.topic_id}`, { headers: getAuthHeaders() });
+            const topicRaw = topicRes.data;
+            const topicSubtopics = getArray(topicRaw);
+            subtopicIds = topicSubtopics.map(s => s.id || s.subtopicId || s).filter(Boolean);
+            console.log('Subtopics from topic:', subtopicIds);
+          } catch (e) {
+            console.error('Error fetching topic subtopics', ds.topic_id, e);
+          }
+        }
+
         console.log('Resolved subtopicIds:', subtopicIds);
         const subtopicInfoList = [];
         for (const stId of subtopicIds) {
           try {
-            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`);
+            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`, { headers: getAuthHeaders() });
             console.log('Subtopic response:', stId, stRes.data);
-            const stData = stRes.data || {};
-            const topicInfo = stData.topic ? { id: stData.topic.id, name: stData.topic.name } : null;
-            const lsRes = await axios.get(`${API_URL}/api/subtopics/${stId}/labelsets`);
+            // Handle both { id, name, topic: {...} } and flat response
+            const stRaw = stRes.data;
+            const stData = (typeof stRaw === 'object' && stRaw !== null && !Array.isArray(stRaw))
+              ? stRaw
+              : { id: stId, name: String(stId) };
+            const topicInfo = stData.topic
+              ? { id: stData.topic.id, name: stData.topic.name }
+              : stData.topic_id
+                ? { id: stData.topic_id, name: stData.topicName || stData.topic_name || 'Unknown Topic' }
+                : null;
+            const lsRes = await axios.get(`${API_URL}/api/subtopics/${stId}/labelsets`, { headers: getAuthHeaders() });
             console.log('Labelsets response for', stId, ':', lsRes.data);
-            const labels = Array.isArray(lsRes.data) ? lsRes.data : [];
+            const lsRaw = lsRes.data;
+            const labels = Array.isArray(lsRaw) ? lsRaw : (lsRaw?.labelsets || lsRaw?.data || []);
             subtopicInfoList.push({
               _id: stId,
               name: stData.name || stId,
@@ -159,7 +194,7 @@ const CreateProject = () => {
             console.error('Error loading subtopic', stId, e);
           }
         }
-        results[dsId] = {
+        results[String(dsId)] = {
           subtopicIds,
           subtopics: subtopicInfoList,
         };
@@ -176,8 +211,8 @@ const CreateProject = () => {
 
   const fetchDatasets = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/datasets`);
-      const allDatasets = response.data?.datasets || response.data || [];
+      const res = await axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() });
+      const allDatasets = getArray(res.data);
       console.log('All datasets from API:', JSON.stringify(allDatasets, null, 2));
       // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
       const unassignedDatasets = allDatasets.filter(ds => !ds.project_id || ds.project_id === null);
@@ -191,8 +226,8 @@ const CreateProject = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/users`);
-      const allUsers = response.data?.users || response.data || [];
+      const res = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
+      const allUsers = getArray(res.data);
       setAnnotators(allUsers.filter(u => u.role === 'annotator' && u.is_active));
       setReviewers(allUsers.filter(u => u.role === 'reviewer' && u.is_active));
     } catch (error) {
@@ -259,7 +294,7 @@ const CreateProject = () => {
           sample_rate: formData.reviewPolicy?.sampleRate || 1,
           reviewers_per_item: formData.reviewPolicy?.reviewersPerItem || 1,
         },
-      });
+      }, { headers: getAuthHeaders() });
       showNotification('Đã lưu draft thành công!');
       navigate('/manager/projects');
     } catch (error) {
@@ -304,7 +339,7 @@ const CreateProject = () => {
     setSaving(true);
     setError(null);
     try {
-      // Step 1: Create project
+      // Step 1: Create project WITH team members AND dataset info embedded
       const projectRes = await axios.post(`${API_URL}/api/projects`, {
         name: formData.name.trim(),
         description: formData.description?.trim() || '',
@@ -316,25 +351,88 @@ const CreateProject = () => {
           sample_rate: formData.reviewPolicy?.sampleRate || 1,
           reviewers_per_item: formData.reviewPolicy?.reviewersPerItem || 1,
         },
-      });
-      const projectId = projectRes.data.id;
+        // Send annotator/reviewer IDs so ProjectDetail can read them
+        annotator_ids: selectedAnnotators,
+        reviewer_ids: selectedReviewers,
+        // Send dataset IDs for ProjectDetail to display
+        dataset_ids: selectedDatasets,
+      }, { headers: getAuthHeaders() });
+      const projectRaw = projectRes.data;
+      const projectData = projectRaw?.project || projectRaw;
+      const projectId = projectData?.id;
+      if (!projectId) throw new Error('Tao project that bai — server khong tra ve id');
 
-      // Step 2: Link selected datasets to project
+      // Step 2: Assign tasks for each selected dataset
       for (const datasetId of selectedDatasets) {
-        await axios.put(`${API_URL}/api/datasets/${datasetId}`, {
-          project_id: projectId
-        });
+        // Fetch dataset items to satisfy backend requirement
+        let itemIds = [];
+        try {
+          const dsDetail = await axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() });
+          const dsData = dsDetail.data || {};
+          console.log('Dataset detail for items:', JSON.stringify(dsData, null, 2));
+          // Try all possible field names for items
+          const rawItems =
+            dsData.data_items ||
+            dsData.items ||
+            dsData.assets ||
+            dsData.lib_data_item_list ||
+            (Array.isArray(dsData) ? dsData : []) ||
+            [];
+          itemIds = (Array.isArray(rawItems) ? rawItems : []).map(it => {
+            if (typeof it === 'string') return it;
+            return it?.id || it?._id || it?.dataItemId || it?.assetId || null;
+          }).filter(Boolean);
+          console.log('Resolved itemIds:', itemIds);
+
+          // If still empty, try fetching from subtopic assets
+          if (!itemIds.length) {
+            const subtopicId = dsData.subtopicId || (Array.isArray(dsData.subtopicIds) ? dsData.subtopicIds[0] : null);
+            if (subtopicId) {
+              const assetRes = await axios.get(`${API_URL}/api/subtopics/${subtopicId}/assets`, { headers: getAuthHeaders() });
+              const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
+              itemIds = assets.map(a => a.id || a.assetId || a.dataItemId || null).filter(Boolean);
+              console.log('ItemIds from subtopic assets:', itemIds);
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching dataset items:', e);
+        }
+
+        // Validate annotator IDs are UUIDs
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const validAnnotatorIds = selectedAnnotators.filter(id => uuidRegex.test(String(id)));
+
+        if (validAnnotatorIds.length === 0) {
+          throw new Error('Annotator không hợp lệ. Vui lòng chọn annotator từ danh sách.');
+        }
+
+        if (itemIds.length === 0) {
+          // No items in dataset — skip task creation but still create project
+          console.warn('Dataset has no items, skipping task assignment for:', datasetId);
+          continue;
+        }
+
+        // Create one task per selected annotator
+        for (const annotatorId of validAnnotatorIds) {
+          await axios.post(`${API_URL}/api/tasks/assign`, {
+            project_id: projectId,
+            dataset_id: datasetId,
+            annotator_id: annotatorId,
+            reviewer_ids: selectedReviewers,
+            data_item_ids: itemIds,
+          }, { headers: getAuthHeaders() });
+        }
       }
 
-      // Step 3: Assign tasks for each selected dataset
-      for (const datasetId of selectedDatasets) {
-        await axios.post(`${API_URL}/api/tasks/assign`, {
-          project_id: projectId,
-          dataset_id: datasetId,
-          annotator_id: selectedAnnotators[0] || null,
+      // Ensure project has annotator/reviewer IDs and dataset info saved
+      try {
+        await axios.put(`${API_URL}/api/projects/${projectId}`, {
+          annotator_ids: selectedAnnotators,
           reviewer_ids: selectedReviewers,
-          data_item_ids: [],  // will be filled by backend from dataset
-        });
+          dataset_ids: selectedDatasets,
+        }, { headers: getAuthHeaders() });
+      } catch (updateErr) {
+        console.warn('Could not update project with team/dataset info:', updateErr.message);
       }
 
       showNotification('Tạo project và phân công thành công!');
@@ -342,21 +440,22 @@ const CreateProject = () => {
     } catch (error) {
       console.error('Error creating project:', error);
       let errorMsg = 'Có lỗi xảy ra';
-      
+
       if (error.response) {
+        console.error('Error response data:', error.response.data, 'Status:', error.response.status);
         if (error.response.data?.errors && Array.isArray(error.response.data.errors)) {
           errorMsg = error.response.data.errors.map(e => e.msg || e.message).join(', ');
         } else if (error.response.data?.message) {
           errorMsg = error.response.data.message;
         } else {
-          errorMsg = error.response.statusText || 'Server error';
+          errorMsg = `${error.response.statusText} (${error.response.status})`;
         }
       } else if (error.request) {
         errorMsg = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối.';
       } else {
         errorMsg = error.message || 'Có lỗi xảy ra';
       }
-      
+
       setError(`Lỗi: ${errorMsg}`);
       showNotification(`Lỗi khi tạo project: ${errorMsg}`);
     } finally {
@@ -518,8 +617,11 @@ const CreateProject = () => {
               ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {selectedDatasets.map(dsId => {
-                    const info = datasetLabelsets[dsId] || {};
-                    const ds = datasets.find(d => d.id === dsId);
+                    // Normalize key — IDs might be string or number
+                    const strId = String(dsId);
+                    const numId = Number(dsId);
+                    const info = datasetLabelsets[strId] || datasetLabelsets[numId] || datasetLabelsets[dsId] || {};
+                    const ds = datasets.find(d => d.id === dsId || d.id === strId || d.id === numId);
                     return (
                       <Box key={dsId} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#0f172a' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

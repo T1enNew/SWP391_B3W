@@ -13,8 +13,19 @@ const btnSecondary = { borderRadius: 2, textTransform: 'none', fontWeight: 700, 
 const modalSx = { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' };
 const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
 
-const getImgUrl = (storageUrl) => {
-  if (!storageUrl) return '';
+const getImgUrl = (asset) => {
+  if (!asset) return '';
+  // Ưu tiên: signed_url (Supabase signed URL) > storage_url > filename
+  if (asset.signed_url) return asset.signed_url;
+  const storageUrl = asset.storage_url || '';
+  if (!storageUrl) {
+    // Fallback: dùng filename nếu có
+    if (asset.filename) {
+      const base = API_URL.replace(/\/+$/, '');
+      return `${base}/uploads/datasets/${asset.filename}`;
+    }
+    return '';
+  }
   if (storageUrl.startsWith('http')) return storageUrl;
   const base = API_URL.replace(/\/+$/, '');
   return base + '/' + storageUrl.replace(/^\/+/, '');
@@ -31,7 +42,7 @@ const getFileIcon = (filename) => {
 };
 
 const AssetThumb = ({ asset, onDelete, onPreview }) => {
-  const url = getImgUrl(asset.storage_url);
+  const url = getImgUrl(asset);
   const filename = asset.original_name || asset.filename || '';
   const ext = filename.split('.').pop()?.toLowerCase();
   const isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
@@ -81,8 +92,12 @@ const LabelChip = ({ label }) => (
   />
 );
 
-const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
+const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate, onSubtopicAssetUpdate }) => {
   const fileInputRef = useRef();
+  // Track subtopic ID thực sự để tránh re-render trigger useEffect sai
+  const currentSubtopicIdRef = useRef(null);
+  // Ref để abort axios khi subtopic thay đổi giữa chừng
+  const abortControllerRef = useRef(null);
   const [labelSets, setLabelSets] = useState([]);
   const [labelSetsLoading, setLabelSetsLoading] = useState(false);
   const [labelDialog, setLabelDialog] = useState({ open: false, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } });
@@ -99,11 +114,35 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    if (selectedSubtopic) {
+    if (!selectedSubtopic) return;
+    // Abort request cũ nếu có
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    currentSubtopicIdRef.current = selectedSubtopic.id;
+
+    const loadAll = async () => {
       setDataLoaded(false);
-      loadLabelSets();
-      loadAssets();
-    }
+      setAssets([]);
+      setLabelSets([]);
+      try {
+        const [labelRes, assetRes] = await Promise.all([
+          axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/labelsets`),
+          axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`),
+        ]);
+        // Chỉ cập nhật state nếu subtopic vẫn còn là ID đang load
+        if (currentSubtopicIdRef.current !== selectedSubtopic.id) return;
+        setLabelSets(Array.isArray(labelRes.data) ? labelRes.data : []);
+        const loaded = Array.isArray(assetRes.data) ? assetRes.data : [];
+        setAssets(loaded);
+        if (onSubtopicAssetUpdate) onSubtopicAssetUpdate(selectedSubtopic.id, loaded.length);
+      } catch {
+        if (currentSubtopicIdRef.current !== selectedSubtopic.id) return;
+        setAssets([]);
+        setLabelSets([]);
+      }
+      if (currentSubtopicIdRef.current === selectedSubtopic.id) setDataLoaded(true);
+    };
+    loadAll();
   }, [selectedSubtopic?.id]);
 
   const loadLabelSets = async () => {
@@ -120,10 +159,36 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
     setAssetsLoading(true);
     try {
       const r = await axios.get(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`);
-      setAssets(Array.isArray(r.data) ? r.data : []);
+      const loaded = Array.isArray(r.data) ? r.data : [];
+      setAssets(loaded);
+      if (onSubtopicAssetUpdate) onSubtopicAssetUpdate(selectedSubtopic.id, loaded.length);
     } catch { setAssets([]); }
     setAssetsLoading(false);
     setDataLoaded(true);
+  };
+
+  // Dùng chung cho upload/delete — dùng ref guard để tránh race condition
+  const refreshSubtopic = async (options = {}) => {
+    const { loadLabels = true, loadAssets_ = true } = options;
+    const subId = currentSubtopicIdRef.current;
+    if (!subId) return;
+    try {
+      const results = await Promise.all([
+        loadLabels ? axios.get(`${API_URL}/api/subtopics/${subId}/labelsets`) : null,
+        loadAssets_ ? axios.get(`${API_URL}/api/subtopics/${subId}/assets`) : null,
+      ]);
+      if (currentSubtopicIdRef.current !== subId) return;
+      if (loadLabels) setLabelSets(Array.isArray(results[0]?.data) ? results[0].data : []);
+      if (loadAssets_) {
+        const loaded = Array.isArray(results[1]?.data) ? results[1].data : [];
+        setAssets(loaded);
+        if (onSubtopicAssetUpdate) onSubtopicAssetUpdate(subId, loaded.length);
+      }
+    } catch {
+      if (currentSubtopicIdRef.current !== subId) return;
+      if (loadLabels) setLabelSets([]);
+      if (loadAssets_) setAssets([]);
+    }
   };
 
   const saveLabelSet = async () => {
@@ -180,8 +245,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
       uploadFiles.forEach(f => fd.append('files', f));
       await axios.post(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets`, fd);
       setUploadFiles([]);
-      loadAssets();
-      onSubtopicUpdate();
+      await refreshSubtopic({ loadLabels: true, loadAssets_: true });
       setSnackbar({ open: true, message: 'Upload thanh cong!', severity: 'success' });
     } catch (e) {
       setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
@@ -193,8 +257,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
     if (!confirm('Xoa asset?')) return;
     try {
       await axios.delete(`${API_URL}/api/subtopics/${selectedSubtopic.id}/assets/${assetId}`);
-      loadAssets();
-      onSubtopicUpdate();
+      await refreshSubtopic({ loadLabels: true, loadAssets_: true });
     } catch (e) {
       setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
     }
@@ -358,7 +421,7 @@ const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {previewAsset && (
             <img
-              src={getImgUrl(previewAsset.storage_url)}
+              src={getImgUrl(previewAsset)}
               alt={previewAsset.original_name || 'preview'}
               style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8, border: '2px solid #334155', objectFit: 'contain', cursor: 'pointer' }}
               onClick={() => setPreviewAsset(null)}
@@ -549,7 +612,17 @@ const TopicManagement = () => {
 
         <Grid item xs={12} md={selectedSubtopic ? 8 : 9}>
           <Paper sx={{ ...panelSx, height: '100%' }}>
-            <SubtopicPanel selectedSubtopic={selectedSubtopic} onSubtopicUpdate={loadTopics} />
+            <SubtopicPanel selectedSubtopic={selectedSubtopic} onSubtopicUpdate={loadTopics} onSubtopicAssetUpdate={(subId, count) => {
+        if (expandedTopic) {
+          setExpandedTopic(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              subtopics: (prev.subtopics || []).map(s => s.id === subId ? { ...s, assets: Array(count).fill(null) } : s)
+            };
+          });
+        }
+      }} />
           </Paper>
         </Grid>
       </Grid>

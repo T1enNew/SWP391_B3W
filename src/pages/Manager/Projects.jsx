@@ -60,33 +60,100 @@ const ManagerProjects = () => {
 
   const fetchProjects = async () => {
     try {
-      const projectsRes = await axios.get(`${API_URL}/api/projects`);
+      // Fetch projects and users in parallel
+      const [projectsRes, usersRes, tasksRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects`),
+        axios.get(`${API_URL}/api/users`),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { limit: 1000 } }),
+      ]);
+
       const projectList = getArray(projectsRes.data);
+      console.log('[DEBUG] Raw projects response:', JSON.stringify(projectsRes.data, null, 2));
       setProjects(projectList);
 
-      const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { limit: 1000 } });
+      // Build user lookup map
+      let userList = usersRes.data?.users || usersRes.data || [];
+      if (!Array.isArray(userList)) {
+        const vals = Object.values(usersRes.data).find(v => Array.isArray(v));
+        userList = vals || [];
+      }
+      if (!Array.isArray(userList)) userList = [];
+      const userById = Object.fromEntries(userList.map(u => [u.id, u]));
+
       const allTasks = tasksRes.data?.data || [];
 
       const tasksData = {};
       for (const project of projectList) {
         const projectTasks = allTasks.filter((t) => t.project?.id === project.id);
 
-        const annotatorNames = [
-          ...new Set(projectTasks.map((t) => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)),
-        ];
+        // Get annotator names: from tasks + from project record
+        const annotatorIds = new Set();
+        const reviewerIdsFromMembers = new Set();
+        projectTasks.forEach(t => {
+          if (t.annotatorId?.id) annotatorIds.add(t.annotatorId.id);
+          if (t.annotator_id) annotatorIds.add(t.annotator_id);
+          if (t.annotator?.id) annotatorIds.add(t.annotator.id);
+        });
+        // Also from project record
+        const projAnnIds = project.annotator_ids || project.annotatorIds || project.annotators || [];
+        (Array.isArray(projAnnIds) ? projAnnIds : [projAnnIds]).forEach(a => {
+          const id = typeof a === 'object' ? (a.id || a.userId) : a;
+          if (id) annotatorIds.add(id);
+        });
 
-        const reviewerNames = [
-          ...new Set(
-            projectTasks.flatMap((t) =>
-              (t.reviewers || []).map((r) => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
-            )
-          ),
-        ];
+        // Handle members array format: [{role: "annotator"|"reviewer", user: {id, full_name, ...}}]
+        // Also extract reviewers from project.members early (before reviewerIds is declared)
+        if (Array.isArray(project.members)) {
+          console.log(`[DEBUG] Project ${project.id} members:`, project.members);
+          const tempReviewerIds = new Set();
+          project.members.forEach(m => {
+            if (!m || !m.user) return;
+            const user = m.user;
+            const userId = user.id || user.userId;
+            if (!userId) return;
+            if (m.role === 'annotator') annotatorIds.add(userId);
+            if (m.role === 'reviewer') tempReviewerIds.add(userId);
+          });
+          tempReviewerIds.forEach(id => reviewerIdsFromMembers.add(id));
+        }
+
+        // Get reviewer names: from tasks + from project record
+        const reviewerIds = new Set();
+        projectTasks.forEach(t => {
+          if (t.reviewerId?.id) reviewerIds.add(t.reviewerId.id);
+          if (t.reviewer_id) reviewerIds.add(t.reviewer_id);
+          if (t.reviewer?.id) reviewerIds.add(t.reviewer.id);
+          (t.reviewers || []).forEach(r => {
+            const rid = r.reviewerId?.id || r.reviewerId || r.id;
+            if (rid) reviewerIds.add(rid);
+          });
+        });
+        // Also from project record
+        const projRevIds = project.reviewer_ids || project.reviewerIds || project.reviewers || [];
+        (Array.isArray(projRevIds) ? projRevIds : [projRevIds]).forEach(r => {
+          const id = typeof r === 'object' ? (r.id || r.userId) : r;
+          if (id) reviewerIds.add(id);
+        });
+
+        // Merge reviewers extracted from project.members
+        reviewerIdsFromMembers.forEach(id => reviewerIds.add(id));
+
+        // Enrich with user names
+        const annotatorNames = [...annotatorIds].map(uid => {
+          const user = userById[uid];
+          return user?.fullName || user?.username || uid;
+        }).filter(Boolean);
+
+        const reviewerNames = [...reviewerIds].map(rid => {
+          const user = userById[rid];
+          return user?.fullName || user?.username || rid;
+        }).filter(Boolean);
 
         tasksData[project.id] = {
           annotators: annotatorNames,
           reviewers: reviewerNames,
         };
+        console.log(`[DEBUG] Project ${project.id}: annotatorIds=${[...annotatorIds]}, reviewerIds=${[...reviewerIds]}, annotatorNames=${annotatorNames}, reviewerNames=${reviewerNames}`);
       }
       setProjectsWithTasks(tasksData);
     } catch (error) {

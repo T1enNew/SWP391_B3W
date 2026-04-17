@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 import {
@@ -39,15 +38,12 @@ import {
   Tab,
 } from '@mui/material';
 import {
-  Assignment as AssignmentIcon,
-  Settings as SettingsIcon,
-  Download as DownloadIcon,
-  Assessment as AssessmentIcon,
   ArrowBack as ArrowBackIcon,
   Image as ImageIcon,
   AudioFile as AudioIcon,
   Info as InfoIcon,
   Description as TextIcon,
+  Assessment as AssessmentIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -183,8 +179,7 @@ const getLabelColor = (labelName) => {
 const ManagerProjectDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+
 
   const [project, setProject] = useState(null);
   const [datasets, setDatasets] = useState([]);
@@ -223,6 +218,8 @@ const ManagerProjectDetail = () => {
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [projectInfoDialogOpen, setProjectInfoDialogOpen] = useState(false);
+  const [projectTopics, setProjectTopics] = useState([]);
+  const [projectDatasets, setProjectDatasets] = useState([]);
 
   useEffect(() => {
     fetchData();
@@ -472,22 +469,26 @@ const ManagerProjectDetail = () => {
   const groupedByAnnotator = useMemo(() => {
     const groupsMap = new Map();
     tasks.forEach((t) => {
-      const key = t.annotatorId?.id || 'unassigned';
-      if (!groupsMap.has(key)) {
-        groupsMap.set(key, {
-          id: key,
-          name: t.annotatorId?.fullName || t.annotatorId?.username || 'Unassigned',
+      // Handle both { annotatorId: {id, fullName} } and { annotator_id: UUID }
+      const annId = t.annotatorId?.id || t.annotator_id || 'unassigned';
+      const annName = t.annotatorId?.fullName || t.annotatorId?.username || t.annotator_name || t.annotatorName || 'Unassigned';
+      if (!groupsMap.has(annId)) {
+        groupsMap.set(annId, {
+          id: annId,
+          name: annName,
           tasks: [],
           done: 0,
           approved: 0,
           rejected: 0,
         });
       }
-      const g = groupsMap.get(key);
+      const g = groupsMap.get(annId);
       g.tasks.push(t);
-      if (t.status === 'approved') g.done += 1;
-      if (t.status === 'approved') g.approved += 1;
-      if (t.status === 'rejected') g.rejected += 1;
+      // Handle various possible status field names
+      const taskStatus = t.status || t.annotation_status || t.state || '';
+      if (taskStatus === 'approved' || taskStatus === 'completed') g.done += 1;
+      if (taskStatus === 'approved') g.approved += 1;
+      if (taskStatus === 'rejected') g.rejected += 1;
     });
     return Array.from(groupsMap.values());
   }, [tasks]);
@@ -495,14 +496,21 @@ const ManagerProjectDetail = () => {
   const groupedByReviewer = useMemo(() => {
     const groupsMap = new Map();
     tasks.forEach((t) => {
-      (t.reviewers || []).forEach((rv) => {
-        const rid = rv.reviewerId?.id || rv.reviewerId;
+      // Handle reviewers as array of objects or single reviewer_id
+      const reviewerList = t.reviewers || [];
+      // Also check if there's a reviewer_id field directly on task
+      const directReviewerId = t.reviewer_id || t.reviewerId;
+      if (directReviewerId) {
+        reviewerList.push({ reviewerId: directReviewerId });
+      }
+      reviewerList.forEach((rv) => {
+        const rid = rv.reviewerId?.id || rv.reviewerId || rv.id;
         if (!rid) return;
-        const key = rid.toString();
+        const key = String(rid);
         if (!groupsMap.has(key)) {
           groupsMap.set(key, {
             id: key,
-            name: rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer',
+            name: rv.reviewerId?.fullName || rv.reviewerId?.username || rv.fullName || rv.name || 'Reviewer',
             assigned: 0,
             approved: 0,
             rejected: 0,
@@ -511,8 +519,9 @@ const ManagerProjectDetail = () => {
         }
         const g = groupsMap.get(key);
         g.assigned += 1;
-        if (rv.status === 'approved') g.approved += 1;
-        else if (rv.status === 'rejected') g.rejected += 1;
+        const rvStatus = rv.status || t.status || '';
+        if (rvStatus === 'approved' || rvStatus === 'completed') g.approved += 1;
+        else if (rvStatus === 'rejected') g.rejected += 1;
         else g.pending += 1;
       });
     });
@@ -590,29 +599,301 @@ const ManagerProjectDetail = () => {
   }, [approvedDatasets, tasks]);
 
   const fetchData = async () => {
+    // Fetch project info
     try {
-      const [projectRes, datasetsRes, tasksRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
-        axios.get(`${API_URL}/api/datasets`, { params: { project_id: id }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { project_id: id, limit: 1000 }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
-      ]);
-      setProject(projectRes.data.project || projectRes.data);
-      setDatasets(datasetsRes.data?.datasets || datasetsRes.data || []);
-      setTasks((tasksRes.data?.data || []).filter((t) => t.project?.id === id));
+      const projectRes = await axios.get(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const projRaw = projectRes.data;
+      const projData = projRaw?.project || projRaw || {};
+      setProject(projData);
     } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching project:', error);
     }
+
+    // Fetch datasets
+    try {
+      const datasetsRes = await axios.get(`${API_URL}/api/datasets`, { params: { project_id: id }, headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const rawDatasets = datasetsRes.data;
+      // Handle various response shapes: { datasets: [...] }, { data: [...] }, { items: [...] }, or direct array
+      let parsedDatasets = [];
+      if (Array.isArray(rawDatasets)) {
+        parsedDatasets = rawDatasets;
+      } else if (Array.isArray(rawDatasets?.datasets)) {
+        parsedDatasets = rawDatasets.datasets;
+      } else if (Array.isArray(rawDatasets?.data)) {
+        parsedDatasets = rawDatasets.data;
+      } else if (Array.isArray(rawDatasets?.items)) {
+        parsedDatasets = rawDatasets.items;
+      } else if (rawDatasets && typeof rawDatasets === 'object') {
+        // Try to find the first array property
+        const arrProp = Object.keys(rawDatasets).find(k => Array.isArray(rawDatasets[k]));
+        if (arrProp) parsedDatasets = rawDatasets[arrProp];
+      }
+      setDatasets(parsedDatasets);
+      setProjectDatasets(parsedDatasets);
+    } catch (error) {
+      console.error('Error fetching datasets:', error);
+    }
+
+    // Fetch topics/subtopics for project
+    try {
+      const topicsRes = await axios.get(`${API_URL}/api/topics`, { params: { project_id: id }, headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const rawTopics = topicsRes.data;
+      let parsedTopics = [];
+      if (Array.isArray(rawTopics)) {
+        parsedTopics = rawTopics;
+      } else if (Array.isArray(rawTopics?.data)) {
+        parsedTopics = rawTopics.data;
+      } else if (Array.isArray(rawTopics?.topics)) {
+        parsedTopics = rawTopics.topics;
+      } else if (rawTopics && typeof rawTopics === 'object') {
+        const arrProp = Object.keys(rawTopics).find(k => Array.isArray(rawTopics[k]));
+        if (arrProp) parsedTopics = rawTopics[arrProp];
+      }
+      setProjectTopics(parsedTopics);
+    } catch (topicsErr) {
+      console.warn('Topics endpoint not available, trying project topics endpoint:', topicsErr.message);
+      // Try alternative endpoint
+      try {
+        const projTopicsRes = await axios.get(`${API_URL}/api/projects/${id}/topics`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const rawPt = projTopicsRes.data;
+        let parsedPt = [];
+        if (Array.isArray(rawPt)) {
+          parsedPt = rawPt;
+        } else if (Array.isArray(rawPt?.data)) {
+          parsedPt = rawPt.data;
+        } else if (rawPt && typeof rawPt === 'object') {
+          const arrProp = Object.keys(rawPt).find(k => Array.isArray(rawPt[k]));
+          if (arrProp) parsedPt = rawPt[arrProp];
+        }
+        setProjectTopics(parsedPt);
+      } catch (projTopicsErr) {
+        console.warn('Project topics endpoint not available:', projTopicsErr.message);
+        setProjectTopics([]);
+      }
+    }
+
+    // Fetch tasks — try multiple endpoints since backend route may vary
+    let taskList = [];
+    try {
+      // Try /api/tasks/my-tasks first (same as Projects.jsx)
+      const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { project_id: id, limit: 1000 }, headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const rawTasks = tasksRes.data;
+      console.log('[DEBUG] my-tasks raw response:', JSON.stringify(rawTasks, null, 2));
+      taskList = Array.isArray(rawTasks) ? rawTasks
+        : Array.isArray(rawTasks?.data) ? rawTasks.data
+        : Array.isArray(rawTasks?.tasks) ? rawTasks.tasks
+        : Array.isArray(rawTasks?.results) ? rawTasks.results
+        : [];
+      console.log('[DEBUG] my-tasks parsed taskList:', taskList.length, 'tasks');
+    } catch (e1) {
+      // Fallback: try /api/tasks
+      try {
+        const tasksRes = await axios.get(`${API_URL}/api/tasks`, { params: { project_id: id, limit: 1000 }, headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const rawTasks = tasksRes.data;
+        taskList = Array.isArray(rawTasks) ? rawTasks
+          : Array.isArray(rawTasks?.data) ? rawTasks.data
+          : Array.isArray(rawTasks?.tasks) ? rawTasks.tasks
+          : Array.isArray(rawTasks?.results) ? rawTasks.results
+          : [];
+      } catch (e2) {
+        // Fallback: try /api/project-tasks
+        try {
+          const tasksRes = await axios.get(`${API_URL}/api/project-tasks`, { params: { project_id: id, limit: 1000 }, headers: { Authorization: `Bearer ${getAuthToken()}` } });
+          const rawTasks = tasksRes.data;
+          taskList = Array.isArray(rawTasks) ? rawTasks
+            : Array.isArray(rawTasks?.data) ? rawTasks.data
+            : Array.isArray(rawTasks?.tasks) ? rawTasks.tasks
+            : Array.isArray(rawTasks?.results) ? rawTasks.results
+            : [];
+        } catch (e3) {
+          console.error('All task endpoints failed:', e1.message, e2.message, e3.message);
+          taskList = [];
+        }
+      }
+    }
+
+    // If no tasks found but project exists, try to get annotators/reviewers from project team endpoint
+    if (taskList.length === 0) {
+      try {
+        const teamRes = await axios.get(`${API_URL}/api/projects/${id}/team`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const teamData = teamRes.data;
+        console.log('[DEBUG] project team response:', teamData);
+
+        if (teamData?.annotators) {
+          const annList = Array.isArray(teamData.annotators) ? teamData.annotators
+            : Array.isArray(teamData.annotators?.data) ? teamData.annotators.data : [];
+          annList.forEach(a => {
+            const annId = a?.id || a;
+            if (annId) annotatorMap[annId] = typeof a === 'object' ? a : { id: annId, fullName: a.fullName || a.username || 'Annotator' };
+          });
+        }
+        if (teamData?.reviewers) {
+          const revList = Array.isArray(teamData.reviewers) ? teamData.reviewers
+            : Array.isArray(teamData.reviewers?.data) ? teamData.reviewers.data : [];
+          revList.forEach(r => {
+            const revId = r?.id || r;
+            if (revId) reviewerMap[revId] = typeof r === 'object' ? r : { id: revId, fullName: r.fullName || r.username || 'Reviewer' };
+          });
+        }
+      } catch (teamErr) {
+        console.warn('[DEBUG] project team endpoint not available:', teamErr.message);
+      }
+    }
+
+    const filteredTasks = taskList.filter((t) => String(t.project?.id || t.project_id) === String(id));
+    setTasks(filteredTasks);
+
+    // Extract annotators/reviewers from tasks if available
+    const annotatorMap = {};
+    const reviewerMap = {};
+    taskList.forEach(t => {
+      // Try nested object format {annotatorId: {id, fullName}}
+      if (t.annotatorId?.id) {
+        annotatorMap[t.annotatorId.id] = t.annotatorId;
+      }
+      // Try flat format {annotator_id: UUID}
+      if (t.annotator_id && !t.annotatorId?.id) {
+        annotatorMap[t.annotator_id] = { id: t.annotator_id, fullName: t.annotator_name || t.annotatorName || 'Annotator' };
+      }
+      // Try direct annotator object
+      if (t.annotator?.id && !annotatorMap[t.annotator.id]) {
+        annotatorMap[t.annotator.id] = t.annotator;
+      }
+      // Try nested reviewer object
+      if (t.reviewerId?.id) {
+        reviewerMap[t.reviewerId.id] = t.reviewerId;
+      }
+      // Try flat reviewer format
+      if (t.reviewer_id && !t.reviewerId?.id) {
+        reviewerMap[t.reviewer_id] = { id: t.reviewer_id, fullName: t.reviewer_name || t.reviewerName || 'Reviewer' };
+      }
+      // Try direct reviewer object
+      if (t.reviewer?.id && !reviewerMap[t.reviewer.id]) {
+        reviewerMap[t.reviewer.id] = t.reviewer;
+      }
+      // Also check reviewers array
+      (t.reviewers || []).forEach(rv => {
+        const rvId = rv.reviewerId?.id || rv.reviewerId || rv.id;
+        if (rvId) {
+          reviewerMap[rvId] = { id: rvId, fullName: rv.reviewerId?.fullName || rv.reviewerId?.username || rv.fullName || rv.name || 'Reviewer' };
+        }
+      });
+      // Check flat reviewer_ids array
+      if (Array.isArray(t.reviewer_ids)) {
+        t.reviewer_ids.forEach(rid => {
+          if (rid && !reviewerMap[rid]) {
+            reviewerMap[rid] = { id: rid, fullName: 'Reviewer' };
+          }
+        });
+      }
+    });
+
+    // If still no annotators/reviewers found, try to get from project record directly
+    if (Object.keys(annotatorMap).length === 0 || Object.keys(reviewerMap).length === 0) {
+      try {
+        // Get fresh project data which may include team info
+        const projRes = await axios.get(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const proj = projRes.data?.project || projRes.data || {};
+        console.log('[DEBUG] project record for team info:', proj);
+
+        // Try various field names for annotators on project
+        const annSources = [proj.annotators, proj.annotatorIds, proj.annotator_ids, proj.annotatorList, proj.team?.annotators];
+        annSources.forEach(annSrc => {
+          if (!annSrc) return;
+          const annArr = Array.isArray(annSrc) ? annSrc : [annSrc];
+          annArr.forEach(a => {
+            if (!a) return;
+            const annId = typeof a === 'object' ? (a.id || a.userId) : a;
+            if (annId && !annotatorMap[annId]) {
+              annotatorMap[annId] = typeof a === 'object' ? a : { id: annId, fullName: a.fullName || a.username || 'Annotator' };
+            }
+          });
+        });
+
+        // Try various field names for reviewers on project
+        const revSources = [proj.reviewers, proj.reviewerIds, proj.reviewer_ids, proj.reviewerList, proj.team?.reviewers];
+        revSources.forEach(revSrc => {
+          if (!revSrc) return;
+          const revArr = Array.isArray(revSrc) ? revSrc : [revSrc];
+          revArr.forEach(r => {
+            if (!r) return;
+            const revId = typeof r === 'object' ? (r.id || r.userId) : r;
+            if (revId && !reviewerMap[revId]) {
+              reviewerMap[revId] = typeof r === 'object' ? r : { id: revId, fullName: r.fullName || r.username || 'Reviewer' };
+            }
+          });
+        });
+
+        // Handle members array format: [{role: "annotator"|"reviewer", user: {id, full_name, ...}}]
+        if (Array.isArray(proj.members)) {
+          proj.members.forEach(m => {
+            if (!m || !m.user) return;
+            const user = m.user;
+            const userId = user.id || user.userId;
+            const userName = user.full_name || user.fullName || user.username || user.name;
+            if (!userId) return;
+            if (m.role === 'annotator' && !annotatorMap[userId]) {
+              annotatorMap[userId] = { id: userId, fullName: userName };
+            }
+            if (m.role === 'reviewer' && !reviewerMap[userId]) {
+              reviewerMap[userId] = { id: userId, fullName: userName };
+            }
+          });
+        }
+      } catch (projErr) {
+        console.warn('[DEBUG] could not fetch project for team info:', projErr.message);
+      }
+    }
+
+    // Also fetch users list for annotator/reviewer names
+    try {
+      const usersRes = await axios.get(`${API_URL}/api/users`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      // Use getArray-like logic to handle various response shapes
+      let userList = usersRes.data?.users || usersRes.data || [];
+      if (!Array.isArray(userList)) {
+        // Try to find an array inside the response
+        const vals = Object.values(usersRes.data).find(v => Array.isArray(v));
+        userList = vals || [];
+      }
+      console.log('[DEBUG] users response userList:', userList.length, 'users');
+      const annotatorIds = Object.keys(annotatorMap);
+      const reviewerIds = Object.keys(reviewerMap);
+      console.log('[DEBUG] annotatorIds from tasks:', annotatorIds);
+      console.log('[DEBUG] reviewerIds from tasks:', reviewerIds);
+      const userById = Object.fromEntries(userList.map(u => [u.id, u]));
+      const enrichedAnnotators = annotatorIds
+        .map(uid => userById[uid] || annotatorMap[uid])
+        .filter(Boolean);
+      const enrichedReviewers = reviewerIds
+        .map(rid => userById[rid] || reviewerMap[rid])
+        .filter(Boolean);
+      console.log('[DEBUG] enrichedAnnotators:', enrichedAnnotators);
+      console.log('[DEBUG] enrichedReviewers:', enrichedReviewers);
+      setCurrentAnnotators(enrichedAnnotators);
+      setCurrentReviewers(enrichedReviewers);
+    } catch (usersError) {
+      // Fallback: use raw annotator/reviewer data from tasks
+      setCurrentAnnotators(Object.values(annotatorMap));
+      setCurrentReviewers(Object.values(reviewerMap));
+      console.error('Error fetching users for enrichment:', usersError);
+    }
+
+    setLoading(false);
   };
 
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
-      const userList = response.data?.users || response.data || [];
-      setAnnotators(userList.filter((u) => u.role === 'annotator' && u.is_active));
+      // Handle various response shapes - use getArray-like logic
+      let userList = response.data?.users || response.data || [];
+      if (!Array.isArray(userList)) {
+        const vals = Object.values(response.data).find(v => Array.isArray(v));
+        userList = vals || [];
+      }
+      const validUserList = Array.isArray(userList) ? userList : [];
+      setAnnotators(validUserList.filter((u) => u.role === 'annotator' && u.is_active));
       setReviewers(
-        userList
+        validUserList
           .filter((u) => u.role === 'reviewer' && u.is_active)
           .map((u) => ({ ...u, specialty: u.specialty || 'general' }))
       );
@@ -624,9 +905,11 @@ const ManagerProjectDetail = () => {
   const fetchQualityStats = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
-      setQualityStats(response.data);
+      setQualityStats(response.data || {});
     } catch (error) {
-      console.error('Error fetching quality stats:', error);
+      // Quality endpoint may not exist or return error — set default
+      console.warn('Quality stats unavailable:', error.message);
+      setQualityStats({ total: 0, approved: 0, rejected: 0, submitted: 0, approvalRate: 0 });
     }
   };
 
@@ -789,8 +1072,8 @@ const ManagerProjectDetail = () => {
             </Box>
 
             <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-              <Chip label={`Annotators assigned: ${groupedByAnnotator.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
-              <Chip label={`Reviewers assigned: ${groupedByReviewer.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
+              <Chip label={`Annotators assigned: ${currentAnnotators.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
+              <Chip label={`Reviewers assigned: ${currentReviewers.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
             </Box>
 
             <TableContainer component={Paper} sx={{ ...cardSx, '& .MuiTableCell-root': { borderColor: '#334155' } }}>
@@ -805,26 +1088,44 @@ const ManagerProjectDetail = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {groupedByAnnotator.map((g, idx) => {
-                const progress = Math.min(Math.round((g.done / g.tasks.length) * 100), 100);
-                    const reviewed = g.approved + g.rejected;
-                    const quality = reviewed > 0 ? Math.round((g.approved / reviewed) * 100) : 0;
+                  {currentAnnotators.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ color: '#94a3b8', textAlign: 'center', py: 3 }}>No annotators assigned to this project.</TableCell>
+                    </TableRow>
+                  ) : (
+                    currentAnnotators.map((ann, idx) => {
+                      const annName = ann?.fullName || ann?.username || ann?.name || `Annotator ${idx + 1}`;
+                      const annId = ann?.id || ann?.userId || '';
+                      const taskData = groupedByAnnotator.find(g => g.name === annName || g.id === annId);
+                      const taskCount = taskData?.tasks?.length || 0;
+                      const done = taskData?.done || 0;
+                      const progress = taskCount > 0 ? Math.min(Math.round((done / taskCount) * 100), 100) : 0;
+                      const reviewed = (taskData?.approved || 0) + (taskData?.rejected || 0);
+                      const quality = reviewed > 0 ? Math.round(((taskData?.approved || 0) / reviewed) * 100) : 0;
 
-                    return (
-                      <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
-                        <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{g.name}</Typography></TableCell>
-                        <TableCell sx={{ color: '#94a3b8' }}>{g.tasks.length} tasks</TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
-                            <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
-                        <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?.id}`)}>DETAILS</Button></TableCell>
-                      </TableRow>
-                );
-              })}
+                      return (
+                        <TableRow key={annId || idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: 'rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Typography sx={{ color: '#93c5fd', fontWeight: 700, fontSize: '0.8rem' }}>{annName.charAt(0).toUpperCase()}</Typography>
+                              </Box>
+                              <Typography variant="body2" fontWeight={700} color="#e2e8f0">{annName}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell sx={{ color: '#94a3b8' }}>{taskCount} tasks</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
+                              <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
+                          <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => annId && navigate(`/manager/projects/${id}/annotator/${annId}`)}>DETAILS</Button></TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -844,7 +1145,6 @@ const ManagerProjectDetail = () => {
             {approvedDatasetsWithLabels.map((ds) => {
               const isAudioDs = ds.type === 'audio';
               const isTextDs = ds.type === 'text';
-              const isImageDs = ds.type === 'image';
               return (
               <Grid item xs={12} sm={6} md={3} key={ds.id}>
                 <Card sx={{
@@ -1074,20 +1374,36 @@ const ManagerProjectDetail = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {groupedByReviewer.length === 0 ? (
+              {currentReviewers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} sx={{ color: '#94a3b8' }}>No reviewer assignments found.</TableCell>
+                  <TableCell colSpan={5} sx={{ color: '#94a3b8', textAlign: 'center', py: 3 }}>No reviewers assigned to this project.</TableCell>
                 </TableRow>
               ) : (
-                groupedByReviewer.map((r) => (
-                  <TableRow key={r.id} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
-                    <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{r.name}</Typography></TableCell>
-                    <TableCell sx={{ color: '#94a3b8' }}>{r.assigned}</TableCell>
-                    <TableCell sx={{ color: '#34d399' }}>{r.approved}</TableCell>
-                    <TableCell sx={{ color: '#f87171' }}>{r.rejected}</TableCell>
-                    <TableCell sx={{ color: '#fbbf24' }}>{r.pending}</TableCell>
-                  </TableRow>
-                ))
+                currentReviewers.map((rev, idx) => {
+                  const revName = rev?.fullName || rev?.username || rev?.name || `Reviewer ${idx + 1}`;
+                  const revId = rev?.id || rev?.userId || '';
+                  const revData = groupedByReviewer.find(g => g.name === revName || g.id === revId);
+                  const assigned = revData?.assigned || 0;
+                  const approved = revData?.approved || 0;
+                  const rejected = revData?.rejected || 0;
+                  const pending = revData?.pending || 0;
+                  return (
+                    <TableRow key={revId || idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: 'rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography sx={{ color: '#6ee7b7', fontWeight: 700, fontSize: '0.8rem' }}>{revName.charAt(0).toUpperCase()}</Typography>
+                          </Box>
+                          <Typography variant="body2" fontWeight={700} color="#e2e8f0">{revName}</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ color: '#94a3b8' }}>{assigned}</TableCell>
+                      <TableCell sx={{ color: '#34d399' }}>{approved}</TableCell>
+                      <TableCell sx={{ color: '#f87171' }}>{rejected}</TableCell>
+                      <TableCell sx={{ color: '#fbbf24' }}>{pending}</TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -1505,10 +1821,11 @@ const ManagerProjectDetail = () => {
                 <Box>
                   <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Created At</Typography>
                   <Typography variant="body2" color="#e2e8f0">
-                    {project?.createdAt ? new Date(project.createdAt).toLocaleString('vi-VN', {
-                      day: '2-digit', month: '2-digit', year: 'numeric',
-                      hour: '2-digit', minute: '2-digit'
-                    }) : 'N/A'}
+                    {project?.createdAt || project?.created_at
+                      ? new Date(project.createdAt || project.created_at).toLocaleString('vi-VN', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit'
+                        }) : 'N/A'}
                   </Typography>
                 </Box>
 
@@ -1560,10 +1877,13 @@ const ManagerProjectDetail = () => {
                 <Box>
                   <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Manager</Typography>
                   <Typography variant="body2" color="#e2e8f0">
-                    {project?.managerId?.fullName || project?.managerId?.username || 'N/A'}
-                    {project?.managerId?.email && (
+                    {project?.managerId?.fullName || project?.managerId?.username
+                      || project?.manager?.fullName || project?.manager?.username
+                      || project?.createdBy?.fullName || project?.createdBy?.username
+                      || 'N/A'}
+                    {(project?.managerId?.email || project?.manager?.email) && (
                       <Typography component="span" variant="caption" sx={{ color: '#64748b', display: 'block' }}>
-                        {project.managerId.email}
+                        {project.managerId?.email || project.manager?.email}
                       </Typography>
                     )}
                   </Typography>

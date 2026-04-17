@@ -25,32 +25,12 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
   }, []);
 
-  // Restore session synchronously on mount — sets axios headers BEFORE any component mounts
+  // Restore session on mount — always fetch from backend to get authoritative role
   useEffect(() => {
     const tabToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
 
     if (tabToken) {
-      // Set axios header immediately so any API call during render is authenticated
       axios.defaults.headers.common.Authorization = `Bearer ${tabToken}`;
-
-      // Decode user from JWT — instant, no API call needed
-      try {
-        const payload = JSON.parse(atob(tabToken.split('.')[1]));
-        if (payload && payload.sub) {
-          setUser({
-            id:        payload.sub,
-            email:     payload.email,
-            role:      (payload.role || '').toLowerCase(),
-            username:  payload.username,
-            fullName:  payload.full_name,
-          });
-          setLoading(false);
-          return;
-        }
-      } catch {
-        // Fall through to API fetch if decode fails
-      }
-      // Fallback: verify token with server
       fetchUser();
     } else {
       delete axios.defaults.headers.common.Authorization;
@@ -61,7 +41,13 @@ export const AuthProvider = ({ children }) => {
   const fetchUser = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/auth/me`);
-      setUser(response.data.user);
+      // Backend may return { user: {...} } or just {...} directly
+      const u = response.data?.user || response.data;
+      if (u) {
+        // Normalize role to match what login() sets — always lowercase, default to 'manager'
+        u.role = (u.role || 'manager').toLowerCase();
+      }
+      setUser(u);
     } catch (error) {
       sessionStorage.removeItem(AUTH_TOKEN_KEY);
       delete axios.defaults.headers.common.Authorization;
@@ -79,13 +65,16 @@ export const AuthProvider = ({ children }) => {
 
     // Backend returns: { access_token, refresh_token, expires_in, user }
     const { access_token, refresh_token, user: loggedInUser } = response.data;
+    // Handle both { user: {...} } and {...} response shapes
+    const u = loggedInUser || response.data;
 
     sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
     if (refresh_token) {
       sessionStorage.setItem('refresh_token', refresh_token);
     }
     axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-    setUser(loggedInUser);
+    if (u) u.role = (u.role || 'manager').toLowerCase();
+    setUser(u);
     setLoading(false);
 
     return loggedInUser;
@@ -94,16 +83,18 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     const response = await axios.post(`${API_URL}/api/auth/register`, userData);
     const { access_token, refresh_token, user: registeredUser } = response.data;
+    const u = registeredUser || response.data;
 
     sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
     if (refresh_token) {
       sessionStorage.setItem('refresh_token', refresh_token);
     }
     axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-    setUser(registeredUser);
+    if (u) u.role = (u.role || 'manager').toLowerCase();
+    setUser(u);
     setLoading(false);
 
-    return registeredUser;
+    return u;
   };
 
   const logout = async () => {

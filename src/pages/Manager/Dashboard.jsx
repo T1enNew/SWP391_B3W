@@ -91,8 +91,8 @@ const ManagerDashboard = () => {
           axios.get(`${API_URL}/api/projects`, { headers }),
           axios.get(`${API_URL}/api/datasets`, { headers }),
         ]);
-        const projectList = projectsRes.data?.data || [];
-        let datasetList = datasetsRes.data?.data || [];
+        const projectList = Array.isArray(projectsRes.data?.data) ? projectsRes.data.data : [];
+        let datasetList = Array.isArray(datasetsRes.data?.data) ? datasetsRes.data.data : [];
 
         const statusEntries = await Promise.all(
           datasetList.map(async (ds) => {
@@ -124,7 +124,9 @@ const ManagerDashboard = () => {
         const approvalRate = totalReviewed > 0 ? Number(((totalApproveVotes / totalReviewed) * 100).toFixed(1)) : 0;
         const completionRate = totalRawItems > 0 ? Number(((totalApproved / totalRawItems) * 100).toFixed(1)) : 0;
 
-        const datasetBreakdown = datasetList.map(ds => {
+        const datasetBreakdown = datasetList
+          .filter(ds => ds && ds.id)
+          .map(ds => {
           const s = statusMap[ds.id];
           const rawItems = s?.totalRawItems || ds.totalItems || ds.files?.length || 0;
           const approved = s?.counts?.approved || 0;
@@ -140,7 +142,7 @@ const ManagerDashboard = () => {
           if (rawItems > 0 && approved > 0 && pct >= 100) dsStatus = 'ready';
           else if (submitted > 0) dsStatus = 'under_review';
           else if (pending > 0 || submitted > 0) dsStatus = 'annotating';
-          return { _id: ds.id, name: ds.name, type: ds.type, rawItems, approved, rejected, submitted, pending, pct, votes: s?.votes || {}, labelDist, dsStatus, createdAt: ds.createdAt };
+          return { id: ds.id, name: ds.name || 'Unnamed', type: ds.type || 'image', rawItems, approved, rejected, submitted, pending, pct, votes: s?.votes || {}, labelDist, dsStatus, createdAt: ds.createdAt };
         });
 
         const annotatorPerf = {};
