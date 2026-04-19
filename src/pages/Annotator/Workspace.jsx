@@ -13,11 +13,24 @@ import {
   Button,
   Typography,
 } from '@mui/material';
+const getTaskDataItem = (t) => {
+  return t?.dataItem || t?.data_item || t?.datasetItemId || t?.itemId || null;
+};
 
-// Task kind detection
 const getTaskKind = (t) => {
-  const mt = (t?.dataItem?.mimeType || '').toLowerCase();
-  const fileName = (t?.dataItem?.originalName || t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
+  const item = getTaskDataItem(t);
+console.log('ITEM =', item);
+console.log('URL =', buildFileUrl(item));
+  const mt = (item?.mimeType || item?.mime_type || '').toLowerCase();
+
+  const fileName = (
+    item?.originalName ||
+    item?.original_name ||
+    item?.filename ||
+    item?.path ||
+    ''
+  ).toLowerCase();
+
   if (mt.startsWith('image/')) return 'image';
   if (mt.startsWith('audio/')) return 'audio';
   if (mt.startsWith('text/')) return 'text';
@@ -26,21 +39,39 @@ const getTaskKind = (t) => {
   if (mt === 'video/mp4' && /\.(mp4|m4a)$/i.test(fileName)) return 'audio';
   if (['application/json', 'application/xml', 'text/csv'].includes(mt)) return 'text';
   if (/\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+
   return 'other';
 };
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
-  const directUrl = dataItem.signedUrl || dataItem.signed_url || dataItem.storageUrl || dataItem.storage_url || '';
+
+  const directUrl =
+    dataItem.signedUrl ||
+    dataItem.signed_url ||
+    dataItem.storageUrl ||
+    dataItem.storage_url ||
+    dataItem.url ||
+    '';
+
   if (directUrl) return directUrl;
+
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const rawPath = (dataItem.path || dataItem.storagePath || dataItem.storage_path || '').replace(/^\/+/, '');
-  const filename = dataItem.filename || dataItem.originalName || dataItem.original_name || '';
-  if (rawPath) {
-    if (filename && rawPath.endsWith(filename)) return `${baseUrl}/${rawPath}`;
-    return filename ? `${baseUrl}/${rawPath}/${filename}` : `${baseUrl}/${rawPath}`;
-  }
-  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
+
+  const rawPath = (
+    dataItem.path ||
+    dataItem.storagePath ||
+    dataItem.storage_path ||
+    dataItem.filename ||
+    dataItem.originalName ||
+    dataItem.original_name ||
+    ''
+  ).replace(/^\/+/, '');
+
+  if (!rawPath) return '';
+  if (/^https?:\/\//i.test(rawPath)) return rawPath;
+
+  return `${baseUrl}/${rawPath}`;
 };
 
 // Status configuration
@@ -349,6 +380,8 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
   };
 
   if (!task) {
+    console.log('TASK DATA ITEM =', task?.dataItem);
+console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-800">
         <div className="text-center">
@@ -365,11 +398,14 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
         <div className="mx-auto max-w-6xl rounded-xl border border-gray-700 bg-gray-900 p-4 md:p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-base font-semibold text-gray-200">Ghi nhan Hinh anh</h3>
-            <span className="text-xs text-gray-500">{task?.dataItem?.filename || 'Image file'}</span>
+            <span className="text-xs text-gray-500">{getTaskDataItem(task)?.filename ||
+  getTaskDataItem(task)?.originalName ||
+  getTaskDataItem(task)?.original_name ||
+  'Image file'}</span>
           </div>
           <ImageAnnotator
-            imageUrl={buildFileUrl(task.dataItem)}
-            labelSet={task?.availableLabels || []}
+  imageUrl={buildFileUrl(getTaskDataItem(task))}
+              labelSet={task?.availableLabels || []}
             questions={task?.projectId?.questions || []}
             onAnnotationsChange={onAnnotationsChange}
             initialAnnotations={annotations}
@@ -489,8 +525,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
             <span className="text-xs text-gray-500">{task?.dataItem?.filename || 'Audio file'}</span>
           </div>
           <AudioAnnotator
-            audioUrl={buildFileUrl(task?.dataItem)}
-            labelSet={task?.availableLabels || []}
+  audioUrl={buildFileUrl(getTaskDataItem(task))}            labelSet={task?.availableLabels || []}
             initialSegments={labels?.segments || []}
             readOnly={task?.status === 'submitted' || task?.status === 'approved'}
             onChange={(segs) => onLabelsChange({ ...labels, segments: segs })}
@@ -590,15 +625,56 @@ const Workspace = () => {
     try {
       const res = await axios.get(`${API_URL}/api/tasks/${taskId}`);
       const taskData = normalizeTask(res.data);
+      let mergedTaskData = { ...taskData };
+
+try {
+  const assetRes = await axios.get(
+    `${API_URL}/api/subtopics/${subtopicId}/assets`
+  );
+
+  const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
+
+  const matchedAsset = assets.find((a) => {
+    return (
+      a.id === taskData?.dataItem?.id ||
+      a.id === taskData?.data_item?.id ||
+      a.filename === taskData?.dataItem?.filename ||
+      a.filename === taskData?.data_item?.filename ||
+      a.original_name === taskData?.dataItem?.originalName ||
+      a.original_name === taskData?.data_item?.original_name ||
+      a.original_name === taskData?.dataItem?.filename ||
+      a.original_name === taskData?.data_item?.filename
+    );
+  });
+
+  if (matchedAsset) {
+    mergedTaskData = {
+      ...taskData,
+      dataItem: {
+        ...(getTaskDataItem(taskData) || {}),
+        ...matchedAsset,
+        originalName: matchedAsset.original_name,
+        mimeType: matchedAsset.mime_type,
+        storageUrl: matchedAsset.storage_url,
+      },
+    };
+  }
+} catch (err) {
+  console.error('Cannot load assets for subtopic:', err);
+}
       if (!isMountedRef.current) return;
-      setTask(taskData);
-      const initialLabels = taskData.labels || taskData.annotation_data || {};
+      setTask(mergedTaskData);
+      const initialLabels = mergedTaskData.labels || mergedTaskData.annotation_data || {};
+
       setLabels(initialLabels);
-      const kind = getTaskKind(taskData);
+      const kind = getTaskKind(mergedTaskData);
 
       if (kind === 'text') {
         try {
-          const textRes = await axios.get(buildFileUrl(taskData.dataItem), { responseType: 'text' });
+const textRes = await axios.get(
+  buildFileUrl(getTaskDataItem(taskData)),
+  { responseType: 'text' }
+);
           if (isMountedRef.current) { setTextContent(textRes.data || ''); taskData._textContent = textRes.data || ''; }
         } catch { if (isMountedRef.current) setTextContent(''); }
         if (isMountedRef.current) {
