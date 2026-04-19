@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { getArray } from '../../utils/api';
+import { normalizeProject } from '../../utils/taskAdapter';
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -170,7 +171,7 @@ const AnnotatorProjectList = () => {
     setError('');
     try {
       const res = await axios.get(`${API_URL}/api/projects`);
-      setProjects(getArray(res.data));
+      setProjects(getArray(res.data).map(normalizeProject));
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc danh sach project');
     } finally {

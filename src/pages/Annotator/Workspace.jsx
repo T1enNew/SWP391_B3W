@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { normalizeTask } from '../../utils/taskAdapter';
 import ImageAnnotator from '../../components/ImageAnnotator';
 import AudioAnnotator from '../../components/AudioAnnotator';
 import {
@@ -30,16 +31,16 @@ const getTaskKind = (t) => {
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
+  const directUrl = dataItem.signedUrl || dataItem.signed_url || dataItem.storageUrl || dataItem.storage_url || '';
+  if (directUrl) return directUrl;
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const rawPath = dataItem.path || '';
-  const cleanPath = rawPath.replace(/^\/+/, '');
-  if (cleanPath) {
-    if (dataItem.filename && cleanPath.endsWith(dataItem.filename)) {
-      return `${baseUrl}/${cleanPath}`;
-    }
-    return dataItem.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
+  const rawPath = (dataItem.path || dataItem.storagePath || dataItem.storage_path || '').replace(/^\/+/, '');
+  const filename = dataItem.filename || dataItem.originalName || dataItem.original_name || '';
+  if (rawPath) {
+    if (filename && rawPath.endsWith(filename)) return `${baseUrl}/${rawPath}`;
+    return filename ? `${baseUrl}/${rawPath}/${filename}` : `${baseUrl}/${rawPath}`;
   }
-  return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 // Status configuration
@@ -557,13 +558,16 @@ const Workspace = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId } });
-      const taskList = res.data.data || [];
+      const taskList = (res.data.data || []).map(normalizeTask).filter((item) => {
+        const sid = item.subtopicId?.id || item.subtopicId || item.dataItem?.subtopicId;
+        return !subtopicId || sid === subtopicId;
+      });
       if (!isMountedRef.current) return;
       setTasks(taskList);
       if (taskList.length > 0) {
         const first = taskList[0];
-        setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || '' });
-        setProjectInfo({ name: first.projectId?.name || '', id: first.projectId?.id || '' });
+        setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || first.dataItem?.subtopic?.name || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || first.dataItem?.subtopic?.guideline || '' });
+        setProjectInfo({ name: first.projectId?.name || first.project?.name || '', id: first.projectId?.id || first.project?.id || '' });
       }
       if (initialTaskId) {
         setCurrentTaskId(initialTaskId);
@@ -585,10 +589,10 @@ const Workspace = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/api/tasks/${taskId}`);
-      const taskData = res.data;
+      const taskData = normalizeTask(res.data);
       if (!isMountedRef.current) return;
       setTask(taskData);
-      const initialLabels = taskData.labels || {};
+      const initialLabels = taskData.labels || taskData.annotation_data || {};
       setLabels(initialLabels);
       const kind = getTaskKind(taskData);
 
