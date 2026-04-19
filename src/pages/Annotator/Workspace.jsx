@@ -72,7 +72,7 @@ export default function AnnotatorWorkspace() {
         return;
       }
 
-      const itemId = item?.id || item?._id || item?.item_id;
+      const itemId = item?.id || item?._id || item?.item_id || null;
       const datasetId =
         item?.dataset_id ||
         task?.dataset_id ||
@@ -91,35 +91,35 @@ export default function AnnotatorWorkspace() {
       }
 
       try {
-        // 1) Lấy items của dataset, vì màn dataset manager đã hiển thị được thumbnail
-        const { data } = await api.get(`/api/datasets/${datasetId}/items?limit=500`);
-        const items =
-          Array.isArray(data) ? data :
-          Array.isArray(data?.data) ? data.data :
-          Array.isArray(data?.items) ? data.items :
-          [];
+  const { data } = await api.get(`/api/datasets/${datasetId}`);
 
-        const found = items.find(
-          (x) =>
-            String(x?.id) === String(itemId) ||
-            String(x?._id) === String(itemId) ||
-            String(x?.filename) === String(item?.filename) ||
-            String(x?.original_name) === String(item?.original_name)
-        );
+  const items =
+    Array.isArray(data?.data_items) ? data.data_items :
+    Array.isArray(data?.items) ? data.items :
+    Array.isArray(data?.data?.data_items) ? data.data.data_items :
+    [];
 
-        const foundUrl =
-          found?.signed_url ||
-          found?.storage_url ||
-          found?.url ||
-          '';
+  const found = items.find(
+    (x) =>
+      String(x?.id) === String(itemId) ||
+      String(x?._id) === String(itemId) ||
+      String(x?.filename) === String(item?.filename) ||
+      String(x?.original_name) === String(item?.original_name)
+  );
 
-        if (foundUrl) {
-          if (!cancelled) setImageUrl(foundUrl);
-          return;
-        }
-      } catch (_) {
-        // bỏ qua để thử bước 2
-      }
+  const foundUrl =
+    found?.signed_url ||
+    found?.storage_url ||
+    found?.url ||
+    '';
+
+  if (foundUrl) {
+    if (!cancelled) setImageUrl(foundUrl);
+    return;
+  }
+} catch (_) {
+  // bỏ qua để thử signed-url
+}
 
       try {
         // 2) fallback signed-url nếu BE support
