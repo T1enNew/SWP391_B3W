@@ -1,499 +1,188 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  CircularProgress,
+  Alert,
   Box,
-  Typography,
   Button,
-  TextField,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  Card,
+  CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
   IconButton,
+  LinearProgress,
+  MenuItem,
+  Select,
+  Snackbar,
   Stack,
-  Tooltip,
+  TextField,
+  Typography,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon,
+  Visibility as VisibilityIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
-import { useAuth } from '../../context/AuthContext';
 import { getArray } from '../../utils/api';
 
-const panelSx = {
-  borderRadius: 3,
-  boxShadow: '0 16px 32px rgba(0,0,0,0.35)',
-  background: '#111827',
-  border: '1px solid #374151',
-  color: '#e5e7eb',
+const getAuthHeaders = () => {
+  const token = sessionStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-const tableWrapSx = {
-  ...panelSx,
-  overflow: 'hidden',
-  '& .MuiTableCell-root': {
-    borderColor: '#374151',
+const inputSx = {
+  '& .MuiOutlinedInput-root': {
+    bgcolor: '#0f172a',
+    color: '#e2e8f0',
+    borderRadius: '10px',
+    '& fieldset': { borderColor: '#475569' },
+    '&:hover fieldset': { borderColor: '#64748b' },
+    '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
   },
 };
 
-const ManagerProjects = () => {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const [projects, setProjects] = useState([]);
-  const [projectsWithTasks, setProjectsWithTasks] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+const normalizeProject = (p) => ({
+  ...p,
+  id: p?.id || p?._id,
+  name: p?.name || 'Untitled Project',
+  description: p?.description || '',
+  status: p?.status || 'draft',
+  dataset_id: p?.dataset_id || p?.datasetId || p?.dataset?.id || null,
+  dataset_name: p?.dataset?.name || p?.datasetName || '',
+  total_tasks: p?.total_tasks || p?.totalTasks || 0,
+  createdAt: p?.created_at || p?.createdAt,
+  deadline: p?.deadline || null,
+});
+
+const statusColor = (status) => ({
+  active: '#22c55e',
+  draft: '#64748b',
+  completed: '#3b82f6',
+  archived: '#f59e0b',
+}[status] || '#94a3b8');
+
+export default function Projects() {
   const navigate = useNavigate();
+  const [projects, setProjects] = useState([]);
+  const [datasets, setDatasets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, project: null });
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      // Fetch projects and users in parallel
-      const [projectsRes, usersRes, tasksRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects`),
-        axios.get(`${API_URL}/api/users`),
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { limit: 1000 } }),
+      const [projectRes, datasetRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
       ]);
-
-      const projectList = getArray(projectsRes.data);
-      console.log('[DEBUG] Raw projects response:', JSON.stringify(projectsRes.data, null, 2));
-      setProjects(projectList);
-
-      // Build user lookup map
-      let userList = usersRes.data?.users || usersRes.data || [];
-      if (!Array.isArray(userList)) {
-        const vals = Object.values(usersRes.data).find(v => Array.isArray(v));
-        userList = vals || [];
-      }
-      if (!Array.isArray(userList)) userList = [];
-      const userById = Object.fromEntries(userList.map(u => [u.id, u]));
-
-      const allTasks = tasksRes.data?.data || [];
-
-      const tasksData = {};
-      for (const project of projectList) {
-        const projectTasks = allTasks.filter((t) => t.project?.id === project.id);
-
-        // Get annotator names: from tasks + from project record
-        const annotatorIds = new Set();
-        const reviewerIdsFromMembers = new Set();
-        projectTasks.forEach(t => {
-          if (t.annotatorId?.id) annotatorIds.add(t.annotatorId.id);
-          if (t.annotator_id) annotatorIds.add(t.annotator_id);
-          if (t.annotator?.id) annotatorIds.add(t.annotator.id);
-        });
-        // Also from project record
-        const projAnnIds = project.annotator_ids || project.annotatorIds || project.annotators || [];
-        (Array.isArray(projAnnIds) ? projAnnIds : [projAnnIds]).forEach(a => {
-          const id = typeof a === 'object' ? (a.id || a.userId) : a;
-          if (id) annotatorIds.add(id);
-        });
-
-        // Handle members array format: [{role: "annotator"|"reviewer", user: {id, full_name, ...}}]
-        // Also extract reviewers from project.members early (before reviewerIds is declared)
-        if (Array.isArray(project.members)) {
-          console.log(`[DEBUG] Project ${project.id} members:`, project.members);
-          const tempReviewerIds = new Set();
-          project.members.forEach(m => {
-            if (!m || !m.user) return;
-            const user = m.user;
-            const userId = user.id || user.userId;
-            if (!userId) return;
-            if (m.role === 'annotator') annotatorIds.add(userId);
-            if (m.role === 'reviewer') tempReviewerIds.add(userId);
-          });
-          tempReviewerIds.forEach(id => reviewerIdsFromMembers.add(id));
-        }
-
-        // Get reviewer names: from tasks + from project record
-        const reviewerIds = new Set();
-        projectTasks.forEach(t => {
-          if (t.reviewerId?.id) reviewerIds.add(t.reviewerId.id);
-          if (t.reviewer_id) reviewerIds.add(t.reviewer_id);
-          if (t.reviewer?.id) reviewerIds.add(t.reviewer.id);
-          (t.reviewers || []).forEach(r => {
-            const rid = r.reviewerId?.id || r.reviewerId || r.id;
-            if (rid) reviewerIds.add(rid);
-          });
-        });
-        // Also from project record
-        const projRevIds = project.reviewer_ids || project.reviewerIds || project.reviewers || [];
-        (Array.isArray(projRevIds) ? projRevIds : [projRevIds]).forEach(r => {
-          const id = typeof r === 'object' ? (r.id || r.userId) : r;
-          if (id) reviewerIds.add(id);
-        });
-
-        // Merge reviewers extracted from project.members
-        reviewerIdsFromMembers.forEach(id => reviewerIds.add(id));
-
-        // Enrich with user names
-        const annotatorNames = [...annotatorIds].map(uid => {
-          const user = userById[uid];
-          return user?.fullName || user?.username || uid;
-        }).filter(Boolean);
-
-        const reviewerNames = [...reviewerIds].map(rid => {
-          const user = userById[rid];
-          return user?.fullName || user?.username || rid;
-        }).filter(Boolean);
-
-        tasksData[project.id] = {
-          annotators: annotatorNames,
-          reviewers: reviewerNames,
-        };
-        console.log(`[DEBUG] Project ${project.id}: annotatorIds=${[...annotatorIds]}, reviewerIds=${[...reviewerIds]}, annotatorNames=${annotatorNames}, reviewerNames=${reviewerNames}`);
-      }
-      setProjectsWithTasks(tasksData);
-    } catch (error) {
-      console.error('Error fetching projects:', error);
+      setProjects(getArray(projectRes.data).map(normalizeProject));
+      setDatasets(getArray(datasetRes.data));
+    } catch (e) {
+      setError(e?.response?.data?.message || e.message || 'Không tải được project');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this project?')) return;
-    try {
-      await axios.delete(`${API_URL}/api/projects/${id}`);
-      fetchProjects();
-    } catch (error) {
-      console.error('Error deleting project:', error);
-    }
-  };
+  useEffect(() => { loadData(); }, []);
 
-  const getStatusChipStyles = (status) => {
-    switch (status) {
-      case 'active':
-        return { bgcolor: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.25)' };
-      case 'completed':
-        return { bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.25)' };
-      case 'archived':
-        return { bgcolor: 'rgba(156,163,175,0.15)', color: '#9ca3af', border: '1px solid rgba(156,163,175,0.25)' };
-      default:
-        return { bgcolor: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' };
-    }
-  };
-
-  const filteredProjects = useMemo(() => {
-    if (!searchTerm.trim()) return projects;
-    const lower = searchTerm.toLowerCase();
-    return projects.filter((p) => {
-      const name = (p.name || '').toLowerCase();
-      const desc = (p.description || '').toLowerCase();
-      return name.includes(lower) || desc.includes(lower);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return projects.filter(p => {
+      const okSearch = !q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.dataset_name.toLowerCase().includes(q);
+      const okStatus = statusFilter === 'all' || p.status === statusFilter;
+      return okSearch && okStatus;
     });
-  }, [projects, searchTerm]);
+  }, [projects, search, statusFilter]);
 
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const deleteProject = async () => {
+    const project = deleteDialog.project;
+    if (!project) return;
+    try {
+      await axios.delete(`${API_URL}/api/projects/${project.id}`, { headers: getAuthHeaders() });
+      setDeleteDialog({ open: false, project: null });
+      await loadData();
+      setToast({ open: true, message: 'Xóa project thành công', severity: 'success' });
+    } catch (e) {
+      setToast({ open: true, message: e?.response?.data?.message || e.message || 'Xóa project thất bại', severity: 'error' });
+    }
+  };
 
   return (
-    <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh', background: '#0f172a' }}>
-      <Box sx={panelSx}>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: { xs: 'flex-start', md: 'center' },
-            flexDirection: { xs: 'column', md: 'row' },
-            mb: 3,
-            p: { xs: 2, sm: 3 },
-            gap: 2,
-            borderBottom: '1px solid #374151',
-          }}
-        >
-          <Box>
-            <Typography variant="h4" fontWeight={900} sx={{ color: '#e5e7eb', mb: 0.5 }}>
-              Projects
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#9ca3af' }}>
-              Quản lý tất cả project labeling của bạn ở một nơi.
-            </Typography>
-          </Box>
-
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <TextField
-              placeholder="Search projects..."
-              size="small"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: '10px',
-                  bgcolor: '#1f2937',
-                  color: '#e5e7eb',
-                  '& fieldset': { borderColor: '#374151' },
-                  '&:hover fieldset': { borderColor: '#4b5563' },
-                  '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
-                },
-                '& .MuiInputBase-input::placeholder': { color: '#6b7280', opacity: 1 },
-              }}
-              InputProps={{
-                startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} fontSize="small" />,
-              }}
-            />
-            {user?.role === 'manager' && (
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => navigate('/manager/projects/create')}
-                sx={{
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  px: 2.5,
-                  fontWeight: 800,
-                  bgcolor: '#2563eb',
-                  color: 'white',
-                  '&:hover': { bgcolor: '#1d4ed8' },
-                }}
-              >
-                New Project
-              </Button>
-            )}
-          </Stack>
-        </Box>
-
-        <Box sx={{ p: { xs: 1.5, sm: 2.5 } }}>
-          <TableContainer component={Paper} sx={tableWrapSx}>
-            <Table sx={{ minWidth: 650 }}>
-              <TableHead>
-                <TableRow sx={{ bgcolor: '#111827' }}>
-                  <TableCell sx={{ color: '#9ca3af', fontWeight: 700 }}>Project Name</TableCell>
-                  <TableCell sx={{ color: '#9ca3af', fontWeight: 700 }}>Status</TableCell>
-                  <TableCell sx={{ color: '#9ca3af', fontWeight: 700 }}>Reviewer</TableCell>
-                  <TableCell sx={{ color: '#9ca3af', fontWeight: 700 }}>Annotator</TableCell>
-                  <TableCell sx={{ color: '#9ca3af', fontWeight: 700 }}>Last Updated</TableCell>
-                  <TableCell align="right" sx={{ color: '#9ca3af', fontWeight: 700 }}>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredProjects.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 10, color: '#9ca3af' }}>
-                      Không có project nào phù hợp.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredProjects.map((project) => {
-                    const updatedAt = project.updatedAt || project.createdAt;
-                    const dateStr = updatedAt
-                      ? new Date(updatedAt).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                      : '-';
-
-                    const projectData = projectsWithTasks[project.id] || { annotators: [], reviewers: [] };
-                    const statusStyle = getStatusChipStyles(project.status);
-
-                    return (
-                      <TableRow
-                        key={project.id}
-                        hover
-                        sx={{
-                          cursor: 'pointer',
-                          '&:hover': { bgcolor: '#1f2937' },
-                        }}
-                        onClick={() => navigate(`/manager/projects/${project.id}`)}
-                      >
-                        <TableCell>
-                          <Box>
-                            <Typography variant="body2" fontWeight={700} sx={{ color: '#e5e7eb' }}>
-                              {project.name}
-                            </Typography>
-                            {project.description && (
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  color: '#9ca3af',
-                                  display: 'block',
-                                  maxWidth: 250,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {project.description}
-                              </Typography>
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Chip
-                              label={project.status?.toUpperCase() || 'DRAFT'}
-                              size="small"
-                              sx={{ ...statusStyle, fontWeight: 700 }}
-                            />
-                            <Chip
-                              label={`Review: ${(project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus || 'pending').toUpperCase()}`}
-                              size="small"
-                              sx={{
-                                bgcolor: (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'approved'
-                                  ? 'rgba(16,185,129,0.18)'
-                                  : (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'rejected'
-                                    ? 'rgba(239,68,68,0.18)'
-                                    : 'rgba(245,158,11,0.18)',
-                                color: (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'approved'
-                                  ? '#34d399'
-                                  : (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'rejected'
-                                    ? '#f87171'
-                                    : '#fbbf24',
-                                border: '1px solid #374151',
-                                fontWeight: 700,
-                              }}
-                            />
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Stack direction="row" spacing={0.5} alignItems="center">
-                            {projectData.reviewers.length === 0 ? (
-                              <Typography variant="caption" sx={{ color: '#6b7280', fontStyle: 'italic' }}>
-                                Unassigned
-                              </Typography>
-                            ) : (
-                              <>
-                                <Box
-                                  sx={{
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: '50%',
-                                    bgcolor: 'rgba(167,139,250,0.15)',
-                                    color: '#a78bfa',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '10px',
-                                    fontWeight: 700,
-                                    border: '1px solid rgba(167,139,250,0.3)',
-                                  }}
-                                  title={projectData.reviewers[0]}
-                                >
-                                  {projectData.reviewers[0]
-                                    .split(' ')
-                                    .map((n) => n[0])
-                                    .join('')
-                                    .toUpperCase()
-                                    .slice(0, 2)}
-                                </Box>
-                                {projectData.reviewers.length > 1 && (
-                                  <Typography variant="caption" sx={{ color: '#9ca3af', fontWeight: 600 }}>
-                                    +{projectData.reviewers.length - 1}
-                                  </Typography>
-                                )}
-                              </>
-                            )}
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Stack direction="row" spacing={0.5} alignItems="center">
-                            {projectData.annotators.length === 0 ? (
-                              <Typography variant="caption" sx={{ color: '#6b7280', fontStyle: 'italic' }}>
-                                Unassigned
-                              </Typography>
-                            ) : (
-                              <>
-                                <Box
-                                  sx={{
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: '50%',
-                                    bgcolor: 'rgba(59,130,246,0.15)',
-                                    color: '#60a5fa',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '10px',
-                                    fontWeight: 700,
-                                    border: '1px solid rgba(59,130,246,0.3)',
-                                  }}
-                                  title={projectData.annotators[0]}
-                                >
-                                  {projectData.annotators[0]
-                                    .split(' ')
-                                    .map((n) => n[0])
-                                    .join('')
-                                    .toUpperCase()
-                                    .slice(0, 2)}
-                                </Box>
-                                {projectData.annotators.length > 1 && (
-                                  <Typography variant="caption" sx={{ color: '#9ca3af', fontWeight: 600 }}>
-                                    +{projectData.annotators.length - 1}
-                                  </Typography>
-                                )}
-                              </>
-                            )}
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" sx={{ color: '#9ca3af' }}>
-                            {dateStr}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            {!isAdmin && (
-                              <>
-                                <Tooltip title="Edit">
-                                  <IconButton
-                                    size="small"
-                                    sx={{ color: '#9ca3af', '&:hover': { bgcolor: '#1f2937', color: '#e5e7eb' } }}
-                                    onClick={() => navigate(`/manager/projects/${project.id}`)}
-                                  >
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Delete">
-                                  <IconButton
-                                    size="small"
-                                    sx={{ color: '#fb7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.12)' } }}
-                                    onClick={() => handleDelete(project.id)}
-                                  >
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </>
-                            )}
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
-            <Typography variant="caption" sx={{ color: '#9ca3af' }}>
-              Showing {filteredProjects.length} of {projects.length} projects
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#9ca3af', fontStyle: 'italic' }}>
-              Quản lý team & tiến độ labeling hiệu quả hơn.
-            </Typography>
-          </Box>
-        </Box>
+    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2 }}>
+        <Typography variant="h4" fontWeight={700}>Projects</Typography>
+        <Button startIcon={<AddIcon />} variant="contained" onClick={() => navigate('/manager/projects/create')}>New Project</Button>
       </Box>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
+
+      <Card sx={{ mb: 3, bgcolor: '#1e293b', border: '1px solid #334155' }}>
+        <CardContent>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={8}><TextField fullWidth placeholder="Search project..." value={search} onChange={(e) => setSearch(e.target.value)} sx={inputSx} InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: '#94a3b8' }} /> }} /></Grid>
+            <Grid item xs={12} md={4}>
+              <Select fullWidth value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} sx={inputSx}>
+                <MenuItem value="all">All status</MenuItem>
+                <MenuItem value="draft">Draft</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+                <MenuItem value="archived">Archived</MenuItem>
+              </Select>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      <Grid container spacing={2}>
+        {filtered.map(project => (
+          <Grid item xs={12} md={6} lg={4} key={project.id}>
+            <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  <Box>
+                    <Typography variant="h6" fontWeight={700}>{project.name}</Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>{project.description || 'Không có mô tả'}</Typography>
+                  </Box>
+                  <Chip label={project.status} size="small" sx={{ bgcolor: `${statusColor(project.status)}22`, color: statusColor(project.status), border: `1px solid ${statusColor(project.status)}` }} />
+                </Box>
+                <Stack spacing={0.8} sx={{ mb: 2 }}>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Dataset: {project.dataset_name || datasets.find(d => d.id === project.dataset_id)?.name || 'N/A'}</Typography>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Tasks: {project.total_tasks}</Typography>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Deadline: {project.deadline ? new Date(project.deadline).toLocaleString('vi-VN') : 'N/A'}</Typography>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" startIcon={<VisibilityIcon />} variant="outlined" onClick={() => navigate(`/manager/projects/${project.id}`)}>Detail</Button>
+                  <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteDialog({ open: true, project })}>Delete</Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, project: null })}>
+        <DialogTitle>Delete project</DialogTitle>
+        <DialogContent>Bạn có chắc muốn xóa project này?</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog({ open: false, project: null })}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={deleteProject}>Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
+        <Alert severity={toast.severity} onClose={() => setToast(prev => ({ ...prev, open: false }))}>{toast.message}</Alert>
+      </Snackbar>
     </Box>
   );
-};
-
-export default ManagerProjects;
+}
