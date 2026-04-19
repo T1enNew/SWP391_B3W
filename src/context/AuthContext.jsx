@@ -1,115 +1,98 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
-import { API_URL } from '../config/api';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { api, normalizeUser, getErrorMessage } from '../lib/apiClient';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 const AUTH_TOKEN_KEY = 'token';
+const AUTH_REFRESH_KEY = 'refresh_token';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
+};
+
+const applyToken = (token) => {
+  if (token) api.defaults.headers.common.Authorization = `Bearer ${token}`;
+  else delete api.defaults.headers.common.Authorization;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const handleProfileUpdate = (e) => {
-      setUser(e.detail);
-    };
-    window.addEventListener('userProfileUpdated', handleProfileUpdate);
-    return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
-  }, []);
-
-  useEffect(() => {
-    const tabToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
-
-    if (tabToken) {
-      axios.defaults.headers.common.Authorization = `Bearer ${tabToken}`;
-      // Decode user from JWT directly — instant, no API call needed
-      try {
-        const payload = JSON.parse(atob(tabToken.split('.')[1]));
-        if (payload && payload._id) {
-          setUser({
-            _id: payload._id,
-            email: payload.email,
-            role: payload.role,
-            username: payload.username,
-            fullName: payload.fullName,
-          });
-          setLoading(false);
-          return;
-        }
-      } catch {
-        // Fall through to API fetch if decode fails
-      }
-      // Fallback: verify token with server
-      fetchUser();
-    } else {
-      delete axios.defaults.headers.common.Authorization;
-      setLoading(false);
+  const saveAuth = (payload) => {
+    const token = payload?.access_token || payload?.token;
+    const refresh = payload?.refresh_token;
+    if (token) {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+      applyToken(token);
     }
-  }, []);
+    if (refresh) sessionStorage.setItem(AUTH_REFRESH_KEY, refresh);
+    if (payload?.user) setUser(normalizeUser(payload.user));
+  };
+
+  const clearAuth = () => {
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_REFRESH_KEY);
+    applyToken(null);
+    setUser(null);
+  };
 
   const fetchUser = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/auth/me`);
-      setUser(response.data.user);
-    } catch (error) {
-      sessionStorage.removeItem(AUTH_TOKEN_KEY);
-      delete axios.defaults.headers.common.Authorization;
-      setUser(null);
+      const { data } = await api.get('/api/auth/me');
+      setUser(normalizeUser(data?.user || data));
+    } catch {
+      clearAuth();
     } finally {
       setLoading(false);
     }
   };
 
+
+  useEffect(() => {
+    const handleProfileUpdate = (event) => setUser(normalizeUser(event.detail));
+    window.addEventListener('userProfileUpdated', handleProfileUpdate);
+    return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
+  }, []);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    applyToken(token);
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    fetchUser();
+  }, []);
+
   const login = async (email, password) => {
-    const response = await axios.post(`${API_URL}/api/auth/login`, {
-      email,
-      password,
-    });
-
-    const { token, user: loggedInUser } = response.data;
-
-    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-    setUser(loggedInUser);
-    setLoading(false);
-
-    return loggedInUser;
+    const { data } = await api.post('/api/auth/login', { email, password });
+    saveAuth(data);
+    return normalizeUser(data?.user);
   };
 
   const register = async (userData) => {
-    const response = await axios.post(`${API_URL}/api/auth/register`, userData);
-    const { token, user: registeredUser } = response.data;
-
-    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-    setUser(registeredUser);
-    setLoading(false);
-
-    return registeredUser;
+    const payload = { ...userData, full_name: userData.full_name || userData.fullName };
+    const { data } = await api.post('/api/auth/register', payload);
+    saveAuth(data);
+    return normalizeUser(data?.user);
   };
 
-  const logout = () => {
-    sessionStorage.removeItem(AUTH_TOKEN_KEY);
-    delete axios.defaults.headers.common.Authorization;
-    setUser(null);
+  const logout = async () => {
+    try { await api.post('/api/auth/logout'); } catch {}
+    clearAuth();
   };
 
-  const value = {
+  const value = useMemo(() => ({
     user,
-    setUser,
+    setUser: (next) => setUser(normalizeUser(next)),
     login,
     register,
     logout,
     loading,
-  };
+    getErrorMessage,
+  }), [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
