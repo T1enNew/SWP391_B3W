@@ -3,6 +3,8 @@ import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { getArray } from '../../utils/api';
 
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
 
 
 const fmtShortDate = (d) => {
@@ -54,7 +56,10 @@ const ReviewerHistory = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } });
+        const res = await axios.get(`${API_URL}/api/reviews/reviewed`, {
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+          params: { page: 1, limit: 100 },
+        });
         setReviewedTasks(getArray(res.data));
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');

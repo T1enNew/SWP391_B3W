@@ -33,8 +33,14 @@ const ReviewerOverview = () => {
       setLoading(true);
       try {
         const [pendingRes, reviewedRes] = await Promise.all([
-          axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 } }),
-          axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } }),
+          axios.get(`${API_URL}/api/reviews/pending`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
+          axios.get(`${API_URL}/api/reviews/reviewed`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
         ]);
         setPendingTasks(getArray(pendingRes.data));
         setReviewedTasks(getArray(reviewedRes.data));
@@ -228,7 +234,7 @@ const ReviewerOverview = () => {
                               </div>
                             ))}
                             {item.annotators.length > 4 && (
-                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
+                              <div key={`overflow-${item.itemId}`} className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
                                 +{item.annotators.length - 4}
                               </div>
                             )}
