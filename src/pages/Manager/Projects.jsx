@@ -3,11 +3,21 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, extractList, getErrorMessage } from '../../lib/apiClient';
 import { page, button, SectionTitle, EmptyState, pill, StatusBadge } from '../_fixedShared';
 
+const normalizeDataset = (dataset) => ({
+  ...dataset,
+  id: dataset?.id ?? dataset?._id ?? dataset?.dataset_id ?? null,
+  name: dataset?.name ?? dataset?.title ?? 'Untitled dataset',
+});
+
 const normalizeProject = (project) => ({
   ...project,
   id: project?.id ?? project?._id,
   name: project?.name ?? project?.title ?? 'Untitled project',
-  dataset_id: project?.dataset_id ?? project?.dataset?.id ?? project?.dataset?._id ?? null,
+  dataset_id:
+    project?.dataset_id ??
+    project?.dataset?.id ??
+    project?.dataset?._id ??
+    null,
   dataset_name:
     project?.dataset?.name ||
     project?.dataset_name ||
@@ -26,25 +36,33 @@ const normalizeProject = (project) => ({
     project?.review_count ??
     project?.reviews_count ??
     0,
+  created_at: project?.created_at || project?.createdAt || null,
 });
-
-const getDatasetName = (project) =>
-  project?.dataset_name ||
-  project?.dataset?.name ||
-  project?.dataset_title ||
-  (project?.dataset_id ? `Dataset #${project.dataset_id}` : 'No dataset');
 
 export default function ManagerProjects() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
+  const [datasets, setDatasets] = useState([]);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await api.get('/api/projects?limit=100');
-        const list = extractList(data).map(normalizeProject).filter((p) => p.id);
-        setProjects(list);
+        const [projectRes, datasetRes] = await Promise.all([
+          api.get('/api/projects?limit=100'),
+          api.get('/api/datasets?limit=200'),
+        ]);
+
+        const projectList = extractList(projectRes.data)
+          .map(normalizeProject)
+          .filter((p) => p.id);
+
+        const datasetList = extractList(datasetRes.data)
+          .map(normalizeDataset)
+          .filter((d) => d.id);
+
+        setProjects(projectList);
+        setDatasets(datasetList);
       } catch (e) {
         setMessage(getErrorMessage(e, 'Không tải được danh sách project.'));
       }
@@ -53,6 +71,14 @@ export default function ManagerProjects() {
     load();
   }, []);
 
+  const datasetMap = useMemo(() => {
+    const map = new Map();
+    datasets.forEach((d) => {
+      map.set(String(d.id), d.name);
+    });
+    return map;
+  }, [datasets]);
+
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => {
       const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
@@ -60,6 +86,21 @@ export default function ManagerProjects() {
       return bTime - aTime;
     });
   }, [projects]);
+
+const getDatasetName = (project) => {
+  if (project?.dataset_name) return project.dataset_name;
+  if (project?.dataset?.name) return project.dataset.name;
+
+  const byMap = project?.dataset_id
+    ? datasetMap.get(String(project.dataset_id))
+    : null;
+
+  if (byMap) return byMap;
+
+  return project?.dataset_id
+    ? `Dataset #${project.dataset_id}`
+    : 'Dataset info not returned by backend';
+};
 
   return (
     <div className={page}>
@@ -108,7 +149,9 @@ export default function ManagerProjects() {
           </button>
         ))}
 
-        {sortedProjects.length === 0 ? <EmptyState text="Chưa có project nào." /> : null}
+        {sortedProjects.length === 0 ? (
+          <EmptyState text="Chưa có project nào." />
+        ) : null}
       </div>
     </div>
   );

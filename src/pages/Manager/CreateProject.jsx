@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, extractList, getErrorMessage } from '../../lib/apiClient';
+import { api, getErrorMessage } from '../../lib/apiClient';
 import { page, card, input, button, buttonSecondary, SectionTitle } from '../_fixedShared';
 
 const normalizeList = (payload) => {
@@ -15,8 +15,8 @@ const normalizeList = (payload) => {
 const normalizeDataset = (dataset) => ({
   ...dataset,
   id: dataset?.id ?? dataset?._id ?? dataset?.dataset_id ?? '',
-  name: dataset?.name ?? dataset?.title ?? `Dataset ${dataset?.id ?? ''}`,
-  status: dataset?.status ?? dataset?.dataset_status ?? '',
+  name: dataset?.name ?? dataset?.title ?? 'Untitled dataset',
+  status: dataset?.status ?? '',
   data_items_count:
     dataset?.data_items_count ??
     dataset?.item_count ??
@@ -37,7 +37,6 @@ export default function CreateProject() {
   const [datasets, setDatasets] = useState([]);
   const [annotators, setAnnotators] = useState([]);
   const [reviewers, setReviewers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
   const [form, setForm] = useState({
@@ -59,43 +58,22 @@ export default function CreateProject() {
   useEffect(() => {
     const load = async () => {
       try {
-        setLoading(true);
-        setMessage('');
-
         const [datasetRes, annRes, revRes] = await Promise.all([
           api.get('/api/datasets?limit=100'),
           api.get('/api/users?role=annotator&limit=100'),
           api.get('/api/users?role=reviewer&limit=100'),
         ]);
 
-        const datasetList = normalizeList(datasetRes.data)
-          .map(normalizeDataset)
-          .filter((d) => d.id);
-
-        const annotatorList = normalizeList(annRes.data)
-          .map(normalizeUser)
-          .filter((u) => u.id);
-
-        const reviewerList = normalizeList(revRes.data)
-          .map(normalizeUser)
-          .filter((u) => u.id);
-
-        setDatasets(datasetList);
-        setAnnotators(annotatorList);
-        setReviewers(reviewerList);
+        setDatasets(normalizeList(datasetRes.data).map(normalizeDataset).filter((x) => x.id));
+        setAnnotators(normalizeList(annRes.data).map(normalizeUser).filter((x) => x.id));
+        setReviewers(normalizeList(revRes.data).map(normalizeUser).filter((x) => x.id));
       } catch (error) {
         setMessage(getErrorMessage(error, 'Không tải được dữ liệu tạo project.'));
-      } finally {
-        setLoading(false);
       }
     };
 
     load();
   }, []);
-
-  const datasetOptions = useMemo(() => {
-    return datasets;
-  }, [datasets]);
 
   const toggleUser = (field, id) => {
     setForm((prev) => ({
@@ -108,6 +86,7 @@ export default function CreateProject() {
 
   const submit = async (e) => {
     e.preventDefault();
+
     try {
       setMessage('');
 
@@ -116,7 +95,7 @@ export default function CreateProject() {
         description: form.description.trim() || undefined,
         guidelines: form.guidelines.trim() || undefined,
         deadline: form.deadline ? new Date(form.deadline).toISOString() : undefined,
-        dataset_id: form.dataset_id ? Number(form.dataset_id) : undefined,
+        dataset_id: form.dataset_id || undefined, // GIỮ NGUYÊN STRING/UUID
         annotator_ids: form.annotator_ids,
         reviewer_ids: form.reviewer_ids,
         export_format: form.export_format,
@@ -192,7 +171,7 @@ export default function CreateProject() {
               onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}
             >
               <option value="">Không gắn dataset</option>
-              {datasetOptions.map((dataset) => (
+              {datasets.map((dataset) => (
                 <option key={dataset.id} value={dataset.id}>
                   {dataset.name}
                   {dataset.status ? ` • ${dataset.status}` : ''}
@@ -202,14 +181,6 @@ export default function CreateProject() {
                 </option>
               ))}
             </select>
-
-            {loading ? (
-              <div className="text-sm text-slate-400">Đang tải datasets...</div>
-            ) : datasetOptions.length === 0 ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                Không có dataset nào được load lên. Kiểm tra lại API `/api/datasets`.
-              </div>
-            ) : null}
 
             <select
               className={input}

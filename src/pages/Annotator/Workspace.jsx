@@ -85,12 +85,44 @@ export default function AnnotatorWorkspace() {
       if (!datasetId || !itemId) {
         if (!cancelled) {
           setImageUrl('');
-          setMessage('Task chưa trả đủ dataset_id hoặc item_id để lấy signed URL ảnh.');
+          setMessage('Task chưa trả đủ dataset_id hoặc item_id để lấy ảnh.');
         }
         return;
       }
 
       try {
+        // 1) Lấy items của dataset, vì màn dataset manager đã hiển thị được thumbnail
+        const { data } = await api.get(`/api/datasets/${datasetId}/items?limit=500`);
+        const items =
+          Array.isArray(data) ? data :
+          Array.isArray(data?.data) ? data.data :
+          Array.isArray(data?.items) ? data.items :
+          [];
+
+        const found = items.find(
+          (x) =>
+            String(x?.id) === String(itemId) ||
+            String(x?._id) === String(itemId) ||
+            String(x?.filename) === String(item?.filename) ||
+            String(x?.original_name) === String(item?.original_name)
+        );
+
+        const foundUrl =
+          found?.signed_url ||
+          found?.storage_url ||
+          found?.url ||
+          '';
+
+        if (foundUrl) {
+          if (!cancelled) setImageUrl(foundUrl);
+          return;
+        }
+      } catch (_) {
+        // bỏ qua để thử bước 2
+      }
+
+      try {
+        // 2) fallback signed-url nếu BE support
         const { data } = await api.get(`/api/datasets/${datasetId}/signed-url/${itemId}`);
         if (!cancelled) {
           setImageUrl(data?.signed_url || data?.url || '');
@@ -98,12 +130,7 @@ export default function AnnotatorWorkspace() {
       } catch (error) {
         if (!cancelled) {
           setImageUrl('');
-          setMessage(
-            getErrorMessage(
-              error,
-              `Không lấy được signed URL ảnh. datasetId=${datasetId}, itemId=${itemId}`
-            )
-          );
+          setMessage(getErrorMessage(error, 'File not found.'));
         }
       }
     };
@@ -151,9 +178,7 @@ export default function AnnotatorWorkspace() {
 
   const previewFallback = useMemo(() => {
     if (task?.data_item?.mime_type?.startsWith('image/')) {
-      return imageUrl
-        ? ''
-        : 'Ảnh đang ở private storage nên FE cần signed URL. Nếu vẫn không hiện, kiểm tra đúng dataset_id và item_id của task.';
+      return imageUrl ? '' : 'Không lấy được URL ảnh từ dataset item hoặc signed-url.';
     }
     return task?.data_item?.mime_type || 'Không có preview ảnh.';
   }, [task, imageUrl]);
@@ -200,25 +225,25 @@ export default function AnnotatorWorkspace() {
           </div>
 
           {Array.isArray(task?.label_set?.labels) && task.label_set.labels.length > 0 ? (
-  <div className="mt-3 flex flex-wrap gap-2">
-    {task.label_set.labels.map((label, index) => {
-      const labelText =
-        typeof label === 'string'
-          ? label
-          : label?.name || label?.shortcut || `Label ${index + 1}`;
+            <div className="mt-3 flex flex-wrap gap-2">
+              {task.label_set.labels.map((label, index) => {
+                const labelText =
+                  typeof label === 'string'
+                    ? label
+                    : label?.name || label?.shortcut || `Label ${index + 1}`;
 
-      return (
-        <span
-          key={label?.id || `${labelText}-${index}`}
-          className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200"
-          title={typeof label === 'object' ? label?.description || '' : ''}
-        >
-          {labelText}
-        </span>
-      );
-    })}
-  </div>
-) : null}
+                return (
+                  <span
+                    key={label?.id || `${labelText}-${index}`}
+                    className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200"
+                    title={typeof label === 'object' ? label?.description || '' : ''}
+                  >
+                    {labelText}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         <div className={card}>

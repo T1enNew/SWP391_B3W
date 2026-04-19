@@ -19,9 +19,8 @@ const normalizeProject = (project) => ({
     project?.dataset?.name ||
     project?.dataset_name ||
     project?.dataset_title ||
-    project?.datasetId?.name ||
     null,
-  guidelines: project?.guidelines ?? project?.instruction ?? '',
+  guidelines: project?.guidelines ?? '',
 });
 
 const normalizeTask = (task) => ({
@@ -30,58 +29,50 @@ const normalizeTask = (task) => ({
   status: task?.status ?? 'unknown',
   annotator_name:
     task?.annotator?.full_name ||
-    task?.annotator?.fullName ||
     task?.annotator?.username ||
     task?.annotator_name ||
     '—',
   reviewer_name:
     task?.reviewer?.full_name ||
-    task?.reviewer?.fullName ||
     task?.reviewer?.username ||
     task?.reviewer_name ||
     '—',
   file_name:
     task?.data_item?.original_name ||
     task?.data_item?.filename ||
-    task?.data_item?.file_name ||
     task?.filename ||
     task?.id,
 });
-
-const getDatasetName = (project) =>
-  project?.dataset_name ||
-  project?.dataset?.name ||
-  project?.dataset_title ||
-  (project?.dataset_id ? `Dataset #${project.dataset_id}` : '—');
 
 export default function ManagerProjectDetail() {
   const { id } = useParams();
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [datasets, setDatasets] = useState([]);
   const [reviewStats, setReviewStats] = useState(null);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     const load = async () => {
       try {
-        setMessage('');
-
-        const [projectRes, taskRes] = await Promise.all([
+        const [projectRes, taskRes, datasetRes] = await Promise.all([
           api.get(`/api/projects/${id}`),
           api.get(`/api/tasks/project/${id}?limit=200`),
+          api.get('/api/datasets?limit=100'),
         ]);
 
         setProject(normalizeProject(projectRes.data));
         setTasks(extractList(taskRes.data).map(normalizeTask).filter((t) => t.id));
+        setDatasets(extractList(datasetRes.data));
 
-        try {
-          const statsRes = await api.get(`/api/reviews/projects/${id}/stats`);
-          setReviewStats(statsRes.data || null);
-        } catch (error) {
-          console.warn('Skip project review stats:', error?.response?.data || error.message);
-          setReviewStats(null);
-        }
+     try {
+  const statsRes = await api.get(`/api/reviews/projects/${id}/stats`);
+  setReviewStats(statsRes.data || null);
+} catch (error) {
+  console.warn('Skip project review stats:', error?.response?.data || error.message);
+  setReviewStats(null);
+}
       } catch (error) {
         setMessage(getErrorMessage(error, 'Không tải được chi tiết project.'));
       }
@@ -89,6 +80,24 @@ export default function ManagerProjectDetail() {
 
     load();
   }, [id]);
+const datasetName = useMemo(() => {
+  if (!project) return '—';
+
+  if (project.dataset_name) return project.dataset_name;
+  if (project.dataset?.name) return project.dataset.name;
+
+  if (!project.dataset_id) {
+    return 'Dataset info not returned by backend';
+  }
+
+  const found = datasets.find(
+    (d) =>
+      String(d?.id) === String(project.dataset_id) ||
+      String(d?._id) === String(project.dataset_id)
+  );
+
+  return found?.name || `Dataset #${project.dataset_id}`;
+}, [project, datasets]);
 
   const taskGroups = useMemo(
     () => ({
@@ -106,11 +115,7 @@ export default function ManagerProjectDetail() {
       <SectionTitle
         title={project?.name || 'Project detail'}
         subtitle={project?.description || 'Chi tiết project và tasks đã được tạo.'}
-        right={
-          <Link className={buttonSecondary} to="/manager/projects">
-            Back
-          </Link>
-        }
+        right={<Link className={buttonSecondary} to="/manager/projects">Back</Link>}
       />
 
       {message ? (
@@ -123,11 +128,10 @@ export default function ManagerProjectDetail() {
         <div className="space-y-6">
           <div className={card}>
             <h2 className="mb-4 text-lg font-semibold">Thông tin project</h2>
-
             {project ? (
               <div className="space-y-3 text-sm">
                 <div>
-                  <span className="text-slate-400">Dataset:</span> {getDatasetName(project)}
+                  <span className="text-slate-400">Dataset:</span> {datasetName}
                 </div>
                 <div>
                   <span className="text-slate-400">Status:</span> <StatusBadge value={project.status} />
@@ -147,7 +151,6 @@ export default function ManagerProjectDetail() {
 
           <div className={card}>
             <h2 className="mb-4 text-lg font-semibold">Task summary</h2>
-
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(taskGroups).map(([key, value]) => (
                 <div
@@ -162,8 +165,7 @@ export default function ManagerProjectDetail() {
 
             {reviewStats ? (
               <div className="mt-4 text-sm text-slate-400">
-                Approval rate: {reviewStats.approval_rate ?? 0}% • Approved:{' '}
-                {reviewStats.approved ?? 0} • Rejected: {reviewStats.rejected ?? 0}
+                Approval rate: {reviewStats.approval_rate ?? 0}% • Approved: {reviewStats.approved ?? 0} • Rejected: {reviewStats.rejected ?? 0}
               </div>
             ) : null}
           </div>
@@ -171,7 +173,6 @@ export default function ManagerProjectDetail() {
 
         <div className={card}>
           <h2 className="mb-4 text-lg font-semibold">Tasks</h2>
-
           <div className="space-y-3">
             {tasks.map((task) => (
               <div
