@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -33,8 +33,14 @@ const ReviewerOverview = () => {
       setLoading(true);
       try {
         const [pendingRes, reviewedRes] = await Promise.all([
-          axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 } }),
-          axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } }),
+          axios.get(`${API_URL}/api/reviews/pending`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
+          axios.get(`${API_URL}/api/reviews/reviewed`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
         ]);
         setPendingTasks(getArray(pendingRes.data));
         setReviewedTasks(getArray(reviewedRes.data));
@@ -81,7 +87,10 @@ const ReviewerOverview = () => {
           subtopicName: task.subtopicId?.name || '-',
           annotators: [],
           taskId: task.id,
-          projectId: task.projectId?.id || task.projectId,
+          projectId: task.projectId?.id
+            || (typeof task.projectId === 'string' ? task.projectId : null)
+            || task.project?.id
+            || null,
         };
       }
       const annotName = task.annotatorId?.fullName || task.annotatorId?.username || '?';
@@ -112,7 +121,15 @@ const ReviewerOverview = () => {
   }, [queueItems, search, sortBy]);
 
   const handleReview = (item) => {
-    navigate('/reviewer/workspace/' + item.projectId + '?taskId=' + item.taskId);
+    const pid = item.projectId;
+    if (!pid || pid === 'undefined') {
+      console.error('[ReviewerOverview] projectId missing for item:', item);
+      alert('Không tìm thấy projectId cho item này. Vui lòng thử lại hoặc vào qua trang Projects.');
+      return;
+    }
+    // Navigate đến project detail để reviewer xem context và chọn subtopic
+    // rồi mới vào Workspace — tránh bug fetchReviewedTask thiếu field ảnh
+    navigate('/reviewer/projects/' + pid);
   };
 
   if (loading) {
@@ -228,7 +245,7 @@ const ReviewerOverview = () => {
                               </div>
                             ))}
                             {item.annotators.length > 4 && (
-                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
+                              <div key={`overflow-${item.itemId}`} className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
                                 +{item.annotators.length - 4}
                               </div>
                             )}

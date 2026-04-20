@@ -5,6 +5,8 @@ import { API_URL } from '../../config/api';
 import { getArray } from '../../utils/api';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
 
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
   const baseUrl = API_URL.replace(/\/+$/, '');
@@ -553,7 +555,7 @@ const ReviewerWorkspace = () => {
     try {
       const params = {};
       if (projectId) params.project_id = projectId;
-      const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
+      const res = await axios.get(`${API_URL}/api/reviews/pending`, { headers: { Authorization: `Bearer ${getAuthToken()}` }, params });
       let taskList = res.data?.reviews || [];
 
       // Client-side filter: neu co subtopicFilter, chi lay tasks thuoc subtopic do
@@ -656,7 +658,7 @@ const ReviewerWorkspace = () => {
     if (!submission?.task) return;
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'approved', '');
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
@@ -671,7 +673,7 @@ const ReviewerWorkspace = () => {
     setShowRejectConfirm(false);
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'rejected', feedback);
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');

@@ -1,16 +1,27 @@
-﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
+import { normalizeTask } from '../../utils/taskAdapter';
+
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const directUrl = dataItem?.url || dataItem?.imageUrl || '';
+  // Uu tien: signedUrl -> storageUrl -> url (giong Annotator Workspace)
+  const directUrl =
+    dataItem?.signedUrl ||
+    dataItem?.signed_url ||
+    dataItem?.storageUrl ||
+    dataItem?.storage_url ||
+    dataItem?.url ||
+    dataItem?.imageUrl ||
+    '';
   if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
-  const filename = dataItem?.originalName || dataItem?.filename || '';
-  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const filename = dataItem?.originalName || dataItem?.original_name || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || dataItem?.storagePath || dataItem?.storage_path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
   if (rawPath) {
     const uploadsIdx = rawPath.indexOf('uploads/');
     const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
@@ -24,8 +35,9 @@ const buildFileUrl = (dataItem) => {
 };
 
 const getTaskKind = (t) => {
-  const mt = (t?.dataItem?.mimeType || '').toLowerCase();
-  const fn = (t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
+  const di = t?.dataItem || t?.data_item || {};
+  const mt = (di.mimeType || di.mime_type || '').toLowerCase();
+  const fn = (di.filename || di.original_name || di.originalName || di.path || '').toLowerCase();
   if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fn)) return 'image';
   if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(fn)) return 'audio';
   if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fn)) return 'text';
@@ -562,30 +574,142 @@ const ReviewerWorkspace = () => {
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
+    setItems([]);
+    setCurrentItemId(null);
+    setCurrentItem(null);
     try {
-      const params = {};
+      // Lấy tasks từ /api/tasks/my-tasks
+      const params = { limit: 1000 };
       if (projectId) params.project_id = projectId;
-      const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
-      const taskList = res.data?.reviews || [];
+      const taskRes = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+        params,
+      });
+      let taskList = Array.isArray(taskRes.data)
+        ? taskRes.data
+        : taskRes.data?.data || taskRes.data?.tasks || [];
 
+      // Chuẩn hóa task để lấy đúng subtopic và dataItem
+      taskList = taskList.map(normalizeTask);
+
+      // Lấy thêm asset URLs từ subtopic nếu có
+      // Thử tất cả các vị trí có thể chứa subtopicId
+      const subtopicIds = [...new Set(taskList.map(t => {
+        const sid =
+          t.subtopicId?.id ||
+          (typeof t.subtopicId === 'string' ? t.subtopicId : null) ||
+          t.dataItem?.subtopicId ||
+          t.dataItem?.subtopic_id ||
+          t.data_item?.subtopic_id ||
+          null;
+        return sid;
+      }).filter(Boolean))];
+      console.log('[ReviewerWorkspace] subtopicIds found:', subtopicIds);
+
+      const assetsMap = {};
+      await Promise.all(subtopicIds.map(async (subId) => {
+        try {
+          const assetRes = await axios.get(`${API_URL}/api/subtopics/${subId}/assets`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+          });
+          const assets = Array.isArray(assetRes.data) ? assetRes.data : assetRes.data?.data || [];
+          console.log('[ReviewerWorkspace] assets fetched for subtopic', subId, ':', assets.length, 'items', assets.map(a => ({ id: a.id, filename: a.filename, has_signed_url: !!a.signed_url })));
+          // Luu bang nhieu key de match duoc nhieu truong hop
+          assets.forEach(a => {
+            if (a.id)            assetsMap[a.id]            = a;
+            if (a.filename)      assetsMap[a.filename]      = a;
+            if (a.original_name) assetsMap[a.original_name] = a;
+          });
+        } catch (err) {
+          console.warn('[ReviewerWorkspace] assets fetch failed for subtopic', subId, err.message);
+        }
+      }));
+      console.log('[ReviewerWorkspace] assetsMap keys:', Object.keys(assetsMap));
+
+      // Merge asset data vao task
+      taskList = taskList.map(task => {
+        const di = task.dataItem || {};
+        const matchedAsset =
+          assetsMap[di.id] ||
+          assetsMap[di.filename] ||
+          assetsMap[di.originalName] ||
+          assetsMap[di.original_name];
+        console.log('[ReviewerWorkspace] task', task.id, '| di.id=', di.id, '| di.filename=', di.filename, '| matched=', !!matchedAsset, '| signed_url=', matchedAsset?.signed_url?.substring(0, 60));
+        if (matchedAsset) {
+          const mergedDataItem = {
+            ...di,
+            ...matchedAsset,
+            originalName: matchedAsset.original_name || di.originalName,
+            mimeType: matchedAsset.mime_type || di.mimeType,
+            storageUrl: matchedAsset.storage_url || di.storageUrl,
+          };
+          const url = buildFileUrl(mergedDataItem);
+          console.log('[ReviewerWorkspace] resolved imageUrl:', url?.substring(0, 80));
+          return {
+            ...task,
+            dataItem: mergedDataItem,
+            _resolvedImageUrl: url,
+          };
+        }
+        const fallbackUrl = buildFileUrl(task.dataItem);
+        console.log('[ReviewerWorkspace] fallback imageUrl (no asset match):', fallbackUrl?.substring(0, 80));
+        return {
+          ...task,
+          _resolvedImageUrl: fallbackUrl,
+        };
+      });
+
+      // Lọc theo subtopic nếu có filter
+      if (subtopicFilter) {
+        taskList = taskList.filter(t => {
+          const sid = t.subtopicId?.id || t.subtopicId || t.dataItem?.subtopicId;
+          return String(sid) === String(subtopicFilter);
+        });
+      }
+
+      // Group tasks theo dataItem (file) — mỗi item có thể có nhiều annotator
       const itemMap = new Map();
       taskList.forEach((task) => {
-        const itemKey = task.data_item?.filename || task.data_item?.storage_path || task.id;
-        const color = stringToColor(task.annotator?.id || task.annotator_id || task.id);
+        const dataItem = task.dataItem || {};
+        const itemKey =
+          dataItem.filename ||
+          dataItem.original_name ||
+          dataItem.originalName ||
+          task.itemId ||
+          task.id;
+
+        if (!itemKey) return;
+
+        const annotatorId = task.annotatorId?.id || task.annotatorId;
+        const annotatorName =
+          task.annotator?.fullName ||
+          task.annotator?.username ||
+          task.annotator_name ||
+          'Annotator';
+
+        const color = stringToColor(annotatorId || task.id);
+        const reviewStatus = getAnnotatorStatus(task);
+        const subtopicRaw = task.subtopicId?.id || task.subtopicId || dataItem.subtopicId;
+        const subtopicName =
+          task.subtopicId?.name ||
+          task.subtopicName ||
+          dataItem.subtopic?.name ||
+          (subtopicRaw ? `Subtopic ${subtopicRaw}` : '');
 
         if (!itemMap.has(itemKey)) {
           itemMap.set(itemKey, {
             itemId: itemKey,
-            filename: task.dataItem?.filename || 'Unknown',
-            imageUrl: buildFileUrl(task.dataItem),
+            filename: dataItem.originalName || dataItem.original_name || dataItem.filename || itemKey,
+            // Dung _resolvedImageUrl (da duoc build sau khi merge asset) thay vi build lai tu dataItem goc
+            imageUrl: task._resolvedImageUrl || buildFileUrl(task.dataItem),
             kind: getTaskKind(task),
             status: 'pending_review',
-            projectName: task.projectId?.name || '',
-            projectId: task.projectId?.id,
-            subtopicName: task.subtopicId?.name || task.subtopicName || '',
-            subtopicId: task.subtopicId?.id,
-            guideline: task.projectId?.guidelines || '',
-            availableLabels: task.availableLabels || task.projectId?.availableLabels || task.labelsetId?.labels || [],
+            projectName: task.projectId?.name || task.project?.name || '',
+            projectId: task.projectId?.id || task.project?.id || projectId,
+            subtopicName,
+            subtopicId: subtopicRaw,
+            guideline: task.projectId?.guidelines || task.project?.guidelines || '',
+            availableLabels: task.labelSet?.labels || task.availableLabels || [],
             submissions: [],
           });
         }
@@ -593,11 +717,11 @@ const ReviewerWorkspace = () => {
         const item = itemMap.get(itemKey);
         item.submissions.push({
           submissionId: task.id,
-          annotatorId: task.annotatorId?.id || task.annotatorId,
-          annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
-          status: getAnnotatorStatus(task),
-          labels: task.labels || {},
-          feedback: task.reviewComments || '',
+          annotatorId,
+          annotatorName,
+          status: reviewStatus,
+          labels: task.annotation_data || task.labels || {},
+          feedback: task.review_comments || task.reviewComments || '',
           color,
           task,
         });
@@ -605,55 +729,96 @@ const ReviewerWorkspace = () => {
       });
 
       const itemList2 = Array.from(itemMap.values());
-      itemList2.sort((a, b) => {
-        const order = { pending_review: 0, partially_reviewed: 1, waiting_rework: 2, fully_reviewed: 3, finalized: 4 };
-        return (order[a.status] || 5) - (order[b.status] || 5);
-      });
+      // Sort: pending > partially > waiting_rework > reviewed
+      const order = { pending_review: 0, partially_reviewed: 1, waiting_rework: 2, fully_reviewed: 3, finalized: 4 };
+      itemList2.sort((a, b) => (order[a.status] || 5) - (order[b.status] || 5));
 
       setItems(itemList2);
 
-      if (itemList2.length > 0 && !currentItemId) {
+      // Auto-select first item
+      if (itemList2.length > 0) {
         const first = itemList2[0];
         setCurrentItemId(first.itemId);
         setCurrentItem(first);
         const firstPend = first.submissions.find(s => s.status === 'pending');
-        if (firstPend) { setActiveAnnotatorId(firstPend.annotatorId); setVisibleAnnotators([firstPend.annotatorId]); }
+        if (firstPend) {
+          setActiveAnnotatorId(firstPend.annotatorId);
+          setVisibleAnnotators([firstPend.annotatorId]);
+        }
       }
     } catch (err) {
+      console.error('fetchQueue error:', err.response?.data || err.message);
       setFetchError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
-  }, [projectId, subtopicFilter, currentItemId]);
+  }, [projectId, subtopicFilter]);
 
   // Fetch a single reviewed task by ID (used when navigating from History page)
   const fetchReviewedTask = useCallback(async (taskId) => {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await axios.get(`${API_URL}/api/reviews/task/${taskId}`);
-      const task = res.data;
+      const res = await axios.get(`${API_URL}/api/reviews/task/${taskId}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const task = normalizeTask(res.data);
       if (!task) { setFetchError('Task not found'); setLoading(false); return; }
 
-      const itemKey = task.data_item?.filename || task.data_item?.storage_path || task.id;
-      const color = stringToColor(task.annotator?.id || task.annotator_id || task.id);
+      const dataItem = task.dataItem || {};
+      const itemKey = dataItem.filename || dataItem.original_name || task.id;
+      const color = stringToColor(task.annotatorId?.id || task.annotatorId || task.id);
+      const reviewStatus = getAnnotatorStatus(task);
+      const subtopicRaw = task.subtopicId?.id || task.subtopicId || dataItem.subtopicId;
+      const subtopicName =
+        task.subtopicId?.name ||
+        dataItem.subtopic?.name ||
+        (subtopicRaw ? `Subtopic ${subtopicRaw}` : '');
+
+      // Load asset URLs nếu chưa có đầy đủ
+      let resolvedDataItem = dataItem;
+      if (!dataItem.storageUrl && !dataItem.signedUrl && !dataItem.url) {
+        const subId = subtopicRaw;
+        if (subId) {
+          try {
+            const assetRes = await axios.get(`${API_URL}/api/subtopics/${subId}/assets`, {
+              headers: { Authorization: `Bearer ${getAuthToken()}` },
+            });
+            const assets = Array.isArray(assetRes.data) ? assetRes.data : assetRes.data?.data || [];
+            const matched = assets.find(a =>
+              a.id === dataItem.id ||
+              a.filename === dataItem.filename ||
+              a.original_name === dataItem.original_name
+            );
+            if (matched) {
+              resolvedDataItem = {
+                ...dataItem,
+                ...matched,
+                originalName: matched.original_name || dataItem.originalName,
+                mimeType: matched.mime_type || dataItem.mimeType,
+                storageUrl: matched.storage_url || dataItem.storageUrl,
+              };
+            }
+          } catch { /* ignore */ }
+        }
+      }
 
       const item = {
         itemId: itemKey,
-        filename: task.data_item?.filename || 'Unknown',
-        imageUrl: buildFileUrl(task.data_item),
+        filename: resolvedDataItem.originalName || resolvedDataItem.original_name || itemKey,
+        imageUrl: buildFileUrl({ ...dataItem, ...resolvedDataItem }),
         kind: getTaskKind(task),
         status: task.status === 'approved' ? 'fully_reviewed' : (task.status === 'rejected' ? 'waiting_rework' : 'pending_review'),
-        projectName: task.project?.name || '',
-        projectId: task.project?.id,
-        guideline: task.project?.guidelines || '',
-        availableLabels: [],
+        projectName: task.projectId?.name || task.project?.name || '',
+        projectId: task.projectId?.id || projectId,
+        subtopicName,
+        subtopicId: subtopicRaw,
+        guideline: task.projectId?.guidelines || task.project?.guidelines || '',
+        availableLabels: task.labelSet?.labels || task.availableLabels || [],
         submissions: [{
           submissionId: task.id,
-          annotatorId: task.annotator?.id || task.annotator_id,
-          annotatorName: task.annotator?.full_name || task.annotator?.username || 'Annotator',
-          status: getAnnotatorStatus(task),
-          labels: task.annotation_data || {},
+          annotatorId: task.annotatorId?.id || task.annotatorId,
+          annotatorName: task.annotator?.fullName || task.annotator?.username || 'Annotator',
+          status: reviewStatus,
+          labels: task.annotation_data || task.labels || {},
           feedback: task.review_comments || '',
           color,
           task,
@@ -664,14 +829,14 @@ const ReviewerWorkspace = () => {
       setItems([item]);
       setCurrentItemId(item.itemId);
       setCurrentItem(item);
-      setActiveAnnotatorId(task.annotator?.id || task.annotator_id);
-      setVisibleAnnotators([task.annotator?.id || task.annotator_id]);
+      setActiveAnnotatorId(task.annotatorId?.id || task.annotatorId);
+      setVisibleAnnotators([task.annotatorId?.id || task.annotatorId]);
     } catch (err) {
       setFetchError(err.response?.data?.message || 'Không tải được task');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   const taskIdFromUrl = searchParams.get('taskId');
 
@@ -681,7 +846,7 @@ const ReviewerWorkspace = () => {
     } else {
       fetchQueue();
     }
-  }, [taskIdFromUrl, fetchQueue, fetchReviewedTask]);
+  }, [projectId, subtopicFilter]);
 
   const handleItemSelect = (item) => {
     setCurrentItemId(item.itemId);
@@ -715,7 +880,7 @@ const ReviewerWorkspace = () => {
     if (!submission?.task) return;
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'approved', '');
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
@@ -730,7 +895,7 @@ const ReviewerWorkspace = () => {
     setShowRejectConfirm(false);
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'rejected', feedback);
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');
@@ -802,7 +967,7 @@ const ReviewerWorkspace = () => {
             {currentItem && (
               <div className="flex items-center gap-1 shrink-0">
                 {currentItem.submissions?.map((sub) => (
-                  <button key={sub.annotatorId}
+                  <button key={sub.submissionId || sub.annotatorId}
                     onClick={() => { handleAnnotatorSelect(sub); handleAnnotatorToggle(sub.annotatorId); }}
                     className="w-5 h-5 rounded-full border-2 border-gray-900 flex items-center justify-center text-[9px] font-bold text-white transition-all hover:scale-110"
                     style={{ backgroundColor: sub.color || '#3b82f6', opacity: visibleAnnotators.includes(sub.annotatorId) ? 1 : 0.4 }}
