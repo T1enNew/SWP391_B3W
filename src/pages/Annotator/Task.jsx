@@ -236,13 +236,13 @@ const AnnotatorTask = () => {
         setSelectedLabel(initialLabels?.label || '');
       }
 
-      if (response.data.datasetId) {
+      if (response.data.dataset_id) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { datasetId: response.data.datasetId._id || response.data.datasetId },
+          params: { dataset_id: response.data.dataset_id },
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);
-        const currentIdx = batchTasksList.findIndex((t) => t._id === id);
+        const currentIdx = batchTasksList.findIndex((t) => t.id === id);
         setCurrentTaskIndex(currentIdx >= 0 ? currentIdx : 0);
       }
 
@@ -343,9 +343,8 @@ const AnnotatorTask = () => {
         };
       }
 
-      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels: labelsPayload,
-        status: 'in_progress',
+      await axios.put(`${API_URL}/api/tasks/${id}/save`, {
+        annotation_data: labelsPayload,
       });
       setMessage('Đã lưu thành công!');
       setTimeout(() => setMessage(''), 3000);
@@ -378,10 +377,10 @@ const AnnotatorTask = () => {
     try {
       await handleSave();
 
-      await axios.post(`${API_URL}/api/tasks/${id}/complete`);
+      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
 
       const updatedBatchTasks = batchTasks.map((t) =>
-        t._id === id ? { ...t, status: 'completed' } : t
+        t.id === id ? { ...t, status: 'submitted' } : t
       );
       setBatchTasks(updatedBatchTasks);
       setTask((prev) => (prev ? { ...prev, status: 'completed' } : null));
@@ -395,13 +394,13 @@ const AnnotatorTask = () => {
       );
 
       if (nextTaskIndex !== -1) {
-        navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex]._id}`);
+        navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex].id}`);
       } else {
         const firstUncompletedIndex = updatedBatchTasks.findIndex(
           (t) => t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
         );
         if (firstUncompletedIndex !== -1) {
-          navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex]._id}`);
+          navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex].id}`);
         } else {
           alert('Tất cả ảnh trong batch này đã được hoàn thành! Bạn có thể nộp bài ngay bây giờ.');
         }
@@ -451,9 +450,10 @@ const AnnotatorTask = () => {
 
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/tasks/submit-batch`, {
-        datasetId: task.datasetId._id || task.datasetId,
-      });
+      // Submit each task individually
+      await Promise.all(
+        batchTasks.map((t) => axios.post(`${API_URL}/api/tasks/${t.id}/submit`))
+      );
       alert('Nộp bài thành công! Đang quay về trang dashboard.');
       navigate('/annotator/tasks');
     } catch (error) {
@@ -471,13 +471,13 @@ const AnnotatorTask = () => {
     if (task.status !== 'completed') {
       try {
         await handleSave();
-        await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
-        setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
+        await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+        setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
         setBatchTasks((list) =>
-          list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t))
+          list.map((t) => (t.id === task.id ? { ...t, status: 'submitted' } : t))
         );
       } catch (err) {
-        console.error('Error completing task before submit:', err);
+        console.error('Error submitting task before submit:', err);
       }
     }
 
@@ -492,7 +492,7 @@ const AnnotatorTask = () => {
     setSaving(true);
     try {
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
       setShowSubmitConfirm(false);
       navigate('/annotator/tasks', { replace: true });
     } catch (error) {
@@ -507,12 +507,12 @@ const AnnotatorTask = () => {
     if (
       saveCurrent &&
       task &&
-      task._id !== taskId &&
+      task.id !== taskId &&
       task.status !== 'submitted' &&
       task.status !== 'approved'
     ) {
       try {
-        await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/label`, {
           labels,
           status: 'in_progress',
         });
@@ -525,19 +525,19 @@ const AnnotatorTask = () => {
 
   const navigateToPrevious = () => {
     if (currentTaskIndex > 0) {
-      navigateToTask(batchTasks[currentTaskIndex - 1]._id);
+      navigateToTask(batchTasks[currentTaskIndex - 1].id);
     }
   };
 
   const navigateToNext = () => {
     if (currentTaskIndex < batchTasks.length - 1) {
-      navigateToTask(batchTasks[currentTaskIndex + 1]._id);
+      navigateToTask(batchTasks[currentTaskIndex + 1].id);
     }
   };
 
   const navigateToTaskByIndex = (index) => {
     if (index >= 0 && index < batchTasks.length) {
-      navigateToTask(batchTasks[index]._id);
+      navigateToTask(batchTasks[index].id);
     }
   };
 

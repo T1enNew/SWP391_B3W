@@ -1,7 +1,8 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
@@ -32,13 +33,27 @@ const ReviewerOverview = () => {
       setLoading(true);
       try {
         const [pendingRes, reviewedRes] = await Promise.all([
-          axios.get(API_URL + '/api/reviews/pending', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-          axios.get(API_URL + '/api/reviews/reviewed', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+          axios.get(`${API_URL}/api/reviews/pending`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
+          axios.get(`${API_URL}/api/reviews/reviewed`, {
+            headers: { Authorization: `Bearer ${getAuthToken()}` },
+            params: { page: 1, limit: 100 },
+          }),
         ]);
-        setPendingTasks(pendingRes.data || []);
-        setReviewedTasks(reviewedRes.data || []);
+        setPendingTasks(getArray(pendingRes.data));
+        setReviewedTasks(getArray(reviewedRes.data));
+        setError('');
       } catch (err) {
-        setError(err.response?.data?.message || 'Khong tai duoc du lieu');
+        // 403 = reviewer not allowed on these endpoints; show empty state gracefully
+        if (err.response?.status === 403) {
+          setPendingTasks([]);
+          setReviewedTasks([]);
+          setError('');
+        } else {
+          setError(err.response?.data?.message || 'Khong tai duoc du lieu');
+        }
       } finally {
         setLoading(false);
       }
@@ -63,7 +78,7 @@ const ReviewerOverview = () => {
   const queueItems = useMemo(() => {
     const itemMap = {};
     pendingTasks.forEach(task => {
-      const key = task.dataItem?.filename || task.dataItem?.originalName || task._id;
+      const key = task.dataItem?.filename || task.dataItem?.originalName || task.id;
       if (!itemMap[key]) {
         itemMap[key] = {
           itemId: key,
@@ -71,12 +86,15 @@ const ReviewerOverview = () => {
           projectName: task.projectId?.name || '-',
           subtopicName: task.subtopicId?.name || '-',
           annotators: [],
-          taskId: task._id,
-          projectId: task.projectId?._id || task.projectId,
+          taskId: task.id,
+          projectId: task.projectId?.id
+            || (typeof task.projectId === 'string' ? task.projectId : null)
+            || task.project?.id
+            || null,
         };
       }
       const annotName = task.annotatorId?.fullName || task.annotatorId?.username || '?';
-      const annotId = task.annotatorId?._id || task.annotatorId;
+      const annotId = task.annotatorId?.id || task.annotatorId;
       if (!itemMap[key].annotators.find(a => a.id === annotId)) {
         itemMap[key].annotators.push({ id: annotId, name: annotName });
       }
@@ -103,7 +121,15 @@ const ReviewerOverview = () => {
   }, [queueItems, search, sortBy]);
 
   const handleReview = (item) => {
-    navigate('/reviewer/workspace/' + item.projectId + '?taskId=' + item.taskId);
+    const pid = item.projectId;
+    if (!pid || pid === 'undefined') {
+      console.error('[ReviewerOverview] projectId missing for item:', item);
+      alert('Không tìm thấy projectId cho item này. Vui lòng thử lại hoặc vào qua trang Projects.');
+      return;
+    }
+    // Navigate đến project detail để reviewer xem context và chọn subtopic
+    // rồi mới vào Workspace — tránh bug fetchReviewedTask thiếu field ảnh
+    navigate('/reviewer/projects/' + pid);
   };
 
   if (loading) {
@@ -219,7 +245,7 @@ const ReviewerOverview = () => {
                               </div>
                             ))}
                             {item.annotators.length > 4 && (
-                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
+                              <div key={`overflow-${item.itemId}`} className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-600 text-gray-300 border-2 border-gray-800">
                                 +{item.annotators.length - 4}
                               </div>
                             )}

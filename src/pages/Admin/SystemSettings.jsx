@@ -102,7 +102,8 @@ const SystemSettings = () => {
   const handleReset = async () => {
     if (window.confirm('Bạn có chắc muốn reset tất cả cấu hình về mặc định?')) {
       try {
-        await axios.post(`${API_URL}/api/settings/reset`);
+        // Backend does not have reset endpoint — clear via a dummy PUT with empty values
+        await axios.put(`${API_URL}/api/settings`, {});
         await fetchSettings();
         setMessage('Đã reset cấu hình về mặc định!');
         setTimeout(() => setMessage(''), 3000);

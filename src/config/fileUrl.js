@@ -4,7 +4,7 @@
  */
 export function buildFileUrl(dataItem) {
   if (!dataItem) return '';
-  const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+  const baseUrl = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
   // Lay pathUu da co tren dataItem
   const rawPath = dataItem.path || '';

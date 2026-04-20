@@ -24,6 +24,7 @@ import {
 import { History as HistoryIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const ActivityLogs = () => {
   const [logs, setLogs] = useState([]);
@@ -50,13 +51,13 @@ const ActivityLogs = () => {
       });
       
       if (filters.action) params.append('action', filters.action);
-      if (filters.userId) params.append('userId', filters.userId);
-      if (filters.resourceType) params.append('resourceType', filters.resourceType);
+      if (filters.userId) params.append('user_id', filters.userId);
+      if (filters.resourceType) params.append('resource_type', filters.resourceType);
 
       const response = await axios.get(`${API_URL}/api/activity-logs?${params}`);
       console.log('Activity logs response:', response.data);
-      setLogs(response.data.logs || []);
-      setTotalPages(response.data.totalPages || 1);
+      setLogs(response.data.data || response.data || []);
+      setTotalPages(Math.ceil((response.data.total || 0) / 50) || 1);
       
       if (response.data.logs && response.data.logs.length === 0) {
         console.log('No activity logs found');
@@ -110,7 +111,7 @@ const ActivityLogs = () => {
                 <Typography variant="h6" gutterBottom>Top Actions</Typography>
                 {stats.actionStats?.slice(0, 5).map((stat, idx) => (
                   <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">{stat._id}</Typography>
+                    <Typography variant="body2">{stat.id}</Typography>
                     <Typography variant="body2" fontWeight="bold">{stat.count}</Typography>
                   </Box>
                 ))}
@@ -194,7 +195,7 @@ const ActivityLogs = () => {
               </TableRow>
             ) : (
               logs.map((log) => (
-                <TableRow key={log._id}>
+                <TableRow key={log.id}>
                   <TableCell>
                     {new Date(log.createdAt).toLocaleString()}
                   </TableCell>

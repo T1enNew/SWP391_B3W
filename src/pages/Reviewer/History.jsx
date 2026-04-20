@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
+
 
 const fmtShortDate = (d) => {
   if (!d) return '-';
@@ -53,10 +56,11 @@ const ReviewerHistory = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(API_URL + '/api/reviews/reviewed', {
-          headers: { Authorization: 'Bearer ' + getAuthToken() }
+        const res = await axios.get(`${API_URL}/api/reviews/reviewed`, {
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+          params: { page: 1, limit: 100 },
         });
-        setReviewedTasks(res.data || []);
+        setReviewedTasks(getArray(res.data));
       } catch (err) {
         setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {
@@ -69,7 +73,7 @@ const ReviewerHistory = () => {
   const projects = useMemo(() => {
     const map = {};
     reviewedTasks.forEach(t => {
-      const pid = t.projectId?._id || t.projectId;
+      const pid = t.projectId?.id || t.projectId;
       if (pid) map[pid] = t.projectId?.name || 'Unknown';
     });
     return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -98,7 +102,7 @@ const ReviewerHistory = () => {
 
     if (projectFilter !== 'all') {
       result = result.filter(t => {
-        const pid = t.projectId?._id || t.projectId;
+        const pid = t.projectId?.id || t.projectId;
         return pid === projectFilter;
       });
     }
@@ -124,7 +128,7 @@ const ReviewerHistory = () => {
   };
 
   const handleViewDetail = (task) => {
-    window.location.href = '/reviewer/workspace/' + (task.projectId?._id || task.projectId) + '?taskId=' + task._id;
+    window.location.href = '/reviewer/workspace/' + (task.projectId?.id || task.projectId) + '?taskId=' + task.id;
   };
 
   if (loading) {
@@ -275,7 +279,7 @@ const ReviewerHistory = () => {
 
                     return (
                       <tr
-                        key={t._id}
+                        key={t.id}
                         className={`border-t border-gray-700/50 transition-colors hover:bg-gray-800/40 ${
                           idx % 2 === 0 ? 'bg-gray-800/20' : ''
                         }`}

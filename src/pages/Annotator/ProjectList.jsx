@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
+import { normalizeProject } from '../../utils/taskAdapter';
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -168,8 +170,8 @@ const AnnotatorProjectList = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/annotator-projects`);
-      setProjects(res.data || []);
+      const res = await axios.get(`${API_URL}/api/projects`);
+      setProjects(getArray(res.data).map(normalizeProject));
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc danh sach project');
     } finally {
@@ -180,7 +182,7 @@ const AnnotatorProjectList = () => {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const handleOpenProject = (project) => {
-    navigate(`/annotator/projects/${project.projectId || project._id}`);
+    navigate(`/annotator/projects/${project.projectId || project.id}`);
   };
 
   const filtered = projects.filter((p) => {
@@ -309,7 +311,7 @@ const AnnotatorProjectList = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((p) => (
               <ProjectCard
-                key={p.projectId || p._id}
+                key={p.projectId || p.id}
                 project={p}
                 onOpen={() => handleOpenProject(p)}
               />

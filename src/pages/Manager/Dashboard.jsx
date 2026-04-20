@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+import { getArray } from '../../utils/api';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 
@@ -90,15 +91,15 @@ const ManagerDashboard = () => {
           axios.get(`${API_URL}/api/projects`, { headers }),
           axios.get(`${API_URL}/api/datasets`, { headers }),
         ]);
-        const projectList = projectsRes.data || [];
-        const datasetList = datasetsRes.data || [];
+        const projectList = Array.isArray(projectsRes.data?.data) ? projectsRes.data.data : [];
+        let datasetList = Array.isArray(datasetsRes.data?.data) ? datasetsRes.data.data : [];
 
         const statusEntries = await Promise.all(
           datasetList.map(async (ds) => {
             try {
-              const s = await axios.get(`${API_URL}/api/datasets/${ds._id}/status`, { headers });
-              return [ds._id, s.data];
-            } catch { return [ds._id, null]; }
+              const s = await axios.get(`${API_URL}/api/datasets/${ds.id}`);
+              return [ds.id, s.data];
+            } catch { return [ds.id, null]; }
           })
         );
         const statusMap = Object.fromEntries(statusEntries);
@@ -123,8 +124,10 @@ const ManagerDashboard = () => {
         const approvalRate = totalReviewed > 0 ? Number(((totalApproveVotes / totalReviewed) * 100).toFixed(1)) : 0;
         const completionRate = totalRawItems > 0 ? Number(((totalApproved / totalRawItems) * 100).toFixed(1)) : 0;
 
-        const datasetBreakdown = datasetList.map(ds => {
-          const s = statusMap[ds._id];
+        const datasetBreakdown = datasetList
+          .filter(ds => ds && ds.id)
+          .map(ds => {
+          const s = statusMap[ds.id];
           const rawItems = s?.totalRawItems || ds.totalItems || ds.files?.length || 0;
           const approved = s?.counts?.approved || 0;
           const rejected = s?.counts?.rejected || 0;
@@ -139,7 +142,7 @@ const ManagerDashboard = () => {
           if (rawItems > 0 && approved > 0 && pct >= 100) dsStatus = 'ready';
           else if (submitted > 0) dsStatus = 'under_review';
           else if (pending > 0 || submitted > 0) dsStatus = 'annotating';
-          return { _id: ds._id, name: ds.name, type: ds.type, rawItems, approved, rejected, submitted, pending, pct, votes: s?.votes || {}, labelDist, dsStatus, createdAt: ds.createdAt };
+          return { id: ds.id, name: ds.name || 'Unnamed', type: ds.type || 'image', rawItems, approved, rejected, submitted, pending, pct, votes: s?.votes || {}, labelDist, dsStatus, createdAt: ds.createdAt };
         });
 
         const annotatorPerf = {};
@@ -220,7 +223,7 @@ const ManagerDashboard = () => {
               </div>
               <div className="space-y-3">
                 {(s.datasetBreakdown || []).map(ds => (
-                  <div key={ds._id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4 transition hover:border-gray-600 cursor-pointer" onClick={() => navigate('/manager/datasets')}>
+                  <div key={ds.id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4 transition hover:border-gray-600 cursor-pointer" onClick={() => navigate('/manager/datasets')}>
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-bold text-gray-100 truncate">{ds.name}</span>
@@ -290,7 +293,7 @@ const ManagerDashboard = () => {
                 </thead>
                 <tbody>
                   {(s.datasetBreakdown || []).map(ds => (
-                    <tr key={ds._id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition">
+                    <tr key={ds.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition">
                       <td className="py-3 pr-4"><span className="text-sm font-semibold text-gray-200">{ds.name}</span></td>
                       <td className="py-3 pr-4"><TypeBadge type={ds.type} /></td>
                       <td className="py-3 pr-4 text-sm text-gray-300">{ds.rawItems}</td>
@@ -346,7 +349,7 @@ const ManagerDashboard = () => {
                         const approved = ds.votes?.approveVotes || 0;
                         const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
                         return (
-                          <div key={ds._id} className="text-sm">
+                          <div key={ds.id} className="text-sm">
                             <div className="flex justify-between text-xs text-gray-400 mb-1"><span className="truncate max-w-[150px]">{ds.name}</span><span>{approved}/{total}</span></div>
                             <div className="h-2 w-full rounded-full bg-gray-700"><div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>
                           </div>
@@ -380,7 +383,7 @@ const ManagerDashboard = () => {
                   if (labels.length === 0) return null;
                   const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'];
                   return (
-                    <div key={ds._id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                    <div key={ds.id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
                       <div className="flex items-center justify-between mb-3"><span className="text-sm font-semibold text-gray-200">{ds.name}</span><TypeBadge type={ds.type} /></div>
                       <div className="space-y-2">
                         {labels.slice(0, 5).map(([k, v], i) => <ChartBar key={k} label={k} value={v} max={labels[0]?.[1] || 1} color={colors[i % colors.length]} />)}

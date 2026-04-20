@@ -30,6 +30,7 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminDatasets from './pages/Admin/Datasets';
 import LayoutTailwind from './components/LayoutTailwind';
+import ErrorBoundary from './components/ErrorBoundary';
 import LayoutAnnotator from './components/LayoutAnnotator';
 import LayoutReviewer from './components/LayoutReviewer';
 
@@ -59,7 +60,7 @@ function App() {
           <Routes>
             <Route path='/login' element={<Login />} />
             <Route path='/register' element={<Register />} />
-            <Route element={<PrivateRoute><LayoutTailwind /></PrivateRoute>}>
+            <Route element={<PrivateRoute><ErrorBoundary><LayoutTailwind /></ErrorBoundary></PrivateRoute>}>
               <Route path='/dashboard' element={<ManagerDashboard />} />
               <Route path='/manager/projects' element={<ManagerProjects />} />
               <Route path='/manager/projects/create' element={<CreateProject />} />
