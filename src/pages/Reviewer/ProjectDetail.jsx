@@ -114,6 +114,10 @@ const ReviewerProjectDetail = () => {
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 });
   const [toast, setToast] = useState(null);
+  const [modalType, setModalType] = useState(null); // 'approve' | 'reject' | null
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
@@ -146,8 +150,8 @@ const ReviewerProjectDetail = () => {
           const ids = Array.isArray(ds.subtopicIds)
             ? ds.subtopicIds
             : Array.isArray(ds.subtopic_ids)
-            ? ds.subtopic_ids
-            : [];
+              ? ds.subtopic_ids
+              : [];
           // Lấy chi tiết từng subtopic
           const subResList = await Promise.all(
             ids.map((subId) =>
@@ -279,6 +283,49 @@ const ReviewerProjectDetail = () => {
     navigate(`/reviewer/workspace/${projectId}?projectId=${projectId}`);
   };
 
+  const submitProjectAction = async () => {
+    setModalError('');
+    if (modalType === 'reject' && !reviewComment.trim()) {
+      setToast({ type: 'error', message: 'Vui lòng điền lý do Reject dự án.' });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      if (modalType === 'approve') {
+        await axios.post(
+          `${API_URL}/api/projects/${projectId}/approve`,
+          { comment: reviewComment },
+          { headers: { Authorization: `Bearer ${getAuthToken()}` } }
+        );
+        setToast({ type: 'success', message: 'Đã hoàn tất (Approve) dự án.' });
+      } else if (modalType === 'reject') {
+        await axios.post(
+          `${API_URL}/api/projects/${projectId}/reject`,
+          { comment: reviewComment },
+          { headers: { Authorization: `Bearer ${getAuthToken()}` } }
+        );
+        setToast({ type: 'success', message: 'Đã yêu cầu làm lại (Reject) dự án.' });
+      }
+      setModalType(null);
+      setReviewComment('');
+      fetchData(); // Tham chiếu để cập nhật lại UI
+    } catch (err) {
+      const backendError = err.response?.data?.error || err.message;
+      if (err.response?.status === 400 && modalType === 'approve') {
+        setModalError(err.response?.data?.message || 'Tỷ lệ Approve chưa đạt ngưỡng cho phép.');
+      } else if (err.response?.status === 500) {
+        setModalError(`Lỗi hệ thống (500): ${backendError}`);
+      } else {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || `Có lỗi xảy ra: ${backendError}`
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900">
@@ -313,6 +360,7 @@ const ReviewerProjectDetail = () => {
   const guideline = project?.guidelines || project?.guideline || project?.projectId?.guidelines || '';
   const reviewed = stats.approved + stats.rejected;
   const progressPct = stats.total ? Math.round((reviewed / stats.total) * 100) : 0;
+  const approvalRate = stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
@@ -336,7 +384,21 @@ const ReviewerProjectDetail = () => {
         <div className="rounded-2xl border border-gray-700/60 bg-gray-800/80 p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold text-gray-100 mb-1">{project?.name}</h1>
+              <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-100 mb-1">
+                {project?.name}
+                {project?.status === 'completed' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Da hoan thanh
+                  </span>
+                )}
+                {project?.status === 'waiting_rework' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-500 border border-yellow-500/20">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Lam lai (Rework)
+                  </span>
+                )}
+              </h1>
               <div className="flex flex-wrap items-center gap-2 text-sm text-gray-400">
                 {project?.dataset?.name && (
                   <span className="inline-flex items-center gap-1">
@@ -349,12 +411,50 @@ const ReviewerProjectDetail = () => {
               </div>
             </div>
 
-            {project?.deadline && (
-              <div className={`shrink-0 rounded-xl px-4 py-3 border ${overdue ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-gray-900/60 border-gray-700/60 text-gray-300'}`}>
-                <p className="text-xs font-medium mb-0.5">{overdue ? 'Qua han!' : 'Deadline'}</p>
-                <p className="text-lg font-bold">{fmtDateTime(project.deadline)}</p>
-              </div>
-            )}
+            <div className="flex flex-col items-end gap-3 shrink-0">
+              {/* Deadline */}
+              {project?.deadline && (
+                <div className={`rounded-xl px-4 py-3 border w-full lg:w-auto text-right ${overdue ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-gray-900/60 border-gray-700/60 text-gray-300'}`}>
+                  <p className="text-xs font-medium mb-0.5">{overdue ? 'Qua han!' : 'Deadline'}</p>
+                  <p className="text-lg font-bold">{fmtDateTime(project.deadline)}</p>
+                </div>
+              )}
+
+              {/* Action Buttons for Project Finalization */}
+              {stats.total > 0 && stats.pending === 0 && !['completed', 'waiting_rework'].includes(project?.status) && (
+                <div className="flex flex-col items-end gap-1.5 mt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setModalType('reject'); setReviewComment(''); setModalError(''); }}
+                      className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-400 hover:bg-rose-500/20 transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => { setModalType('approve'); setReviewComment(''); setModalError(''); }}
+                      disabled={approvalRate < 70}
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${approvalRate < 70
+                          ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
+                          : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
+                        }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Approve
+                    </button>
+                  </div>
+                  {approvalRate < 70 && (
+                    <p className="text-xs text-rose-400/90 pr-1 max-w-[280px]">
+                      Tỷ lệ chấm ({approvalRate}%) chưa đủ 70%. Bắt buộc Reject.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Stats grid */}
@@ -473,11 +573,10 @@ const ReviewerProjectDetail = () => {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 rounded-xl border px-4 py-3 shadow-xl max-w-sm ${
-          toast.type === 'success'
+        <div className={`fixed bottom-6 right-6 z-50 rounded-xl border px-4 py-3 shadow-xl max-w-sm ${toast.type === 'success'
             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
             : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-        }`}>
+          }`}>
           <div className="flex items-start gap-2">
             {toast.type === 'success' ? (
               <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -492,6 +591,85 @@ const ReviewerProjectDetail = () => {
               <p className="text-sm font-medium">{toast.message}</p>
             </div>
             <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">&times;</button>
+          </div>
+        </div>
+      )}
+
+      {/* Approve/Reject Modal */}
+      {modalType && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-800 p-6 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-gray-700/60 pb-4">
+              <div className={`rounded-full p-2.5 ${modalType === 'approve' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                {modalType === 'approve' ? (
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-100">
+                  {modalType === 'approve' ? 'Đóng và Chấp Thuận Project' : 'Từ chối (Reject) Project'}
+                </h2>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  {modalType === 'approve'
+                    ? 'Xác nhận toàn bộ kết quả đã được review. Dự án sẽ chuyển sang trạng thái "Completed".'
+                    : 'Dự án sẽ chuyển về trạng thái "Waiting Rework".'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <label className="block text-sm font-medium text-gray-300 mb-1.5 flex justify-between">
+                Lý do / Bình luận
+                {modalType === 'reject' && <span className="text-rose-400">* Bắt buộc</span>}
+              </label>
+              <textarea
+                value={reviewComment}
+                onChange={(e) => {
+                  setReviewComment(e.target.value);
+                  if (modalError) setModalError('');
+                }}
+                placeholder={modalType === 'approve' ? 'Nhập nhận xét (tùy chọn)...' : 'Ví dụ: Dữ liệu chưa đủ chuẩn, còn sai cấu trúc nhiều...'}
+                className={`w-full resize-y rounded-xl border bg-gray-900/50 p-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 transition-all min-h-[100px] ${modalType === 'approve'
+                    ? 'border-gray-700 focus:border-emerald-500/50 focus:ring-emerald-500/20'
+                    : 'border-gray-700 focus:border-rose-500/50 focus:ring-rose-500/20'
+                  }`}
+              />
+            </div>
+
+            {modalError && (
+              <div className="mt-3 rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 flex items-start gap-2">
+                <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm text-rose-400">{modalError}</p>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3 pt-2">
+              <button
+                disabled={isSubmitting}
+                onClick={() => { setModalType(null); setModalError(''); }}
+                className="rounded-lg px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-all disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                disabled={isSubmitting || (modalType === 'reject' && !reviewComment.trim())}
+                onClick={submitProjectAction}
+                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${modalType === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
+                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
+                  }`}
+              >
+                {isSubmitting && (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {modalType === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            </div>
           </div>
         </div>
       )}

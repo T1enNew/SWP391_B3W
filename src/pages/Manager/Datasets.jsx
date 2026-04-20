@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -71,7 +71,7 @@ export default function Datasets() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [dialog, setDialog] = useState({ open: false, edit: null, name: '', description: '' });
-  const [detail, setDetail] = useState({ open: false, dataset: null, subtopics: [] });
+  const [detail, setDetail] = useState({ open: false, dataset: null, subtopics: [], approvedResults: [] });
 
   const showToast = (message, severity = 'success') => setToast({ open: true, message, severity });
 
@@ -191,7 +191,14 @@ const saveDataset = async () => {
         const reqs = await Promise.all(missingIds.map(id => axios.get(`${API_URL}/api/subtopics/${id}`, { headers: getAuthHeaders() }).catch(() => ({ data: null }))));
         missing = reqs.map(r => r.data).filter(Boolean).map(normalizeSubtopic);
       }
-      setDetail({ open: true, dataset: full, subtopics: [...allSubs, ...missing].filter(s => ids.includes(String(s.id))) });
+      setDetail({ open: true, dataset: full, subtopics: [...allSubs, ...missing].filter(s => ids.includes(String(s.id))), approvedResults: [] });
+
+      // Load approved results in background
+      axios.get(`${API_URL}/api/datasets/${dataset.id}/approved-results`, { headers: getAuthHeaders() })
+        .then(resApproved => {
+          setDetail(prev => ({ ...prev, approvedResults: resApproved.data || [] }));
+        })
+        .catch(err => console.error("Failed to fetch approved results", err));
     } catch (e) {
       showToast(e?.response?.data?.message || e.message || 'Không tải được chi tiết dataset', 'error');
     }
@@ -340,7 +347,7 @@ const handleCreate = async () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={detail.open} onClose={() => setDetail({ open: false, dataset: null, subtopics: [] })} fullWidth maxWidth="sm">
+      <Dialog open={detail.open} onClose={() => setDetail({ open: false, dataset: null, subtopics: [], approvedResults: [] })} fullWidth maxWidth="md">
         <DialogTitle>Dataset detail</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -348,11 +355,81 @@ const handleCreate = async () => {
             <Typography sx={{ color: '#94a3b8' }}>{detail.dataset?.description || 'Không có mô tả'}</Typography>
             <Typography fontWeight={700}>Subtopics</Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap">
-              {detail.subtopics.map(s => <Chip key={s.id} label={s.name} />)}
+              {detail.subtopics.map(s => <Chip key={s.id} label={s.name} sx={{ bgcolor: 'rgba(59,130,246,0.18)', color: '#bfdbfe' }} />)}
             </Stack>
+
+            <Typography variant="h6" fontWeight={700} sx={{ mt: '24px !important', color: '#34d399' }}>
+              Approved Results ({detail.approvedResults?.length || 0})
+            </Typography>
+
+            {detail.approvedResults && detail.approvedResults.length > 0 ? (
+              <Box sx={{
+                maxHeight: '400px',
+                overflowY: 'auto',
+                pr: 1,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                gap: 2,
+                '&::-webkit-scrollbar': { width: '8px' },
+                '&::-webkit-scrollbar-thumb': { backgroundColor: '#475569', borderRadius: '4px' }
+              }}>
+                {detail.approvedResults.map(task => (
+                  <Card key={task.id} sx={{ bgcolor: '#0f172a', border: '1px solid #334155', position: 'relative', overflow: 'hidden' }}>
+                    <Box sx={{ width: '100%', paddingTop: '100%', position: 'relative', bgcolor: '#000' }}>
+                      <img
+                        src={task.data_item?.storage_url || 'https://via.placeholder.com/150'}
+                        alt="item"
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                      />
+                    </Box>
+                    <CardContent sx={{ p: 1.5, pb: '12px !important' }}>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        👤 {task.annotator?.full_name || task.annotator?.username || 'Annotator'}
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                        {(() => {
+                          let labels = [];
+                          try {
+                            let data = typeof task.annotation_data === 'string' ? JSON.parse(task.annotation_data) : task.annotation_data;
+                            
+                            // Nểu là object có chứa mảng bên trong (ví dụ: { shapes: [...] }, { annotations: [...] })
+                            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                               data = data.shapes || data.annotations || data.labels || data.data || Object.values(data)[0] || [];
+                            }
+
+                            if (Array.isArray(data)) {
+                              const uniqueLabels = new Set();
+                              data.forEach(item => {
+                                if (item && typeof item === 'object') {
+                                  if (item.label) uniqueLabels.add(item.label);
+                                  else if (item.label_name) uniqueLabels.add(item.label_name);
+                                  else if (item.name) uniqueLabels.add(item.name);
+                                } else if (typeof item === 'string') {
+                                  uniqueLabels.add(item);
+                                }
+                              });
+                              labels = Array.from(uniqueLabels);
+                            }
+                          } catch (e) {}
+
+                          if (labels.length === 0) return <Chip size="small" label="No label" sx={{ height: 20, fontSize: '0.65rem' }} />;
+                          return labels.map((l, i) => (
+                            <Chip key={i} size="small" label={String(l)} sx={{ height: 20, fontSize: '0.65rem', bgcolor: 'rgba(52, 211, 153, 0.2)', color: '#6ee7b7' }} />
+                          ));
+                        })()}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            ) : (
+              <Typography variant="body2" sx={{ color: '#64748b', fontStyle: 'italic' }}>
+                Dataset này chưa có dữ liệu nào được duyệt.
+              </Typography>
+            )}
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setDetail({ open: false, dataset: null, subtopics: [] })}>Close</Button></DialogActions>
+        <DialogActions><Button onClick={() => setDetail({ open: false, dataset: null, subtopics: [], approvedResults: [] })}>Close</Button></DialogActions>
       </Dialog>
 
       <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
