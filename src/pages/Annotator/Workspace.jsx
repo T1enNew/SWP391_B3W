@@ -13,6 +13,8 @@ import {
   Button,
   Typography,
 } from '@mui/material';
+import { getAuthHeaders } from '../../utils/auth';
+
 const getTaskDataItem = (t) => {
   return t?.dataItem || t?.data_item || t?.datasetItemId || t?.itemId || null;
 };
@@ -735,53 +737,179 @@ const textRes = await axios.get(
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [annotations, textSpans, annotationNote]);
 
-  const handleSave = useCallback(async () => {
-    if (!task) return;
-    try {
-      const kind = getTaskKind(task);
-      let labelsPayload = {};
-      if (kind === 'image') labelsPayload = { objects: annotations.map((ann) => ({ label: ann.label, bbox: ann.bbox, confidence: ann.confidence, answer: ann.answer || null })) };
-      else if (kind === 'text') labelsPayload = { spans: textSpans.map(({ id, ...rest }) => rest), note: annotationNote?.trim() || '' };
-      else if (kind === 'audio') labelsPayload = { segments: labels.segments || [], note: annotationNote?.trim() || '' };
-      else labelsPayload = { note: annotationNote?.trim() || '', label: labels.label || '' };
-      await axios.put(`${API_URL}/api/tasks/${task.id}/save`, { annotation_data: labelsPayload });
-      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'in_progress' } : t));
-    } catch { /* silent auto-save */ }
-  }, [task, annotations, labels, textSpans, annotationNote]);
+const handleSave = useCallback(async () => {
+  if (!task) return;
 
-  const handleComplete = useCallback(async () => {
-    if (!task) return;
+  try {
     const kind = getTaskKind(task);
-    if (kind === 'image' && annotations.length === 0) { alert('Vui long them it nhat mot nhan truoc khi hoan thanh.'); return; }
-    if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) { alert('Vui long ghi nhan it nhat mot phan hoac them ghi chu.'); return; }
-    if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) { alert('Vui long ghi nhan it nhat mot doan.'); return; }
-    setSaving(true);
-    try {
-      await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
-      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'submitted' } : t));
-      setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
-      setSavingMessage('Da danh dau hoan thanh!');
-      setTimeout(() => setSavingMessage(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
-    finally { setSaving(false); }
-  }, [task, annotations, labels, textSpans, annotationNote, handleSave]);
+    let labelsPayload = {};
+
+    if (kind === 'image') {
+      labelsPayload = {
+        objects: annotations.map((ann) => ({
+          label: ann.label,
+          bbox: ann.bbox,
+          confidence: ann.confidence,
+          answer: ann.answer || null,
+        })),
+      };
+    } else if (kind === 'text') {
+      labelsPayload = {
+        spans: textSpans.map(({ id, ...rest }) => rest),
+        note: annotationNote?.trim() || '',
+      };
+    } else if (kind === 'audio') {
+      labelsPayload = {
+        segments: labels.segments || [],
+        note: annotationNote?.trim() || '',
+      };
+    } else {
+      labelsPayload = {
+        note: annotationNote?.trim() || '',
+        label: labels.label || '',
+      };
+    }
+
+    await axios.put(
+      `${API_URL}/api/tasks/${task.id}/save`,
+      { annotation_data: labelsPayload },
+      { headers: getAuthHeaders() }
+    );
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: 'in_progress' } : t
+      )
+    );
+
+    setTask((prev) =>
+      prev ? { ...prev, status: 'in_progress' } : prev
+    );
+  } catch (err) {
+    console.error('Save failed:', err?.response?.data || err);
+  }
+}, [task, annotations, labels, textSpans, annotationNote]);
+
+const handleComplete = useCallback(async () => {
+  if (!task) return;
+
+  const kind = getTaskKind(task);
+
+  if (kind === 'image' && annotations.length === 0) {
+    alert('Vui long them it nhat mot nhan truoc khi hoan thanh.');
+    return;
+  }
+
+  if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) {
+    alert('Vui long ghi nhan it nhat mot phan hoac them ghi chu.');
+    return;
+  }
+
+  if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) {
+    alert('Vui long ghi nhan it nhat mot doan.');
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+    // 1) Start task nếu đang assigned hoặc rejected
+    if (task.status === 'assigned' || task.status === 'rejected') {
+      await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, status: 'in_progress' } : t
+        )
+      );
+
+      setTask((prev) =>
+        prev ? { ...prev, status: 'in_progress' } : prev
+      );
+    }
+
+    // 2) Save
+    await handleSave();
+
+    // 3) Submit
+    await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: 'submitted' } : t
+      )
+    );
+
+    setTask((prev) =>
+      prev ? { ...prev, status: 'submitted' } : null
+    );
+
+    setSavingMessage('Da danh dau hoan thanh!');
+    setTimeout(() => setSavingMessage(''), 3000);
+  } catch (err) {
+    alert('Loi: ' + (err.response?.data?.message || err.message));
+  } finally {
+    setSaving(false);
+  }
+}, [task, annotations, labels, textSpans, annotationNote, handleSave]);
 
   const handleSubmit = useCallback(async () => { if (!task) return; setShowSubmitConfirm(true); }, [task]);
 
-  const handleConfirmSubmit = useCallback(async () => {
-    if (!task) return;
-    setShowSubmitConfirm(false); setSaving(true);
-    try {
-      await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
-      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'submitted' } : t));
-      setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
-      setSavingMessage('Da nop thanh cong!');
-      setTimeout(() => setSavingMessage(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
-    finally { setSaving(false); }
-  }, [task, handleSave]);
+const handleConfirmSubmit = useCallback(async () => {
+  if (!task) return;
+
+  setShowSubmitConfirm(false);
+  setSaving(true);
+
+  try {
+    // 1) Lấy status thật từ backend
+    const latestRes = await axios.get(`${API_URL}/api/tasks/${task.id}`, {
+      headers: getAuthHeaders(),
+    });
+
+    const latestTask = normalizeTask(latestRes.data);
+    const backendStatus = latestTask?.status;
+
+    console.log('BACKEND STATUS BEFORE SUBMIT =', backendStatus);
+
+    // 2) Nếu backend vẫn là assigned hoặc rejected thì start thật trên server
+    if (backendStatus === 'assigned' || backendStatus === 'rejected') {
+      await axios.put(
+        `${API_URL}/api/tasks/${task.id}/start`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+    }
+
+    // 3) Save draft
+    await handleSave();
+
+    // 4) Submit
+    await axios.post(
+      `${API_URL}/api/tasks/${task.id}/submit`,
+      {},
+      { headers: getAuthHeaders() }
+    );
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: 'submitted' } : t
+      )
+    );
+
+    setTask((prev) =>
+      prev ? { ...prev, status: 'submitted' } : prev
+    );
+
+    setSavingMessage('Da nop thanh cong!');
+    setTimeout(() => setSavingMessage(''), 3000);
+  } catch (err) {
+    console.error('Submit failed:', err?.response?.data || err);
+    alert('Loi: ' + (err.response?.data?.message || err.message));
+  } finally {
+    setSaving(false);
+  }
+}, [task, handleSave]);
 
   const handleReset = useCallback(() => {
     if (!task) return;
