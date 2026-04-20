@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -10,7 +10,15 @@ const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getIt
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const directUrl = dataItem?.url || dataItem?.imageUrl || dataItem?.signedUrl || dataItem?.signed_url || '';
+  // Uu tien: signedUrl -> storageUrl -> url (giong Annotator Workspace)
+  const directUrl =
+    dataItem?.signedUrl ||
+    dataItem?.signed_url ||
+    dataItem?.storageUrl ||
+    dataItem?.storage_url ||
+    dataItem?.url ||
+    dataItem?.imageUrl ||
+    '';
   if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
   const filename = dataItem?.originalName || dataItem?.original_name || dataItem?.filename || '';
   const rawPath = (dataItem?.path || dataItem?.storagePath || dataItem?.storage_path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -585,10 +593,18 @@ const ReviewerWorkspace = () => {
       taskList = taskList.map(normalizeTask);
 
       // Lấy thêm asset URLs từ subtopic nếu có
+      // Thử tất cả các vị trí có thể chứa subtopicId
       const subtopicIds = [...new Set(taskList.map(t => {
-        const sid = t.subtopicId?.id || t.subtopicId || t.dataItem?.subtopicId;
+        const sid =
+          t.subtopicId?.id ||
+          (typeof t.subtopicId === 'string' ? t.subtopicId : null) ||
+          t.dataItem?.subtopicId ||
+          t.dataItem?.subtopic_id ||
+          t.data_item?.subtopic_id ||
+          null;
         return sid;
       }).filter(Boolean))];
+      console.log('[ReviewerWorkspace] subtopicIds found:', subtopicIds);
 
       const assetsMap = {};
       await Promise.all(subtopicIds.map(async (subId) => {
@@ -597,14 +613,20 @@ const ReviewerWorkspace = () => {
             headers: { Authorization: `Bearer ${getAuthToken()}` },
           });
           const assets = Array.isArray(assetRes.data) ? assetRes.data : assetRes.data?.data || [];
+          console.log('[ReviewerWorkspace] assets fetched for subtopic', subId, ':', assets.length, 'items', assets.map(a => ({ id: a.id, filename: a.filename, has_signed_url: !!a.signed_url })));
+          // Luu bang nhieu key de match duoc nhieu truong hop
           assets.forEach(a => {
-            const key = a.id || a.filename || a.original_name || '';
-            if (key) assetsMap[key] = a;
+            if (a.id)            assetsMap[a.id]            = a;
+            if (a.filename)      assetsMap[a.filename]      = a;
+            if (a.original_name) assetsMap[a.original_name] = a;
           });
-        } catch { /* ignore */ }
+        } catch (err) {
+          console.warn('[ReviewerWorkspace] assets fetch failed for subtopic', subId, err.message);
+        }
       }));
+      console.log('[ReviewerWorkspace] assetsMap keys:', Object.keys(assetsMap));
 
-      // Merge asset data vào task
+      // Merge asset data vao task
       taskList = taskList.map(task => {
         const di = task.dataItem || {};
         const matchedAsset =
@@ -612,19 +634,29 @@ const ReviewerWorkspace = () => {
           assetsMap[di.filename] ||
           assetsMap[di.originalName] ||
           assetsMap[di.original_name];
+        console.log('[ReviewerWorkspace] task', task.id, '| di.id=', di.id, '| di.filename=', di.filename, '| matched=', !!matchedAsset, '| signed_url=', matchedAsset?.signed_url?.substring(0, 60));
         if (matchedAsset) {
+          const mergedDataItem = {
+            ...di,
+            ...matchedAsset,
+            originalName: matchedAsset.original_name || di.originalName,
+            mimeType: matchedAsset.mime_type || di.mimeType,
+            storageUrl: matchedAsset.storage_url || di.storageUrl,
+          };
+          const url = buildFileUrl(mergedDataItem);
+          console.log('[ReviewerWorkspace] resolved imageUrl:', url?.substring(0, 80));
           return {
             ...task,
-            dataItem: {
-              ...di,
-              ...matchedAsset,
-              originalName: matchedAsset.original_name || di.originalName,
-              mimeType: matchedAsset.mime_type || di.mimeType,
-              storageUrl: matchedAsset.storage_url || di.storageUrl,
-            },
+            dataItem: mergedDataItem,
+            _resolvedImageUrl: url,
           };
         }
-        return task;
+        const fallbackUrl = buildFileUrl(task.dataItem);
+        console.log('[ReviewerWorkspace] fallback imageUrl (no asset match):', fallbackUrl?.substring(0, 80));
+        return {
+          ...task,
+          _resolvedImageUrl: fallbackUrl,
+        };
       });
 
       // Lọc theo subtopic nếu có filter
@@ -668,7 +700,8 @@ const ReviewerWorkspace = () => {
           itemMap.set(itemKey, {
             itemId: itemKey,
             filename: dataItem.originalName || dataItem.original_name || dataItem.filename || itemKey,
-            imageUrl: buildFileUrl(task.dataItem),
+            // Dung _resolvedImageUrl (da duoc build sau khi merge asset) thay vi build lai tu dataItem goc
+            imageUrl: task._resolvedImageUrl || buildFileUrl(task.dataItem),
             kind: getTaskKind(task),
             status: 'pending_review',
             projectName: task.projectId?.name || task.project?.name || '',

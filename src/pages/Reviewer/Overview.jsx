@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -87,7 +87,10 @@ const ReviewerOverview = () => {
           subtopicName: task.subtopicId?.name || '-',
           annotators: [],
           taskId: task.id,
-          projectId: task.projectId?.id || task.projectId,
+          projectId: task.projectId?.id
+            || (typeof task.projectId === 'string' ? task.projectId : null)
+            || task.project?.id
+            || null,
         };
       }
       const annotName = task.annotatorId?.fullName || task.annotatorId?.username || '?';
@@ -118,7 +121,15 @@ const ReviewerOverview = () => {
   }, [queueItems, search, sortBy]);
 
   const handleReview = (item) => {
-    navigate('/reviewer/workspace/' + item.projectId + '?taskId=' + item.taskId);
+    const pid = item.projectId;
+    if (!pid || pid === 'undefined') {
+      console.error('[ReviewerOverview] projectId missing for item:', item);
+      alert('Không tìm thấy projectId cho item này. Vui lòng thử lại hoặc vào qua trang Projects.');
+      return;
+    }
+    // Navigate đến project detail để reviewer xem context và chọn subtopic
+    // rồi mới vào Workspace — tránh bug fetchReviewedTask thiếu field ảnh
+    navigate('/reviewer/projects/' + pid);
   };
 
   if (loading) {

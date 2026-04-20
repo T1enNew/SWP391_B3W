@@ -267,7 +267,12 @@ const ReviewerProjectDetail = () => {
   }, [fetchData]);
 
   const handleStartReview = (sub) => {
-    navigate(`/reviewer/workspace/${projectId}?subtopicId=${sub.id}`);
+    if (!sub.id || sub.id === '__ungrouped__') {
+      // Neu tasks khong co subtopic, navigate khong filter subtopic (xem het)
+      navigate(`/reviewer/workspace/${projectId}`);
+    } else {
+      navigate(`/reviewer/workspace/${projectId}?subtopicId=${sub.id}`);
+    }
   };
 
   const handleStartAllReview = () => {
