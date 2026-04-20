@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Alert,
   Box,
@@ -72,6 +72,44 @@ export default function Datasets() {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [dialog, setDialog] = useState({ open: false, edit: null, name: '', description: '' });
   const [detail, setDetail] = useState({ open: false, dataset: null, subtopics: [], approvedResults: [] });
+  const [previewTask, setPreviewTask] = useState(null);
+
+  const imgRef = useRef(null);
+  const [imgNat, setImgNat] = useState({ w: 0, h: 0 });
+
+  const toPixel = (obj, w, h) => {
+    if (!obj || w === 0 || h === 0) return null;
+    
+    // 1. Array [x1, y1, x2, y2] (% of width/height)
+    if (Array.isArray(obj.bbox || obj.points) && (obj.bbox || obj.points).length >= 4) {
+      const arr = obj.bbox || obj.points;
+      const px1 = (arr[0] / 100) * w;
+      const py1 = (arr[1] / 100) * h;
+      const px2 = (arr[2] / 100) * w;
+      const py2 = (arr[3] / 100) * h;
+      return { x: px1, y: py1, w: Math.abs(px2 - px1), h: Math.abs(py2 - py1) };
+    }
+    
+    // 2. Object {x, y, width, height} (% of width/height)
+    if (obj.x !== undefined && obj.y !== undefined && obj.width !== undefined && obj.height !== undefined) {
+      const px = (obj.x / 100) * w;
+      const py = (obj.y / 100) * h;
+      const pw = (obj.width / 100) * w;
+      const ph = (obj.height / 100) * h;
+      // Adjust if they gave x,y as center (we assume x,y is top-left here, if they are center, then bounding box code elsewhere does that. 
+      // But standard coco/web is top-left usually)
+      return { x: px, y: py, w: pw, h: ph };
+    }
+
+    return null;
+  };
+
+  const getColor = (str) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+    return '#' + '00000'.substring(0, 6 - c.length) + c;
+  };
 
   const showToast = (message, severity = 'success') => setToast({ open: true, message, severity });
 
@@ -374,7 +412,14 @@ const handleCreate = async () => {
                 '&::-webkit-scrollbar-thumb': { backgroundColor: '#475569', borderRadius: '4px' }
               }}>
                 {detail.approvedResults.map(task => (
-                  <Card key={task.id} sx={{ bgcolor: '#0f172a', border: '1px solid #334155', position: 'relative', overflow: 'hidden' }}>
+                  <Card 
+                    key={task.id} 
+                    onClick={() => { setPreviewTask(task); setImgNat({ w: 0, h: 0 }); }}
+                    sx={{ 
+                      bgcolor: '#0f172a', border: '1px solid #334155', position: 'relative', overflow: 'hidden',
+                      cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'scale(1.02)', borderColor: '#3b82f6' }
+                    }}
+                  >
                     <Box sx={{ width: '100%', paddingTop: '100%', position: 'relative', bgcolor: '#000' }}>
                       <img
                         src={task.data_item?.storage_url || 'https://via.placeholder.com/150'}
@@ -392,24 +437,34 @@ const handleCreate = async () => {
                           try {
                             let data = typeof task.annotation_data === 'string' ? JSON.parse(task.annotation_data) : task.annotation_data;
                             
-                            // Nểu là object có chứa mảng bên trong (ví dụ: { shapes: [...] }, { annotations: [...] })
-                            if (data && typeof data === 'object' && !Array.isArray(data)) {
-                               data = data.shapes || data.annotations || data.labels || data.data || Object.values(data)[0] || [];
+                            const uniqueLabels = new Set();
+                            
+                            if (data && typeof data === 'object') {
+                               if (Array.isArray(data)) {
+                                  data.forEach(item => {
+                                    if (item && typeof item === 'object') {
+                                      if (item.label) uniqueLabels.add(item.label);
+                                      else if (item.label_name) uniqueLabels.add(item.label_name);
+                                      else if (item.name) uniqueLabels.add(item.name);
+                                    } else if (typeof item === 'string') {
+                                      uniqueLabels.add(item);
+                                    }
+                                  });
+                               } else {
+                                  // Format gốc của Reviewer/Workspace.jsx là một Dictionary Map
+                                  // vd: { "Cat": [ { bbox: [...] } ] }
+                                  Object.entries(data).forEach(([key, val]) => {
+                                      if (key === 'grouped' && typeof val === 'object' && !Array.isArray(val)) {
+                                          Object.keys(val).forEach(k => uniqueLabels.add(k));
+                                      } else if (key === 'bboxes' && Array.isArray(val)) {
+                                          val.forEach(b => { if (b && b.label) uniqueLabels.add(b.label); });
+                                      } else if (Array.isArray(val)) {
+                                          uniqueLabels.add(key); // Key chính là Label Name
+                                      }
+                                  });
+                               }
                             }
-
-                            if (Array.isArray(data)) {
-                              const uniqueLabels = new Set();
-                              data.forEach(item => {
-                                if (item && typeof item === 'object') {
-                                  if (item.label) uniqueLabels.add(item.label);
-                                  else if (item.label_name) uniqueLabels.add(item.label_name);
-                                  else if (item.name) uniqueLabels.add(item.name);
-                                } else if (typeof item === 'string') {
-                                  uniqueLabels.add(item);
-                                }
-                              });
-                              labels = Array.from(uniqueLabels);
-                            }
+                            labels = Array.from(uniqueLabels).filter(l => l !== '__unlabeled' && l !== 'null');
                           } catch (e) {}
 
                           if (labels.length === 0) return <Chip size="small" label="No label" sx={{ height: 20, fontSize: '0.65rem' }} />;
@@ -430,6 +485,76 @@ const handleCreate = async () => {
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setDetail({ open: false, dataset: null, subtopics: [], approvedResults: [] })}>Close</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={!!previewTask} onClose={() => setPreviewTask(null)} maxWidth="lg" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1e293b', color: '#fff', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #334155' }}>
+          <Typography fontWeight="bold">Chi tiết Bounding Box</Typography>
+          <Button size="small" onClick={() => setPreviewTask(null)} color="inherit">Đóng</Button>
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#0f172a', p: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh', position: 'relative' }}>
+          {previewTask && (
+            <Box sx={{ position: 'relative', display: 'inline-block', maxWidth: '100%', p: 2 }}>
+              <img 
+                 ref={imgRef}
+                 src={previewTask.data_item?.storage_url || ''} 
+                 alt="preview" 
+                 onLoad={(e) => setImgNat({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+                 style={{ maxHeight: '75vh', maxWidth: '100%', display: 'block', borderRadius: '4px' }}
+              />
+              {imgNat.w > 0 && imgNat.h > 0 && (
+                <svg 
+                  style={{ position: 'absolute', top: 16, left: 16, width: 'calc(100% - 32px)', height: 'calc(100% - 32px)', pointerEvents: 'none' }}
+                  viewBox={`0 0 ${imgNat.w} ${imgNat.h}`}
+                >
+                  {(() => {
+                    let shapes = [];
+                    try {
+                      let data = typeof previewTask.annotation_data === 'string' ? JSON.parse(previewTask.annotation_data) : previewTask.annotation_data;
+                      
+                      if (data && typeof data === 'object') {
+                          if (Array.isArray(data)) {
+                             shapes = data;
+                          } else {
+                             Object.entries(data).forEach(([key, val]) => {
+                                 if (key === 'grouped' && typeof val === 'object' && !Array.isArray(val)) {
+                                     Object.entries(val).forEach(([k, arr]) => {
+                                         if (Array.isArray(arr)) arr.forEach(item => shapes.push({ label: k, ...item }));
+                                     });
+                                 } else if (key === 'bboxes' && Array.isArray(val)) {
+                                     val.forEach(item => shapes.push(item));
+                                 } else if (Array.isArray(val)) {
+                                     // Dictionary Map format! key is the label.
+                                     val.forEach(item => shapes.push({ label: key, ...item }));
+                                 }
+                             });
+                          }
+                      }
+                    } catch(e) {}
+
+                    return shapes.map((obj, i) => {
+                      const px = toPixel(obj, imgNat.w, imgNat.h);
+                      if (!px) return null;
+                      const labelName = obj.label || obj.label_name || obj.name || 'Box';
+                      const color = obj.color || getColor(String(labelName));
+                      const textBgH = imgNat.h * 0.04;
+                      const textWidth = Math.max(px.w, labelName.length * (imgNat.w * 0.015));
+                      const fontSize = imgNat.h * 0.03;
+                      
+                      return (
+                        <g key={i}>
+                          <rect x={px.x} y={px.y} width={px.w} height={px.h} fill="rgba(0,0,0,0.1)" stroke={color} strokeWidth={Math.max(2, imgNat.w * 0.005)} />
+                          <rect x={px.x - 1} y={px.y - textBgH} width={textWidth} height={textBgH} fill={color} />
+                          <text x={px.x + 4} y={px.y - 4} fill="#fff" fontSize={fontSize} fontWeight="bold" fontFamily="sans-serif">{labelName}</text>
+                        </g>
+                      );
+                    });
+                  })()}
+                </svg>
+              )}
+            </Box>
+          )}
+        </DialogContent>
       </Dialog>
 
       <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
