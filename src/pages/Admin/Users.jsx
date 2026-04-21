@@ -56,7 +56,7 @@ const AdminUsers = () => {
   };
 
   const handleRoleChange = async (userId, newRole) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u,  role: newRole } : u));
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
     try {
       await axios.put(`${API_URL}/api/users/${userId}`, {
         role: newRole.toLowerCase(),

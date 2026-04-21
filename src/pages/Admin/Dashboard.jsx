@@ -215,10 +215,10 @@ const AdminDashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Approved Tasks (7 days)"
-            value={approvedCount}
-            subtitle="Tasks approved by reviewers"
-            icon={<CheckCircleIcon />}
+            title="Total Projects"
+            value={stats?.totalProjects || 0}
+            subtitle={`${stats?.activeProjects || 0} active`}
+            icon={<AssignmentIcon />}
             color="info"
           />
         </Grid>
