@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   Alert,
@@ -27,6 +27,7 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import { API_URL } from '../../config/api';
+import ImageViewer from '../../components/ImageViewer';
 
 const pageBg = '#081226';
 const panelBg = '#111c33';
@@ -157,43 +158,57 @@ const getTaskDataItem = (t) => {
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
-
+  const baseUrl = API_URL.replace(/\/+$/, '');
   const directUrl =
-    dataItem.signedUrl ||
-    dataItem.signed_url ||
-    dataItem.storageUrl ||
-    dataItem.storage_url ||
-    dataItem.url ||
+    dataItem?.signedUrl ||
+    dataItem?.signed_url ||
+    dataItem?.storageUrl ||
+    dataItem?.storage_url ||
+    dataItem?.url ||
+    dataItem?.imageUrl ||
     '';
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
 
-  if (directUrl) return directUrl;
-
-  const rawPath =
-    dataItem.path ||
-    dataItem.storagePath ||
-    dataItem.storage_path ||
-    dataItem.filename ||
-    dataItem.original_name ||
-    dataItem.originalName ||
-    '';
-
-  if (!rawPath) return '';
-  if (/^https?:\/\//i.test(rawPath)) return rawPath;
-
-  const base = API_URL.replace(/\/+$/, '');
-  return `${base}/${String(rawPath).replace(/^\/+/, '')}`;
+  const filename = dataItem?.originalName || dataItem?.original_name || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || dataItem?.storagePath || dataItem?.storage_path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+    const parts = relativePath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt) {
+        if (!relativePath.startsWith('uploads/')) {
+            return `${baseUrl}/uploads/datasets/${relativePath}`;
+        }
+        return `${baseUrl}/${relativePath}`;
+    }
+    const safePath = relativePath.startsWith('uploads/') ? relativePath : `uploads/datasets/${relativePath}`;
+    return filename ? `${baseUrl}/${safePath}/${filename}` : `${baseUrl}/${safePath}`;
+  }
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 const normalizeLabelEntries = (labels) => {
   const src = labels || {};
   const result = [];
 
+  if (Array.isArray(src?.bboxes)) {
+    src.bboxes.forEach((x, idx) => {
+      result.push({
+        id: x.id || `bbox-${idx}`,
+        label: x.label || x.name || 'unknown',
+        bbox: x.bbox || x.box || (x.x !== undefined ? [x.x, x.y, x.x + (x.width || 0), x.y + (x.height || 0)] : null),
+      });
+    });
+  }
+
   if (Array.isArray(src?.objects)) {
     src.objects.forEach((x, idx) => {
       result.push({
         id: x.id || `obj-${idx}`,
         label: x.label || x.name || 'unknown',
-        bbox: x.bbox || x.box || null,
+        bbox: x.bbox || x.box || (x.x !== undefined ? [x.x, x.y, x.x + (x.width || 0), x.y + (x.height || 0)] : null),
       });
     });
   }
@@ -259,12 +274,45 @@ const loadDatasetApprovedItems = async (ds) => {
       })
     );
 
-    const allTasks = taskResponses.flat();
+    const subtopicIds = Array.isArray(ds.subtopics) 
+                        ? ds.subtopics.map(st => st?.id || st)
+                        : Array.isArray(ds.subtopic_ids) ? ds.subtopic_ids 
+                        : Array.isArray(ds.subtopicIds) ? ds.subtopicIds : [];
+    
+    let assetsMap = {};
+    if (subtopicIds.length > 0) {
+        const assetResponses = await Promise.allSettled(
+          subtopicIds.map(subId => axios.get(`${API_URL}/api/subtopics/${subId}/assets`, { headers }))
+        );
+        const assetsList = assetResponses
+          .filter(r => r.status === 'fulfilled')
+          .flatMap(r => Array.isArray(r.value.data) ? r.value.data : (r.value.data?.data || []));
 
+        assetsList.forEach(a => {
+          if (a.id) assetsMap[a.id] = a;
+          if (a.filename) assetsMap[a.filename] = a;
+          if (a.original_name) assetsMap[a.original_name] = a;
+        });
+    }
+
+    const allTasks = taskResponses.flat();
     const approvedTasks = allTasks.filter((t) => t?.status === 'approved');
 
     const mapped = approvedTasks.map((task, idx) => {
-      const dataItem = getTaskDataItem(task);
+      let dataItem = getTaskDataItem(task) || {};
+      const key = dataItem.id || dataItem.filename || dataItem.original_name || dataItem.originalName;
+      const matchedAsset = assetsMap[key] || assetsMap[dataItem.filename] || assetsMap[dataItem.originalName] || assetsMap[dataItem.original_name];
+      if (matchedAsset) {
+          dataItem = {
+              ...dataItem,
+              ...matchedAsset,
+              originalName: matchedAsset.original_name || dataItem.originalName,
+              mimeType: matchedAsset.mime_type || dataItem.mimeType,
+              storageUrl: matchedAsset.storage_url || dataItem.storageUrl,
+              signedUrl: matchedAsset.signed_url || dataItem.signedUrl,
+          };
+      }
+
       const labels = normalizeLabelEntries(task?.labels || task?.annotation_data || {});
       const fileUrl = buildFileUrl(dataItem);
 
@@ -1190,16 +1238,26 @@ const payload = {
             }}
           >
             {selectedApprovedItem.fileUrl ? (
-              <img
-                src={selectedApprovedItem.fileUrl}
-                alt={selectedApprovedItem.fileName}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
-              />
+              <Box sx={{ position: 'relative', width: '100%', minHeight: 420, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ImageViewer
+                  imageUrl={selectedApprovedItem.fileUrl}
+                  annotations={
+                    selectedApprovedItem.labels
+                      .filter(l => Boolean(l.bbox))
+                      .map(l => {
+                        let bbox = Array.isArray(l.bbox) ? l.bbox : [0, 0, 0, 0];
+                        if (bbox.length === 4 && bbox.every(val => val <= 1 && val >= 0)) {
+                           bbox = bbox.map(v => v * 100);
+                        }
+                        return {
+                          label: l.label,
+                          bbox: bbox
+                        };
+                      })
+                  }
+                  labelSet={Array.from(new Set(selectedApprovedItem.labels.map(l => l.label))).map(lblNames => ({name: lblNames}))}
+                />
+              </Box>
             ) : (
               <Box
                 sx={{

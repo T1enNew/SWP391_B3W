@@ -157,11 +157,37 @@ const typePalette = {
 
 const getStatusMeta = (status) => statusPalette[status] || statusPalette.draft;
 
-const getFullAssetUrl = (rawPath) => {
-  if (!rawPath) return '';
-  if (/^https?:\/\//i.test(rawPath)) return rawPath;
-  const base = API_URL.replace(/\/+$/, '');
-  return `${base}/${String(rawPath).replace(/^\/+/, '')}`;
+const getFullAssetUrl = (dataItem) => {
+  if (!dataItem) return '';
+  const baseUrl = API_URL.replace(/\/+$/, '');
+  const directUrl =
+    dataItem?.signedUrl ||
+    dataItem?.signed_url ||
+    dataItem?.storageUrl ||
+    dataItem?.storage_url ||
+    dataItem?.url ||
+    dataItem?.imageUrl ||
+    '';
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+
+  const filename = dataItem?.originalName || dataItem?.original_name || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || dataItem?.storagePath || dataItem?.storage_path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+    const parts = relativePath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt) {
+        if (!relativePath.startsWith('uploads/')) {
+            return `${baseUrl}/uploads/datasets/${relativePath}`;
+        }
+        return `${baseUrl}/${relativePath}`;
+    }
+    const safePath = relativePath.startsWith('uploads/') ? relativePath : `uploads/datasets/${relativePath}`;
+    return filename ? `${baseUrl}/${safePath}/${filename}` : `${baseUrl}/${safePath}`;
+  }
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 const getItemMediaInfo = (dataItem = {}) => {
@@ -173,15 +199,6 @@ const getItemMediaInfo = (dataItem = {}) => {
     dataItem?.path ||
     'Unknown item';
 
-  const rawPath =
-    dataItem?.storage_url ||
-    dataItem?.storageUrl ||
-    dataItem?.imageUrl ||
-    dataItem?.url ||
-    dataItem?.path ||
-    dataItem?.filename ||
-    '';
-
   let mediaType = 'other';
   if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName) || mime.startsWith('image/')) mediaType = 'image';
   else if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName) || mime.startsWith('audio/')) mediaType = 'audio';
@@ -190,7 +207,7 @@ const getItemMediaInfo = (dataItem = {}) => {
   return {
     mediaType,
     fileName,
-    fileUrl: getFullAssetUrl(rawPath),
+    fileUrl: getFullAssetUrl(dataItem),
   };
 };
 
@@ -205,6 +222,7 @@ const getLabelColor = (labelName = '') => {
 const extractAnnotations = (task) => {
   const source = task?.labels || task?.annotation_data || task?.annotationData || {};
   const raw =
+    source?.bboxes ||
     source?.objects ||
     source?.spans ||
     source?.segments ||
@@ -217,7 +235,7 @@ const extractAnnotations = (task) => {
     .filter(Boolean)
     .map((item) => ({
       label: typeof item === 'string' ? item : item.label || item.text || item.name || 'unknown',
-      bbox: item?.bbox || item?.box || null,
+      bbox: item?.bbox || item?.box || (item?.x !== undefined ? [item.x, item.y, item.x + (item.width || 0), item.y + (item.height || 0)] : null),
       start: item?.start,
       end: item?.end,
       text: item?.text || item?.sentence || null,
@@ -276,53 +294,34 @@ const renderImageOverlay = (item, showAnnotatorLabels, showAnnotatorLabelMap) =>
     if (!enabled) return [];
     return (ann.annotations || []).filter((x) => x?.bbox);
   });
+  const formattedAnnotations = visibleAnnotations.map((ann) => {
+    // ann.bbox is expected to be [x1, y1, x2, y2] in percentages (0-100)
+    let bbox = Array.isArray(ann.bbox) ? ann.bbox : [0, 0, 0, 0];
+    
+    // If all values are <= 1, they might be in 0-1 range (legacy), convert to percentages
+    if (bbox.length === 4 && bbox.every(val => val <= 1 && val >= 0)) {
+       bbox = bbox.map(v => v * 100);
+    }
+    
+    return {
+      label: ann.label,
+      bbox: bbox, 
+    };
+  });
+
+  const uniqueLabels = Array.from(new Set(formattedAnnotations.map((a) => a.label)));
+  const labelSetForViewer = uniqueLabels.map((lbl) => ({
+    name: lbl,
+    color: getLabelColor(lbl),
+  }));
 
   return (
-    <Box sx={{ position: 'relative', width: '100%', height: 420, borderRadius: 3, overflow: 'hidden', bgcolor: '#0b1220' }}>
-      <ImageViewer src={item.fileUrl} alt={item.fileName} />
-      {visibleAnnotations.map((ann, idx) => {
-        const box = ann.bbox;
-        const x = Array.isArray(box) ? box[0] : box?.x || 0;
-        const y = Array.isArray(box) ? box[1] : box?.y || 0;
-        const w = Array.isArray(box) ? box[2] : box?.width || 0;
-        const h = Array.isArray(box) ? box[3] : box?.height || 0;
-        const color = getLabelColor(ann.label);
-        return (
-          <Box
-            key={`${ann.label}-${idx}`}
-            sx={{
-              position: 'absolute',
-              left: `${x * 100}%`,
-              top: `${y * 100}%`,
-              width: `${w * 100}%`,
-              height: `${h * 100}%`,
-              border: `2px solid ${color}`,
-              boxSizing: 'border-box',
-            }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                transform: 'translateY(-100%)',
-                bgcolor: color,
-                color: '#fff',
-                px: 0.8,
-                py: 0.2,
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                borderTopLeftRadius: 4,
-                borderTopRightRadius: 4,
-                maxWidth: '100%',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {ann.label}
-            </Box>
-          </Box>
-        );
-      })}
+    <Box sx={{ position: 'relative', width: '100%', minHeight: 420, borderRadius: 3, overflow: 'hidden', bgcolor: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <ImageViewer 
+        imageUrl={item.fileUrl} 
+        annotations={formattedAnnotations} 
+        labelSet={labelSetForViewer} 
+      />
     </Box>
   );
 };
@@ -349,26 +348,77 @@ const ManagerProjectDetail = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [projectRes, datasetsRes, tasksRes, qualityRes] = await Promise.allSettled([
-          axios.get(`${API_URL}/api/projects/${id}`, { headers: getAuthHeaders() }),
-          axios.get(`${API_URL}/api/datasets/project/${id}`, { headers: getAuthHeaders() }),
+        const projectRes = await axios.get(`${API_URL}/api/projects/${id}`, { headers: getAuthHeaders() });
+        const pData = projectRes.data?.project || projectRes.data || {};
+        setProject(normalizeProject(pData));
+
+        const datasetId = pData?.dataset?.id || pData?.dataset?._id || pData?.dataset_id || pData?.datasetId || null;
+
+        const [datasetsRes, tasksRes, qualityRes] = await Promise.allSettled([
+          datasetId ? axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() }) : Promise.reject('No dataset ID'),
           axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() }),
           axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: getAuthHeaders() }),
         ]);
 
-        if (projectRes.status === 'fulfilled') setProject(normalizeProject(projectRes.value.data));
+        let dsList = [];
         if (datasetsRes.status === 'fulfilled') {
-          const raw = Array.isArray(datasetsRes.value.data)
-            ? datasetsRes.value.data
-            : datasetsRes.value.data?.data || [];
-          setDatasets(raw.map(normalizeDataset));
+          const dsData = datasetsRes.value.data?.dataset || datasetsRes.value.data || {};
+          dsList = (dsData.id || dsData._id) ? [normalizeDataset(dsData)] : [];
+          setDatasets(dsList);
         }
+
         if (tasksRes.status === 'fulfilled') {
           const raw = Array.isArray(tasksRes.value.data)
             ? tasksRes.value.data
             : tasksRes.value.data?.data || tasksRes.value.data?.tasks || [];
-          setTasks(raw.map(normalizeTask));
+          
+          let mappedTasks = raw.map(normalizeTask);
+
+          // Try to enrich with assets
+          try {
+            const subtopicIds = dsList.flatMap(ds => {
+              if (Array.isArray(ds.subtopics)) return ds.subtopics.map(st => st?.id || st);
+              return ds.subtopicIds || ds.subtopic_ids || (ds.subtopicId ? [ds.subtopicId] : []) || [];
+            });
+            if (subtopicIds.length > 0) {
+              const assetResponses = await Promise.allSettled(
+                subtopicIds.map(subId => axios.get(`${API_URL}/api/subtopics/${subId}/assets`, { headers: getAuthHeaders() }))
+              );
+              const assetsList = assetResponses
+                .filter(r => r.status === 'fulfilled')
+                .flatMap(r => Array.isArray(r.value.data) ? r.value.data : (r.value.data?.data || []));
+
+              const assetsMap = {};
+              assetsList.forEach(a => {
+                if (a.id) assetsMap[a.id] = a;
+                if (a.filename) assetsMap[a.filename] = a;
+                if (a.original_name) assetsMap[a.original_name] = a;
+              });
+
+              mappedTasks = mappedTasks.map(t => {
+                const di = t.dataItem || {};
+                const key = di.id || di.filename || di.original_name || di.originalName;
+                const matchedAsset = assetsMap[key] || assetsMap[di.filename] || assetsMap[di.originalName] || assetsMap[di.original_name];
+                if (matchedAsset) {
+                    t.dataItem = {
+                        ...di,
+                        ...matchedAsset,
+                        originalName: matchedAsset.original_name || di.originalName,
+                        mimeType: matchedAsset.mime_type || di.mimeType,
+                        storageUrl: matchedAsset.storage_url || di.storageUrl,
+                        signedUrl: matchedAsset.signed_url || di.signedUrl,
+                    };
+                }
+                return t;
+              });
+            }
+          } catch (e) {
+             console.error('Assets fetch failed', e);
+          }
+          
+          setTasks(mappedTasks);
         }
+        
         if (qualityRes.status === 'fulfilled') setQualityStats(qualityRes.value.data || null);
       } catch (err) {
         console.error('Project detail fetch failed:', err);
