@@ -470,8 +470,11 @@ const AnnotatorTask = () => {
   const handleSubmit = useCallback(async () => {
     if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
-    if (task.status !== 'completed') {
+    if (task.status !== 'completed' && task.status !== 'submitted' && task.status !== 'resubmitted') {
       try {
+        if (task.status === 'assigned' || task.status === 'rejected') {
+          await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+        }
         await handleSave();
         await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
         setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
@@ -493,6 +496,9 @@ const AnnotatorTask = () => {
     // then return to annotator dashboard.
     setSaving(true);
     try {
+      if (task.status === 'assigned' || task.status === 'rejected') {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+      }
       await handleSave();
       await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
       setShowSubmitConfirm(false);
