@@ -19,13 +19,32 @@ import {
 import {
   People as PeopleIcon,
   Folder as FolderIcon,
-  Assignment as AssignmentIcon,
   Storage as StorageIcon,
   TrendingUp as TrendingUpIcon,
   Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
 } from '@mui/icons-material';
+
+const WorkloadBar = ({ name, count, max, color }) => (
+  <Box sx={{ mb: 1.5 }}>
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+      <Typography variant="body2" noWrap sx={{ maxWidth: '65%' }}>{name}</Typography>
+      <Typography variant="body2" fontWeight="bold">{count}</Typography>
+    </Box>
+    <Box sx={{ width: '100%', bgcolor: 'grey.200', borderRadius: 1, height: 10 }}>
+      <Box
+        sx={{
+          width: `${max > 0 ? (count / max) * 100 : 0}%`,
+          bgcolor: color,
+          borderRadius: 1,
+          height: 10,
+          transition: 'width 0.4s ease',
+        }}
+      />
+    </Box>
+  </Box>
+);
 
 const StatCard = ({ title, value, subtitle, icon, color = 'primary' }) => (
   <Card sx={{ height: '100%' }}>
@@ -55,6 +74,8 @@ const StatCard = ({ title, value, subtitle, icon, color = 'primary' }) => (
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workload, setWorkload] = useState({ annotators: [], reviewers: [] });
+  const [approvedCount, setApprovedCount] = useState(0);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -64,6 +85,10 @@ const AdminDashboard = () => {
           axios.get(`${API_URL}/api/projects`),
           axios.get(`${API_URL}/api/datasets`),
         ]);
+
+        const activityStatsRes = await axios.get(`${API_URL}/api/activity-logs/stats`);
+        const actionCounts = activityStatsRes.data?.action_counts || {};
+        setApprovedCount(actionCounts.task_approve || 0);
 
         const users = usersRes.data?.users || usersRes.data || [];
         const projects = projectsRes.data?.projects || projectsRes.data || [];
@@ -118,6 +143,38 @@ const AdminDashboard = () => {
     return Math.round((stats.totalStorage / stats.storageLimit) * 100);
   };
 
+  useEffect(() => {
+    const fetchWorkload = async () => {
+      try {
+        const [submitRes, approveRes] = await Promise.all([
+          axios.get(`${API_URL}/api/activity-logs?action=task_submit&limit=500`),
+          axios.get(`${API_URL}/api/activity-logs?action=task_approve&limit=500`),
+        ]);
+
+        const groupByUser = (data) => {
+          const items = data?.data || data || [];
+          const map = {};
+          items.forEach((log) => {
+            const id = log.user?.id;
+            if (!id) return;
+            if (!map[id]) map[id] = { name: log.user?.full_name || log.user?.username || 'Unknown', count: 0 };
+            map[id].count++;
+          });
+          return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 8);
+        };
+
+        setWorkload({
+          annotators: groupByUser(submitRes.data),
+          reviewers: groupByUser(approveRes.data),
+        });
+      } catch (error) {
+        console.error('Error fetching workload data:', error);
+      }
+    };
+
+    fetchWorkload();
+  }, []);
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -158,10 +215,10 @@ const AdminDashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Total Projects"
-            value={stats?.totalProjects || 0}
-            subtitle={`${stats?.activeProjects || 0} active`}
-            icon={<AssignmentIcon />}
+            title="Approved Tasks (7 days)"
+            value={approvedCount}
+            subtitle="Tasks approved by reviewers"
+            icon={<CheckCircleIcon />}
             color="info"
           />
         </Grid>
@@ -173,6 +230,49 @@ const AdminDashboard = () => {
             icon={<StorageIcon />}
             color="warning"
           />
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>Top Annotators (by submissions)</Typography>
+              {workload.annotators.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No data</Typography>
+              ) : (
+                workload.annotators.map((a) => (
+                  <WorkloadBar
+                    key={a.name}
+                    name={a.name}
+                    count={a.count}
+                    max={workload.annotators[0]?.count || 1}
+                    color="#2e7d32"
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>Top Reviewers (by approvals)</Typography>
+              {workload.reviewers.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No data</Typography>
+              ) : (
+                workload.reviewers.map((r) => (
+                  <WorkloadBar
+                    key={r.name}
+                    name={r.name}
+                    count={r.count}
+                    max={workload.reviewers[0]?.count || 1}
+                    color="#ed6c02"
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
 

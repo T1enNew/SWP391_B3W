@@ -33,7 +33,9 @@ const LayoutTailwind = () => {
           ? '/annotator'
           : user.role === 'reviewer'
             ? '/reviewer'
-            : '/dashboard',
+            : user.role === 'admin'
+              ? '/admin'
+              : '/dashboard',
       },
     ];
 
