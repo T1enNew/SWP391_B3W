@@ -20,7 +20,7 @@ const getProjStats = (project) => {
   subs.forEach((sub) => {
     total += sub.total || 0;
     done += sub.approved || 0;       // Da duyet boi reviewer
-    waiting += sub.submitted || 0;   // Dang cho review (submitted)
+    waiting += (sub.submitted || 0) + (sub.resubmitted || 0);   // Dang cho review (submitted / resubmitted)
     rejected += sub.rejected || 0;    // Bi tra lai
   });
 
@@ -206,7 +206,7 @@ const AnnotatorProjectList = () => {
     if (filter === 'has_rejected') return rejected > 0;
     if (filter === 'waiting_review') {
       const subs = p.subtopics || [];
-      return subs.some((s) => (s.submitted || 0) > 0);
+      return subs.some((s) => (s.submitted || 0) > 0 || (s.resubmitted || 0) > 0);
     }
     return true;
   });
@@ -217,7 +217,7 @@ const AnnotatorProjectList = () => {
     completed: projects.filter((p) => { const { total, done } = getProjStats(p); return done === total && total > 0; }).length,
     overdue: projects.filter((p) => p.deadline && new Date(p.deadline) < new Date()).length,
     has_rejected: projects.filter((p) => getProjStats(p).rejected > 0).length,
-    waiting_review: projects.filter((p) => (p.subtopics || []).some((s) => (s.submitted || 0) > 0)).length,
+    waiting_review: projects.filter((p) => (p.subtopics || []).some((s) => (s.submitted || 0) > 0 || (s.resubmitted || 0) > 0)).length,
   };
 
   const filterTabs = [
