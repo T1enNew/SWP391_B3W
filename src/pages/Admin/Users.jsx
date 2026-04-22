@@ -124,7 +124,6 @@ const AdminUsers = () => {
             <TableRow>
               <TableCell>Username</TableCell>
               <TableCell>Full Name</TableCell>
-              <TableCell>Email</TableCell>
               <TableCell>Role</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="center">Active</TableCell>
@@ -142,7 +141,6 @@ const AdminUsers = () => {
                     )}
                   </TableCell>
                   <TableCell>{user.full_name}</TableCell>
-                  <TableCell>{user.email || '—'}</TableCell>
                   <TableCell>
                     <Tooltip title={isSelf ? 'Không thể thay đổi role của chính mình' : ''}>
                       <FormControl size="small" sx={{ minWidth: 120 }} disabled={isSelf}>
