@@ -13,7 +13,6 @@ import ManagerProjectDetail from './pages/Manager/Projects/ProjectDetail';
 import AnnotatorAuditDetail from './pages/Manager/Projects/AnnotatorAudit';
 import Datasets from './pages/Manager/Datasets';
 import DatasetItemDetail from './pages/Manager/Datasets/DatasetItemDetail';
-import TopicManagement from './pages/Manager/Taxonomy/Topics';
 import Labels from './pages/Manager/Taxonomy/Labels';
 import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorProjectList from './pages/Annotator/ProjectList';
@@ -71,7 +70,6 @@ function App() {
               <Route path='/manager/datasets' element={<Datasets />} />
               <Route path='/manager/datasets/:id' element={<DatasetItemDetail />} />
               <Route path='/manager/datasets/:id/items/*' element={<DatasetItemDetail />} />
-              <Route path='/manager/topics' element={<TopicManagement />} />
               <Route path='/manager/labels' element={<Labels />} />
               <Route path='/admin/users' element={<AdminUsers />} />
               <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
