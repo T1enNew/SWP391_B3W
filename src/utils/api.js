@@ -20,8 +20,11 @@ export const getArray = (data, fallback = []) => {
   if (Array.isArray(data?.subtopics)) return data.subtopics;
   if (Array.isArray(data?.reviews)) return data.reviews;
   if (Array.isArray(data?.label_sets)) return data.label_sets;
+  if (Array.isArray(data?.labels)) return data.labels;
+  if (Array.isArray(data?.labelsets)) return data.labelsets;
   if (Array.isArray(data?.users)) return data.users;
   if (Array.isArray(data?.logs)) return data.logs;
+  if (Array.isArray(data?.items)) return data.items;
   if (typeof data === 'object' && data !== null) {
     const vals = Object.values(data);
     const first = vals.find(v => Array.isArray(v));

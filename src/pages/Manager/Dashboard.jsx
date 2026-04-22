@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
@@ -155,49 +155,78 @@ const ManagerDashboard = () => {
         const token = getAuthToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-        const [datasetsRes, projectsRes] = await Promise.all([
+        // Only call endpoints that exist in Swagger
+        const [datasetsRes, projectsRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers }),
-          axios.get(`${API_URL}/api/projects`, { headers }).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers }),
         ]);
 
-        const dsList = Array.isArray(datasetsRes.data)
-          ? datasetsRes.data
-          : datasetsRes.data?.data || [];
+        const dsList =
+          datasetsRes.status === 'fulfilled'
+            ? Array.isArray(datasetsRes.value.data)
+              ? datasetsRes.value.data
+              : datasetsRes.value.data?.data || []
+            : [];
 
-        const pjList = Array.isArray(projectsRes.data)
-          ? projectsRes.data
-          : projectsRes.data?.data || [];
+        const pjList =
+          projectsRes.status === 'fulfilled'
+            ? Array.isArray(projectsRes.value.data)
+              ? projectsRes.value.data
+              : projectsRes.value.data?.data || projectsRes.value.data?.projects || []
+            : [];
 
         setDatasets(dsList);
         setProjects(pjList);
 
-        const statuses = await Promise.all(
-          dsList.map(async (ds) => {
-            const dsId = ds._id || ds.id;
-            try {
-              const res = await axios.get(`${API_URL}/api/datasets/${dsId}/status`, { headers });
-              return {
-                datasetId: dsId,
-                datasetName: ds.name || 'Unnamed dataset',
-                datasetType: ds.type || 'image',
-                ...res.data,
-              };
-            } catch {
-              return {
-                datasetId: dsId,
-                datasetName: ds.name || 'Unnamed dataset',
-                datasetType: ds.type || 'image',
-                totalRawItems: 0,
-                counts: {},
-                votes: {},
-                finalItems: [],
-                annotators: [],
-              };
-            }
+        // Fetch task stats for each project (uses /api/tasks/project/:id which exists)
+        const taskResults = await Promise.allSettled(
+          pjList.map((p) => {
+            const pid = p._id || p.id;
+            return axios.get(`${API_URL}/api/tasks/project/${pid}`, { headers });
           })
         );
 
-        setStatusList(statuses);
+        // Build synthetic statusList from tasks
+        const syntheticStatuses = dsList.map((ds) => {
+          const dsId = ds._id || ds.id;
+          // Find projects linked to this dataset
+          const linkedProjects = pjList.filter((p) => {
+            const did = p.dataset?.id || p.dataset?._id || p.dataset_id || p.datasetId;
+            return did === dsId;
+          });
+
+          let totalRaw = ds.total_items || ds.totalItems || 0;
+          const counts = { approved: 0, submitted: 0, rejected: 0, pendingAnnotation: 0 };
+
+          linkedProjects.forEach((p, idx) => {
+            const pidx = pjList.indexOf(p);
+            const taskRes = taskResults[pidx];
+            if (taskRes?.status !== 'fulfilled') return;
+            const tasks = Array.isArray(taskRes.value.data)
+              ? taskRes.value.data
+              : taskRes.value.data?.data || taskRes.value.data?.tasks || [];
+            tasks.forEach((t) => {
+              if (t.status === 'approved') counts.approved++;
+              else if (t.status === 'submitted') counts.submitted++;
+              else if (t.status === 'rejected') counts.rejected++;
+              else counts.pendingAnnotation++;
+            });
+            if (!totalRaw) totalRaw = tasks.length;
+          });
+
+          return {
+            datasetId: dsId,
+            datasetName: ds.name || 'Unnamed dataset',
+            datasetType: ds.type || 'image',
+            totalRawItems: totalRaw,
+            counts,
+            votes: {},
+            finalItems: [],
+            annotators: [],
+          };
+        });
+
+        setStatusList(syntheticStatuses);
       } catch (err) {
         console.error('Dashboard fetch failed:', err);
         setDatasets([]);
@@ -210,6 +239,7 @@ const ManagerDashboard = () => {
 
     fetchAll();
   }, []);
+
 
   const stats = useMemo(() => {
     const totalDatasets = datasets.length;

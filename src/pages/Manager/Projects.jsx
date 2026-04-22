@@ -81,12 +81,22 @@ export default function Projects() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [projectRes, datasetRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects`, { headers: getAuthHeaders() }),
+      const [projectRes, datasetRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
       ]);
-      setProjects(getArray(projectRes.data).map(normalizeProject));
-      setDatasets(getArray(datasetRes.data));
+      if (projectRes.status === 'fulfilled') {
+        const pData = projectRes.value.data;
+        // Handle paginated response format
+        const pList = pData?.data ? pData.data : getArray(pData);
+        setProjects(pList.map(normalizeProject));
+      } else {
+        const errorMsg = projectRes.reason?.response?.data?.message || projectRes.reason?.response?.data?.detail || 'Server error';
+        setError(`Không tải được danh sách project: ${errorMsg}`);
+      }
+      if (datasetRes.status === 'fulfilled') {
+        setDatasets(getArray(datasetRes.value.data));
+      }
     } catch (e) {
       setError(e?.response?.data?.message || e.message || 'Không tải được project');
     } finally {
