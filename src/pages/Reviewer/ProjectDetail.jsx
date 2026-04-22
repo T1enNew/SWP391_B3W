@@ -437,8 +437,8 @@ const ReviewerProjectDetail = () => {
                       onClick={() => { setModalType('approve'); setReviewComment(''); setModalError(''); }}
                       disabled={approvalRate < 70}
                       className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${approvalRate < 70
-                          ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
+                        ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
                         }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -574,8 +574,8 @@ const ReviewerProjectDetail = () => {
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 rounded-xl border px-4 py-3 shadow-xl max-w-sm ${toast.type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-            : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+          : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
           }`}>
           <div className="flex items-start gap-2">
             {toast.type === 'success' ? (
@@ -632,8 +632,8 @@ const ReviewerProjectDetail = () => {
                 }}
                 placeholder={modalType === 'approve' ? 'Nhập nhận xét (tùy chọn)...' : 'Ví dụ: Dữ liệu chưa đủ chuẩn, còn sai cấu trúc nhiều...'}
                 className={`w-full resize-y rounded-xl border bg-gray-900/50 p-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 transition-all min-h-[100px] ${modalType === 'approve'
-                    ? 'border-gray-700 focus:border-emerald-500/50 focus:ring-emerald-500/20'
-                    : 'border-gray-700 focus:border-rose-500/50 focus:ring-rose-500/20'
+                  ? 'border-gray-700 focus:border-emerald-500/50 focus:ring-emerald-500/20'
+                  : 'border-gray-700 focus:border-rose-500/50 focus:ring-rose-500/20'
                   }`}
               />
             </div>
@@ -657,8 +657,8 @@ const ReviewerProjectDetail = () => {
                 disabled={isSubmitting || (modalType === 'reject' && !reviewComment.trim())}
                 onClick={submitProjectAction}
                 className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${modalType === 'approve'
-                    ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
-                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
+                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
+                  : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
                   }`}
               >
                 {isSubmitting && (

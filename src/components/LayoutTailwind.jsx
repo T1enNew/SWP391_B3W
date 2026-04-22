@@ -39,7 +39,7 @@ const LayoutTailwind = () => {
       },
     ];
 
-    if (user.role === 'manager' || user.role === 'admin') {
+    if (user.role === 'manager') {
       baseItems.push({
         text: 'Projects',
         icon: <FolderKanban size={18} />,
@@ -69,7 +69,6 @@ const LayoutTailwind = () => {
     if (user.role === 'admin') {
       baseItems.push({ text: 'Users', icon: <Users size={18} />, path: '/admin/users' });
       baseItems.push({ text: 'Activity Logs', icon: <FileText size={18} />, path: '/admin/activity-logs' });
-      baseItems.push({ text: 'Datasets', icon: <Database size={18} />, path: '/admin/datasets' });
     }
 
     return baseItems;
@@ -129,11 +128,10 @@ const LayoutTailwind = () => {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`w-full rounded-lg px-3 py-2.5 transition text-left flex items-center gap-3 ${
-                  isActive
-                    ? 'bg-gray-800 text-gray-100 border border-gray-700'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
-                }`}
+                className={`w-full rounded-lg px-3 py-2.5 transition text-left flex items-center gap-3 ${isActive
+                  ? 'bg-gray-800 text-gray-100 border border-gray-700'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
+                  }`}
               >
                 <span className="inline-flex h-5 w-5 items-center justify-center">{item.icon}</span>
                 <span className="text-sm font-medium">{item.text}</span>

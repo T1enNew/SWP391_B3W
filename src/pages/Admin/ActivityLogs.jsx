@@ -147,6 +147,10 @@ const ActivityLogs = () => {
             >
               <MenuItem value="">All</MenuItem>
               <MenuItem value="login">Login</MenuItem>
+              <MenuItem value="label_create">Tag Created</MenuItem>
+              <MenuItem value="label_update">Tag Updated</MenuItem>
+              <MenuItem value="label_delete">Tag Deleted</MenuItem>
+              <MenuItem value="annotation_create">Annotation Created</MenuItem>
               <MenuItem value="project_create">Create Project</MenuItem>
               <MenuItem value="task_assign">Assign Task</MenuItem>
               <MenuItem value="task_submit">Submit Task</MenuItem>
@@ -197,16 +201,20 @@ const ActivityLogs = () => {
               logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
-                    {new Date(log.createdAt).toLocaleString()}
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleString('vi-VN')
+                      : '-'}
                   </TableCell>
                   <TableCell>
-                    {log.userId?.fullName || log.userId?.username || 'Unknown'}
-                    <Chip
-                      label={log.userId?.role}
-                      size="small"
-                      sx={{ ml: 1 }}
-                      color={log.userId?.role === 'admin' ? 'error' : 'default'}
-                    />
+                    {log.user?.full_name || log.user?.username || 'Unknown'}
+                    {log.user?.role && (
+                      <Chip
+                        label={log.user.role}
+                        size="small"
+                        sx={{ ml: 1 }}
+                        color={log.user.role === 'admin' ? 'error' : 'default'}
+                      />
+                    )}
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -216,8 +224,8 @@ const ActivityLogs = () => {
                     />
                   </TableCell>
                   <TableCell>
-                    {log.resourceType && (
-                      <Chip label={log.resourceType} size="small" variant="outlined" />
+                    {log.resource_type && (
+                      <Chip label={log.resource_type} size="small" variant="outlined" />
                     )}
                   </TableCell>
                   <TableCell>
@@ -227,7 +235,7 @@ const ActivityLogs = () => {
                   </TableCell>
                   <TableCell>
                     <Typography variant="caption" color="textSecondary">
-                      {log.ipAddress || '-'}
+                      {log.ip_address || '-'}
                     </Typography>
                   </TableCell>
                 </TableRow>
