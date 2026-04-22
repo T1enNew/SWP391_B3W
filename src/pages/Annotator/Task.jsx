@@ -157,7 +157,7 @@ const AnnotatorTask = () => {
   }, [id]);
 
   useEffect(() => {
-    if (!task || task.status !== 'submitted') return;
+    if (!task || !['submitted', 'resubmitted'].includes(task?.status)) return;
 
     const interval = setInterval(() => {
       fetchTask();
@@ -236,13 +236,13 @@ const AnnotatorTask = () => {
         setSelectedLabel(initialLabels?.label || '');
       }
 
-      if (response.data.datasetId) {
+      if (response.data.dataset_id) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { datasetId: response.data.datasetId._id || response.data.datasetId },
+          params: { dataset_id: response.data.dataset_id },
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);
-        const currentIdx = batchTasksList.findIndex((t) => t._id === id);
+        const currentIdx = batchTasksList.findIndex((t) => t.id === id);
         setCurrentTaskIndex(currentIdx >= 0 ? currentIdx : 0);
       }
 
@@ -319,6 +319,7 @@ const AnnotatorTask = () => {
   );
 
   const handleSave = useCallback(async () => {
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     setSaving(true);
     try {
       const kind = getTaskKind(task);
@@ -343,9 +344,8 @@ const AnnotatorTask = () => {
         };
       }
 
-      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels: labelsPayload,
-        status: 'in_progress',
+      await axios.put(`${API_URL}/api/tasks/${id}/save`, {
+        annotation_data: labelsPayload,
       });
       setMessage('Đã lưu thành công!');
       setTimeout(() => setMessage(''), 3000);
@@ -357,7 +357,7 @@ const AnnotatorTask = () => {
   }, [id, labels, annotationNote, selectedLabel, textSpans, task, getTaskKind]);
 
   const handleCompleteImage = useCallback(async () => {
-    if (!task) return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
     if (getTaskKind(task) === 'image' && (!labels.objects || labels.objects.length === 0)) {
       alert('Vui lòng thêm ít nhất một nhãn trước khi hoàn thành.');
@@ -378,10 +378,10 @@ const AnnotatorTask = () => {
     try {
       await handleSave();
 
-      await axios.post(`${API_URL}/api/tasks/${id}/complete`);
+      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
 
       const updatedBatchTasks = batchTasks.map((t) =>
-        t._id === id ? { ...t, status: 'completed' } : t
+        t.id === id ? { ...t, status: 'submitted' } : t
       );
       setBatchTasks(updatedBatchTasks);
       setTask((prev) => (prev ? { ...prev, status: 'completed' } : null));
@@ -391,17 +391,18 @@ const AnnotatorTask = () => {
           index > currentTaskIndex &&
           t.status !== 'completed' &&
           t.status !== 'submitted' &&
+          t.status !== 'resubmitted' &&
           t.status !== 'approved'
       );
 
       if (nextTaskIndex !== -1) {
-        navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex]._id}`);
+        navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex].id}`);
       } else {
         const firstUncompletedIndex = updatedBatchTasks.findIndex(
-          (t) => t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
+          (t) => t.status !== 'completed' && !['submitted', 'resubmitted', 'approved'].includes(t.status)
         );
         if (firstUncompletedIndex !== -1) {
-          navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex]._id}`);
+          navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex].id}`);
         } else {
           alert('Tất cả ảnh trong batch này đã được hoàn thành! Bạn có thể nộp bài ngay bây giờ.');
         }
@@ -416,9 +417,10 @@ const AnnotatorTask = () => {
 
   const handleBatchSubmit = useCallback(async () => {
     if (!task || !task.datasetId) return;
+    if (['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
     const allCompleted = batchTasks.every(
-      (t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved'
+      (t) => t.status === 'completed' || ['submitted', 'resubmitted', 'approved'].includes(t.status)
     );
     if (!allCompleted) {
       alert('Vui lòng hoàn thành tất cả task trong project trước khi nộp project.');
@@ -451,9 +453,10 @@ const AnnotatorTask = () => {
 
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/tasks/submit-batch`, {
-        datasetId: task.datasetId._id || task.datasetId,
-      });
+      // Submit each task individually
+      await Promise.all(
+        batchTasks.map((t) => axios.post(`${API_URL}/api/tasks/${t.id}/submit`))
+      );
       alert('Nộp bài thành công! Đang quay về trang dashboard.');
       navigate('/annotator/tasks');
     } catch (error) {
@@ -465,19 +468,21 @@ const AnnotatorTask = () => {
   }, [task, batchTasks, navigate, labels, getTaskKind]);
 
   const handleSubmit = useCallback(async () => {
-    if (!task) return;
-    if (task.status === 'submitted' || task.status === 'approved') return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
-    if (task.status !== 'completed') {
+    if (task.status !== 'completed' && task.status !== 'submitted' && task.status !== 'resubmitted') {
       try {
+        if (task.status === 'assigned' || task.status === 'rejected') {
+          await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+        }
         await handleSave();
-        await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
-        setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
+        await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+        setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
         setBatchTasks((list) =>
-          list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t))
+          list.map((t) => (t.id === task.id ? { ...t, status: 'submitted' } : t))
         );
       } catch (err) {
-        console.error('Error completing task before submit:', err);
+        console.error('Error submitting task before submit:', err);
       }
     }
 
@@ -485,14 +490,17 @@ const AnnotatorTask = () => {
   }, [task, handleSave]);
 
   const handleConfirmSubmit = useCallback(async () => {
-    if (!task) return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
     // Submit current task directly for image/text/audio,
     // then return to annotator dashboard.
     setSaving(true);
     try {
+      if (task.status === 'assigned' || task.status === 'rejected') {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+      }
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
       setShowSubmitConfirm(false);
       navigate('/annotator/tasks', { replace: true });
     } catch (error) {
@@ -507,12 +515,13 @@ const AnnotatorTask = () => {
     if (
       saveCurrent &&
       task &&
-      task._id !== taskId &&
+      task.id !== taskId &&
+      task.status !== 'resubmitted' &&
       task.status !== 'submitted' &&
       task.status !== 'approved'
     ) {
       try {
-        await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/label`, {
           labels,
           status: 'in_progress',
         });
@@ -525,19 +534,19 @@ const AnnotatorTask = () => {
 
   const navigateToPrevious = () => {
     if (currentTaskIndex > 0) {
-      navigateToTask(batchTasks[currentTaskIndex - 1]._id);
+      navigateToTask(batchTasks[currentTaskIndex - 1].id);
     }
   };
 
   const navigateToNext = () => {
     if (currentTaskIndex < batchTasks.length - 1) {
-      navigateToTask(batchTasks[currentTaskIndex + 1]._id);
+      navigateToTask(batchTasks[currentTaskIndex + 1].id);
     }
   };
 
   const navigateToTaskByIndex = (index) => {
     if (index >= 0 && index < batchTasks.length) {
-      navigateToTask(batchTasks[index]._id);
+      navigateToTask(batchTasks[index].id);
     }
   };
 
@@ -565,13 +574,13 @@ const AnnotatorTask = () => {
 
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') {
+        if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) {
           handleSave();
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
-        if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') {
+        if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) {
           handleSubmit();
         }
       }
@@ -609,11 +618,11 @@ const AnnotatorTask = () => {
   const allCompletedInBatch =
     batchTasks.length > 0 &&
     batchTasks.every(
-      (t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved'
+      (t) => t.status === 'completed' || ['submitted', 'resubmitted', 'approved'].includes(t.status)
     );
 
   const batchProgress = batchTasks.length > 0 ? ((currentTaskIndex + 1) / batchTasks.length) * 100 : 0;
-  const completedInBatch = batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length;
+  const completedInBatch = batchTasks.filter((t) => t.status === 'completed' || ['submitted', 'resubmitted', 'approved'].includes(t.status)).length;
 
   const getStatusBadge = () => {
     if (!task) return null;
@@ -657,11 +666,11 @@ const AnnotatorTask = () => {
         </div>
       );
     }
-    if (status === 'submitted') {
+    if (status === 'submitted' || status === 'resubmitted') {
       return (
         <div className="px-4 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-lg">
           <span className="text-yellow-800 font-bold">⏳ PENDING REVIEW</span>
-          <span className="text-yellow-600 text-sm ml-2">Waiting for reviewer...</span>
+          <span className="text-yellow-600 text-sm ml-2">Waiting for reviewer... ({status === 'resubmitted' ? 'Resubmitted' : 'Submitted'})</span>
         </div>
       );
     }
@@ -725,7 +734,7 @@ const AnnotatorTask = () => {
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
-                  readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+                  readOnly={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
                 />
 
                 <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
@@ -754,7 +763,7 @@ const AnnotatorTask = () => {
                       variant="contained"
                       color="primary"
                       onClick={handleCompleteImage}
-                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                      disabled={saving || ['submitted', 'resubmitted', 'approved'].includes(task?.status)}
                     >
                       Submit Image
                     </Button>
@@ -763,7 +772,7 @@ const AnnotatorTask = () => {
                       variant="contained"
                       color="success"
                       onClick={handleBatchSubmit}
-                      disabled={!allCompletedInBatch || saving || task?.status === 'submitted' || task?.status === 'approved'}
+                      disabled={!allCompletedInBatch || saving || ['submitted', 'resubmitted', 'approved'].includes(task?.status)}
                     >
                       Submit Project
                     </Button>
@@ -796,7 +805,7 @@ const AnnotatorTask = () => {
                     ref={textContainerRef}
                     className="border border-slate-300 rounded-md bg-gray-150/40 p-4 max-h-96 overflow-auto text-base text-slate-900 whitespace-pre-wrap relative select-text leading-relaxed"
                     onMouseUp={() => {
-                      if (task?.status === 'submitted' || task?.status === 'approved') return;
+                      if (['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
                       const selection = window.getSelection();
                       if (!selection || selection.rangeCount === 0) return;

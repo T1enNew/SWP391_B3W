@@ -51,7 +51,7 @@ const Register = () => {
     password: '',
     confirmPassword: '',
     fullName: '',
-    role: 'annotator',
+    role: 'manager',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -80,8 +80,8 @@ const Register = () => {
         username: formData.username,
         email: formData.email,
         password: formData.password,
-        fullName: formData.fullName,
-        role: formData.role,
+        full_name: formData.fullName,
+        role: formData.role.toLowerCase(),
       });
       navigate('/dashboard');
     } catch (err) {
@@ -178,7 +178,7 @@ const Register = () => {
             <TextField
               fullWidth
               label="Username"
-              name="auth_username_custom"
+              name="username"
               value={formData.username}
               onChange={handleChange}
               margin="normal"
@@ -197,7 +197,7 @@ const Register = () => {
             <TextField
               fullWidth
               label="Email Address"
-              name="auth_register_email_custom"
+              name="email"
               type="email"
               value={formData.email}
               onChange={handleChange}

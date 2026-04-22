@@ -1,25 +1,51 @@
+import axios from 'axios';
 import { API_URL } from '../config/api';
-const BASE = API_URL + '/api/topics';
-const SBASE = API_URL + '/api/subtopics';
-const LBASE = API_URL + '/api/labelsets';
+
 const getToken = () => sessionStorage.getItem('token');
-const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() });
 
-const handleResponse=(r)=>{if(!r.ok)return r.json().then(function(e){var err=new Error(e.message||e.error||String.fromCharCode(82,101,113,117,101,115,116,32,102,97,105,108,101,100));err.response=e;throw err;});return r.json();};
-export const getTopics = () => fetch(BASE, { headers: headers() }).then(handleResponse);
-export const getTopic = (id) => fetch(BASE + '/' + id, { headers: headers() }).then(handleResponse);
-export const createTopic = (data) => fetch(BASE, {method:'POST',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const updateTopic = (id, data) => fetch(BASE + '/' + id, {method:'PUT',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const deleteTopic = (id) => fetch(BASE + '/' + id, {method:'DELETE',headers:headers()}).then(handleResponse);
+const api = axios.create({
+  baseURL: API_URL + '/api',
+  headers: { 'Content-Type': 'application/json' },
+});
 
-export const getSubtopics = (topicId) => {const url=topicId?SBASE+'?topicId='+topicId:SBASE;return fetch(url, {headers:headers()}).then(handleResponse);};
-export const getSubtopic = (id) => fetch(SBASE + '/' + id, {headers:headers()}).then(handleResponse);
-export const createSubtopic = (data) => fetch(SBASE, {method:'POST',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const updateSubtopic = (id, data) => fetch(SBASE + '/' + id, {method:'PUT',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const deleteSubtopic = (id) => fetch(SBASE + '/' + id, {method:'DELETE',headers:headers()}).then(handleResponse);
+// Attach token to every request
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
-export const getLabelSets = (subtopicId) => {const url=subtopicId?LBASE+'?subtopicId='+subtopicId:LBASE;return fetch(url, {headers:headers()}).then(handleResponse);};
-export const getLabelSet = (id) => fetch(LBASE + '/' + id, {headers:headers()}).then(handleResponse);
-export const createLabelSet = (data) => fetch(LBASE, {method:'POST',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const updateLabelSet = (id, data) => fetch(LBASE + '/' + id, {method:'PUT',headers:headers(),body:JSON.stringify(data)}).then(handleResponse);
-export const deleteLabelSet = (id) => fetch(LBASE + '/' + id, {method:'DELETE',headers:headers()}).then(handleResponse);
+// Handle errors consistently
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const message = err.response?.data?.error || err.response?.data?.message || err.message;
+    return Promise.reject(new Error(message));
+  }
+);
+
+// ── Topics ────────────────────────────────────────────────────
+export const getTopics = () => api.get('/topics').then((r) => r.data);
+export const getTopic  = (id) => api.get(`/topics/${id}`).then((r) => r.data);
+export const createTopic = (data) => api.post('/topics', data).then((r) => r.data);
+export const updateTopic = (id, data) => api.put(`/topics/${id}`, data).then((r) => r.data);
+export const deleteTopic = (id) => api.delete(`/topics/${id}`).then((r) => r.data);
+
+// ── Subtopics ─────────────────────────────────────────────────
+export const getSubtopics  = (topicId) =>
+  topicId ? api.get(`/subtopics?topic_id=${topicId}`).then((r) => r.data)
+          : api.get('/subtopics').then((r) => r.data);
+export const getSubtopic   = (id) => api.get(`/subtopics/${id}`).then((r) => r.data);
+export const createSubtopic = (data) => api.post('/subtopics', data).then((r) => r.data);
+export const updateSubtopic = (id, data) => api.put(`/subtopics/${id}`, data).then((r) => r.data);
+export const deleteSubtopic = (id) => api.delete(`/subtopics/${id}`).then((r) => r.data);
+
+// ── Label Sets ────────────────────────────────────────────────
+// List label sets for a subtopic: GET /api/subtopics/:id/labelsets
+export const getLabelSets = (subtopicId) =>
+  subtopicId ? api.get(`/subtopics/${subtopicId}/labelsets`).then((r) => r.data)
+              : api.get('/labelsets').then((r) => r.data);
+export const getLabelSet  = (id) => api.get(`/labelsets/${id}`).then((r) => r.data);
+export const createLabelSet = (data) => api.post('/labelsets', data).then((r) => r.data);
+export const updateLabelSet = (id, data) => api.put(`/labelsets/${id}`, data).then((r) => r.data);
+export const deleteLabelSet = (id) => api.delete(`/labelsets/${id}`).then((r) => r.data);

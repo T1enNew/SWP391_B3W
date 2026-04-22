@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ErrorBoundary from './ErrorBoundary';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ProfileModal from './ProfileModal';
@@ -6,7 +7,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   Database,
-  FolderOpen,
+  Tag,
   ClipboardList,
   History,
   Users,
@@ -48,9 +49,9 @@ const LayoutTailwind = () => {
         path: '/manager/datasets',
       });
       baseItems.push({
-        text: 'Topics',
-        icon: <FolderOpen size={18} />,
-        path: '/manager/topics',
+        text: 'Labels',
+        icon: <Tag size={18} />,
+        path: '/manager/labels',
       });
     }
 
@@ -168,7 +169,9 @@ const LayoutTailwind = () => {
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-slate-900 ml-64">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} user={user} />

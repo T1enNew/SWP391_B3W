@@ -1,392 +1,654 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
+import {
+  Box,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  Chip,
+  LinearProgress,
+  CircularProgress,
+  Alert,
+  IconButton,
+} from '@mui/material';
+import {
+  ArrowBack as ArrowBackIcon,
+  CalendarToday as CalendarTodayIcon,
+} from '@mui/icons-material';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
-const fmtDate = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const getAuthHeaders = () => {
+  const token = sessionStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-const fmtDateTime = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+const normalizeTask = (t) => {
+  const projectId = t?.project_id || t?.projectId || t?.project?.id || null;
 
-// Status helpers
-const getTaskStatusLabel = (status) => {
-  const map = {
-    assigned: { label: 'Chua lam', color: 'bg-gray-500/15 text-gray-400 border border-gray-500/30' },
-    in_progress: { label: 'Dang lam', color: 'bg-blue-500/15 text-blue-400 border border-blue-500/30' },
-    completed: { label: 'Da xong (cho review)', color: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30' },
-    submitted: { label: 'Dang cho review', color: 'bg-orange-500/15 text-orange-400 border border-orange-500/30' },
-    approved: { label: 'Da duyet', color: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' },
-    rejected: { label: 'Bi tra lai', color: 'bg-rose-500/15 text-rose-400 border border-rose-500/30' },
-    revised: { label: 'Dang sua lai', color: 'bg-amber-500/15 text-amber-400 border border-amber-500/30' },
+  const dataItem = t?.data_item || t?.dataItem || null;
+
+  const subtopicId =
+    t?.subtopic_id ||
+    t?.subtopicId ||
+    dataItem?.subtopic_id ||
+    dataItem?.subtopicId ||
+    dataItem?.subtopic?.id ||
+    dataItem?.subtopic?.subtopic_id ||
+    null;
+
+  return {
+    ...t,
+    id: t?.id || t?._id,
+    projectId,
+    dataItem,
+    subtopicId,
+    status: t?.status || 'assigned',
   };
-  return map[status] || { label: status, color: 'bg-gray-500/15 text-gray-400 border border-gray-500/30' };
 };
 
-const getSubtopicStatus = (sub) => {
-  const total = sub.total || 0;
-  // Backend: approved includes BOTH truly-approved AND submitted tasks
-  // (backend: case 'submitted': subtopic.submitted++; subtopic.approved++)
-  // So approved = approved + submitted, and remaining = total - approved - rejected
-  const approvedInclSubmitted = sub.approved || 0;
-  const done = sub.submitted || 0;       // Only truly submitted (waiting review)
-  const rejected = sub.rejected || 0;
-  const remaining = total - approvedInclSubmitted - rejected;
+const normalizeProject = (raw) => {
+  const p = raw?.project || raw || {};
 
-  if (total === 0) return { label: 'Chua co item', color: 'text-gray-500', icon: '○' };
-  // approvedInclSubmitted = all tasks either approved or submitted (waiting review)
-  if (approvedInclSubmitted + rejected === total) return { label: 'Hoan tat', color: 'text-emerald-400', icon: '✓' };
-  if (rejected > 0) return { label: 'Co item bi tra lai', color: 'text-amber-400', icon: '↩' };
-  if (done > 0) return { label: 'Dang cho review', color: 'text-yellow-400', icon: '⏳' };
-  if (approvedInclSubmitted > 0) return { label: 'Dang lam', color: 'text-blue-400', icon: '▶' };
-  return { label: 'Chua bat dau', color: 'text-gray-400', icon: '○' };
+  const rawSubtopics =
+    p?.subtopics ||
+    p?.dataset?.subtopics ||
+    p?.dataset?.subtopic_list ||
+    p?.dataset?.subtopicIds ||
+    p?.dataset?.subtopic_ids ||
+    [];
+
+  const subtopics = Array.isArray(rawSubtopics)
+    ? rawSubtopics.map((s) => {
+        if (typeof s === 'string') {
+          return {
+            id: s,
+            subtopicId: s,
+            name: s,
+          };
+        }
+
+        return {
+          ...s,
+          id: s?.id || s?.subtopicId || s?._id,
+          subtopicId: s?.id || s?.subtopicId || s?._id,
+          name: s?.name || s?.title || 'Subtopic',
+        };
+      })
+    : [];
+
+  return {
+    ...p,
+    id: p?.id || p?._id,
+    name: p?.name || p?.projectName || 'Untitled Project',
+    description: p?.description || '',
+    guidelines: p?.guidelines || '',
+    deadline: p?.deadline || null,
+    datasetName: p?.dataset?.name || p?.datasetName || '',
+    topicName: p?.topic?.name || p?.topicName || '',
+    subtopics,
+  };
 };
 
-const SubtopicCard = ({ sub, onStart }) => {
-  const total = sub.total || 0;
-  const approvedInclSubmitted = sub.approved || 0;   // includes both approved + submitted
-  const done = sub.submitted || 0;                    // truly submitted waiting review
-  const rejected = sub.rejected || 0;
-  const remaining = Math.max(0, total - approvedInclSubmitted - rejected);
-  const status = getSubtopicStatus(sub);
-  const pct = total ? Math.round((approvedInclSubmitted / total) * 100) : 0;
-
-  // Determine button state
-  let btnText = 'Bat dau';
-  let btnColor = 'bg-violet-600 hover:bg-violet-700 text-white';
-  if (approvedInclSubmitted + rejected === total && total > 0) {
-    btnText = 'Xem lai';
-    btnColor = 'bg-emerald-600 hover:bg-emerald-700 text-white';
-  } else if (rejected > 0) {
-    btnText = 'Lam lai';
-    btnColor = 'bg-amber-600 hover:bg-amber-700 text-white';
-  } else if (approvedInclSubmitted > 0) {
-    btnText = 'Tiep tuc';
-    btnColor = 'bg-blue-600 hover:bg-blue-700 text-white';
+const statusLabel = (status) => {
+  switch (status) {
+    case 'completed':
+      return 'Đã xong';
+    case 'submitted':
+    case 'resubmitted':
+      return 'Chờ review';
+    case 'approved':
+      return 'Đã duyệt';
+    case 'rejected':
+      return 'Bị trả lại';
+    case 'in_progress':
+      return 'Đang làm';
+    default:
+      return 'Chưa làm';
   }
-
-  return (
-    <div className="group relative rounded-xl border border-gray-700/60 bg-gray-800/60 p-4 transition-all duration-200 hover:border-blue-500/40 hover:bg-gray-800">
-      {/* Subtopic name & status */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-semibold text-gray-100 group-hover:text-blue-300 transition-colors">
-            {sub.subtopicName || sub.name || 'Subtopic'}
-          </h3>
-          {sub.guideline && (
-            <p className="mt-0.5 text-xs text-gray-500 line-clamp-1">{sub.guideline}</p>
-          )}
-        </div>
-        <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${status.color}`}>
-          <span>{status.icon}</span>
-          {status.label}
-        </span>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        <div className="rounded-lg bg-gray-900/60 p-2 text-center">
-          <p className="text-lg font-bold text-gray-200">{total}</p>
-          <p className="text-xs text-gray-500">Tong item</p>
-        </div>
-        <div className="rounded-lg bg-yellow-500/5 p-2 text-center border border-yellow-500/10">
-          <p className="text-lg font-bold text-yellow-400">{done}</p>
-          <p className="text-xs text-yellow-500/70">Cho review</p>
-        </div>
-        <div className="rounded-lg bg-emerald-500/5 p-2 text-center border border-emerald-500/10">
-          <p className="text-lg font-bold text-emerald-400">{rejected}</p>
-          <p className="text-xs text-emerald-500/70">Bi tra lai</p>
-        </div>
-      </div>
-
-      {/* Second row: remaining + approved */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <div className="rounded-lg bg-gray-900/40 p-2 text-center">
-          <p className="text-sm font-bold text-gray-400">{remaining}</p>
-          <p className="text-xs text-gray-600">Chua lam</p>
-        </div>
-        <div className="rounded-lg bg-gray-900/40 p-2 text-center">
-          <p className="text-sm font-bold text-gray-400">{approvedInclSubmitted}</p>
-          <p className="text-xs text-gray-600">Da xong</p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between text-xs mb-1">
-          <span className="text-gray-500">Tien do</span>
-          <span className="font-medium text-gray-300">{pct}%</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-gray-700/60 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Action button */}
-      <button
-        onClick={() => onStart(sub)}
-        className={`w-full rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all duration-200 ${btnColor}`}
-      >
-        {btnText}
-      </button>
-    </div>
-  );
 };
 
-const AnnotatorProjectDetail = () => {
-  const { projectId } = useParams();
+const ProjectDetail = () => {
   const navigate = useNavigate();
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showGuidelines, setShowGuidelines] = useState(false);
+  const { projectId } = useParams();
 
-  const fetchProject = useCallback(async () => {
-    if (!projectId) return;
+  const [loading, setLoading] = useState(true);
+  const [project, setProject] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadData();
+    
+  }, [projectId]);
+
+  const loadData = async () => {
     setLoading(true);
     setError('');
+
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/annotator-projects`);
-      const allProjects = res.data || [];
-      const found = allProjects.find((p) => p.projectId === projectId || p._id === projectId);
-      setProject(found || null);
+      const [projectRes, tasksRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects/${projectId}`, {
+          headers: getAuthHeaders(),
+        }),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, {
+          headers: getAuthHeaders(),
+          params: { project_id: projectId },
+        }),
+      ]);
+
+      const projectData = normalizeProject(projectRes.data);
+
+      const rawTasks = getArray(tasksRes.data);
+      const normalizedTasks = rawTasks.map(normalizeTask);
+
+      console.log('[ProjectDetail] project:', projectData);
+      console.log('[ProjectDetail] tasks:', normalizedTasks);
+
+      setProject(projectData);
+      setTasks(normalizedTasks);
     } catch (err) {
-      setError(err.response?.data?.message || 'Khong tai duoc thong tin project');
+      console.error('Load project detail failed:', err);
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Không tải được chi tiết project'
+      );
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  };
 
-  useEffect(() => { fetchProject(); }, [fetchProject]);
+  const subtopicCards = useMemo(() => {
+    const subs = Array.isArray(project?.subtopics) ? project.subtopics : [];
+
+    return subs.map((sub) => {
+      const subId = String(sub?.id || sub?.subtopicId || '');
+
+      const subTasks = tasks.filter((t) => {
+        const sameProject = String(t.projectId) === String(projectId);
+        const sameSubtopic =
+          t.subtopicId && String(t.subtopicId) === String(subId);
+        return sameProject && sameSubtopic;
+      });
+
+      // fallback: nếu task không có subtopicId thì vẫn cho subtopic đầu tiên/duy nhất dùng task của project
+      const fallbackProjectTasks = tasks.filter(
+        (t) => String(t.projectId) === String(projectId)
+      );
+
+      const effectiveTasks = subTasks.length ? subTasks : fallbackProjectTasks;
+
+      const total = effectiveTasks.length;
+      const waitingReview = effectiveTasks.filter(
+        (t) => ['submitted', 'resubmitted'].includes(t.status)
+      ).length;
+      const rejected = effectiveTasks.filter(
+        (t) => t.status === 'rejected'
+      ).length;
+      const inProgress = effectiveTasks.filter(
+        (t) => t.status === 'in_progress'
+      ).length;
+      const done = effectiveTasks.filter((t) =>
+        ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status)
+      ).length;
+
+      const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+
+      return {
+        ...sub,
+        total,
+        waitingReview,
+        rejected,
+        inProgress,
+        done,
+        progress,
+        effectiveTasks,
+      };
+    });
+  }, [project, tasks, projectId]);
+
+  const totalItems = tasks.filter(
+    (t) => String(t.projectId) === String(projectId)
+  ).length;
+
+  const totalReviewing = tasks.filter(
+    (t) => String(t.projectId) === String(projectId) && ['submitted', 'resubmitted'].includes(t.status)
+  ).length;
+
+  const totalRejected = tasks.filter(
+    (t) => String(t.projectId) === String(projectId) && t.status === 'rejected'
+  ).length;
+
+  const totalDone = tasks.filter(
+    (t) =>
+      String(t.projectId) === String(projectId) &&
+      ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status)
+  ).length;
+
+  const overallProgress =
+    totalItems > 0 ? Math.round((totalDone / totalItems) * 100) : 0;
 
   const handleStartSubtopic = async (sub) => {
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-        params: { subtopicId: sub.subtopicId || sub._id },
+        headers: getAuthHeaders(),
+        params: { project_id: projectId },
       });
-      const tasks = res.data || [];
 
-      // Priority: rejected > in_progress > assigned > completed > submitted
-      const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted'];
-      let target = tasks.find((t) => priorityOrder.includes(t.status)) || tasks[0];
+      const rawTasks = getArray(res.data);
+      const normalizedTasks = rawTasks.map(normalizeTask);
 
-      if (target) {
-        navigate(`/annotator/workspace/${sub.subtopicId || sub._id}?taskId=${target._id}`);
-      } else {
-        alert('Khong co task nao trong subtopic nay.');
+      console.log('rawTasks:', normalizedTasks);
+      console.log('clicked subtopic:', sub);
+
+      const subId = String(sub?.id || sub?.subtopicId || '');
+
+      let matchedTasks = normalizedTasks.filter(
+        (t) =>
+          String(t.projectId) === String(projectId) &&
+          t.subtopicId &&
+          String(t.subtopicId) === subId
+      );
+
+      if (!matchedTasks.length) {
+        matchedTasks = normalizedTasks.filter(
+          (t) => String(t.projectId) === String(projectId)
+        );
       }
-    } catch {
-      alert('Khong tai duoc task.');
+
+      if (!matchedTasks.length) {
+        alert('Không có task nào trong project này.');
+        return;
+      }
+
+      const priorityOrder = [
+        'rejected',
+        'in_progress',
+        'assigned',
+        'submitted',
+        'resubmitted',
+        'completed',
+        'approved',
+      ];
+
+      const sorted = [...matchedTasks].sort((a, b) => {
+        return (
+          priorityOrder.indexOf(a.status || 'assigned') -
+          priorityOrder.indexOf(b.status || 'assigned')
+        );
+      });
+
+      const targetTask = sorted[0];
+
+      navigate(
+        `/annotator/workspace/${sub?.id || sub?.subtopicId}?taskId=${targetTask.id}`
+      );
+    } catch (err) {
+      console.error('handleStartSubtopic error:', err);
+      alert('Không tải được task.');
     }
   };
 
-  // Compute overall project stats
-  const computeProjectStats = () => {
-    if (!project) return { total: 0, done: 0, waiting: 0, rejected: 0, pct: 0 };
-    const subs = project.subtopics || [];
-    let total = 0, done = 0, waiting = 0, rejected = 0;
-    subs.forEach((s) => {
-      total += s.total || 0;
-      done += s.approved || 0;        // includes approved + submitted (backend logic)
-      waiting += s.submitted || 0;    // truly submitted (waiting review)
-      rejected += s.rejected || 0;
-    });
-    const pct = total ? Math.round((done / total) * 100) : 0;
-    return { total, done, waiting, rejected, pct };
-  };
-
-  const { total, done, waiting, rejected, pct } = computeProjectStats();
-  const overdue = project?.deadline && new Date(project.deadline) < new Date();
-
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900">
-        <div className="text-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500 mx-auto" />
-          <p className="mt-4 text-gray-400 text-sm">Dang tai thong tin project...</p>
-        </div>
-      </div>
+      <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
+        <CircularProgress />
+      </Box>
     );
   }
 
-  if (error || !project) {
+  if (error) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <svg className="mx-auto w-12 h-12 text-rose-500/60 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <p className="text-gray-400 mb-4">{error || 'Khong tim thay project nay.'}</p>
-          <button
-            onClick={() => navigate('/annotator/tasks')}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm hover:bg-blue-700 transition"
-          >
-            Quay lai danh sach project
-          </button>
-        </div>
-      </div>
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
     );
   }
 
-  const guideline = project.guidelines || project.guideline || project.projectId?.guidelines || '';
+  if (!project) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">Không tìm thấy project.</Alert>
+      </Box>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
-      <div className="mx-auto w-full max-w-7xl space-y-6">
-        {/* Back navigation */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate('/annotator/tasks')}
-            className="flex items-center gap-1.5 rounded-lg bg-gray-800/80 px-3 py-1.5 text-sm text-gray-400 border border-gray-700/60 hover:text-gray-200 hover:border-gray-600 transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Quay lai
-          </button>
-          <span className="text-gray-600 text-sm">/</span>
-          <span className="text-sm text-gray-500 truncate">{project.projectName || project.name}</span>
-        </div>
+    <Box
+      sx={{
+        p: 3,
+        minHeight: '100vh',
+        bgcolor: '#020817',
+        color: '#e2e8f0',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+        <IconButton onClick={() => navigate('/annotator/tasks')} sx={{ color: '#cbd5e1' }}>
+          <ArrowBackIcon />
+        </IconButton>
+        <Typography sx={{ color: '#94a3b8' }}>Quay lại</Typography>
+        <Typography sx={{ color: '#475569' }}>/</Typography>
+        <Typography sx={{ color: '#64748b' }}>{project.name}</Typography>
+      </Box>
 
-        {/* Project Header */}
-        <div className="rounded-2xl border border-gray-700/60 bg-gray-800/80 p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold text-gray-100 mb-1">
-                {project.projectName || project.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-400">
-                {project.datasetName || project.dataset?.name ? (
-                  <span className="inline-flex items-center gap-1">
-                    <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                    </svg>
-                    {project.datasetName || project.dataset?.name}
-                  </span>
+      <Card
+        sx={{
+          mb: 4,
+          bgcolor: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: 4,
+          color: '#e2e8f0',
+        }}
+      >
+        <CardContent sx={{ p: 4 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 2,
+              flexWrap: 'wrap',
+              mb: 3,
+            }}
+          >
+            <Box>
+              <Typography variant="h4" fontWeight={700} sx={{ mb: 1 }}>
+                {project.name}
+              </Typography>
+
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {project.datasetName ? (
+                  <Chip
+                    size="small"
+                    label={project.datasetName}
+                    sx={{ bgcolor: '#0f172a', color: '#94a3b8' }}
+                  />
                 ) : null}
                 {project.topicName ? (
-                  <span className="inline-flex items-center gap-1">
-                    <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
-                    {project.topicName}
-                  </span>
+                  <Chip
+                    size="small"
+                    label={project.topicName}
+                    sx={{ bgcolor: '#0f172a', color: '#94a3b8' }}
+                  />
                 ) : null}
-              </div>
-            </div>
+              </Box>
+            </Box>
 
-            {/* Deadline */}
-            {project.deadline && (
-              <div className={`shrink-0 rounded-xl px-4 py-3 border ${
-                overdue
-                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                  : 'bg-gray-900/60 border-gray-700/60 text-gray-300'
-              }`}>
-                <p className="text-xs font-medium mb-0.5">{overdue ? 'Qua han!' : 'Deadline'}</p>
-                <p className="text-lg font-bold">{fmtDateTime(project.deadline)}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Overall stats */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mt-5">
-            <div className="rounded-lg bg-gray-900/60 p-3">
-              <p className="text-xs text-gray-500">Tong so item</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-200">{total}</p>
-            </div>
-            <div className="rounded-lg bg-yellow-500/5 p-3 border border-yellow-500/10">
-              <p className="text-xs text-yellow-500/70">Dang cho review</p>
-              <p className="mt-0.5 text-2xl font-bold text-yellow-400">{waiting}</p>
-            </div>
-            <div className="rounded-lg bg-rose-500/5 p-3 border border-rose-500/10">
-              <p className="text-xs text-rose-500/70">Bi tra lai</p>
-              <p className="mt-0.5 text-2xl font-bold text-rose-400">{rejected}</p>
-            </div>
-            <div className="rounded-lg bg-gray-900/60 p-3">
-              <p className="text-xs text-gray-500">Da nop / Da duyet</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-200">{done}</p>
-            </div>
-          </div>
-
-          {/* Overall progress */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-sm mb-1.5">
-              <span className="text-gray-400 font-medium">Tien do tong the</span>
-              <span className="text-gray-200 font-semibold">{pct}% ({done}/{total} items)</span>
-            </div>
-            <div className="h-3 w-full rounded-full bg-gray-700/60 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  pct === 100
-                    ? 'bg-emerald-500'
-                    : 'bg-gradient-to-r from-blue-600 to-cyan-500'
-                }`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Guidelines toggle */}
-          {guideline && (
-            <div className="mt-4 border-t border-gray-700/60 pt-4">
-              <button
-                onClick={() => setShowGuidelines(!showGuidelines)}
-                className="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors"
+            {project.deadline ? (
+              <Card
+                sx={{
+                  minWidth: 220,
+                  bgcolor: '#0f172a',
+                  border: '1px solid #1e3a8a',
+                  color: '#e2e8f0',
+                }}
               >
-                <svg className={`w-4 h-4 transition-transform ${showGuidelines ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                Huong dan ghi nhan (Guidelines)
-              </button>
-              {showGuidelines && (
-                <div className="mt-3 rounded-lg bg-blue-500/5 border border-blue-500/20 p-4">
-                  <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{guideline}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                <CardContent>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 1 }}>
+                    Deadline
+                  </Typography>
+                  <Typography fontWeight={700}>
+                    {new Date(project.deadline).toLocaleTimeString('vi-VN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}{' '}
+                    {new Date(project.deadline).toLocaleDateString('vi-VN')}
+                  </Typography>
+                </CardContent>
+              </Card>
+            ) : null}
+          </Box>
 
-        {/* Subtopics */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-100">
-              Subtopics ({project.subtopics?.length || 0})
-            </h2>
-            <p className="text-sm text-gray-500">
-              Chia nho cong viec theo subtopic de de quan ly
-            </p>
-          </div>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={3}>
+              <Card sx={{ bgcolor: '#0f172a', color: '#e2e8f0' }}>
+                <CardContent>
+                  <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                    Tổng số item
+                  </Typography>
+                  <Typography variant="h4" fontWeight={700}>
+                    {totalItems}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
 
-          {!project.subtopics || project.subtopics.length === 0 ? (
-            <div className="rounded-xl border border-gray-700/60 bg-gray-800/40 p-12 text-center">
-              <svg className="mx-auto w-10 h-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m2 0h5" />
-              </svg>
-              <p className="text-gray-500">Chua co subtopic nao trong project nay.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {project.subtopics.map((sub) => (
-                <SubtopicCard
-                  key={sub.subtopicId || sub._id}
-                  sub={sub}
-                  onStart={handleStartSubtopic}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+            <Grid item xs={12} md={3}>
+              <Card sx={{ bgcolor: '#2a2f24', color: '#facc15' }}>
+                <CardContent>
+                  <Typography variant="body2">Đang chờ review</Typography>
+                  <Typography variant="h4" fontWeight={700}>
+                    {totalReviewing}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={3}>
+              <Card sx={{ bgcolor: '#2b1f2b', color: '#fb7185' }}>
+                <CardContent>
+                  <Typography variant="body2">Bị trả lại</Typography>
+                  <Typography variant="h4" fontWeight={700}>
+                    {totalRejected}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={3}>
+              <Card sx={{ bgcolor: '#0f172a', color: '#e2e8f0' }}>
+                <CardContent>
+                  <Typography variant="body2">Đã nộp / Đã duyệt</Typography>
+                  <Typography variant="h4" fontWeight={700}>
+                    {totalDone}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          <Typography sx={{ mb: 1 }}>Tiến độ tổng thể</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <LinearProgress
+              variant="determinate"
+              value={overallProgress}
+              sx={{
+                flex: 1,
+                height: 10,
+                borderRadius: 999,
+                bgcolor: '#334155',
+              }}
+            />
+            <Typography fontWeight={700}>
+              {overallProgress}% ({totalDone}/{totalItems} items)
+            </Typography>
+          </Box>
+
+          {project.guidelines ? (
+            <Box sx={{ mt: 3 }}>
+              <Typography sx={{ color: '#60a5fa', cursor: 'pointer' }}>
+                Hướng dẫn ghi nhãn (Guidelines)
+              </Typography>
+            </Box>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
+        <Typography variant="h5" fontWeight={700}>
+          Subtopics ({subtopicCards.length})
+        </Typography>
+        <Typography sx={{ color: '#64748b' }}>
+          Chia nhỏ công việc theo subtopic để dễ quản lý
+        </Typography>
+      </Box>
+
+      {subtopicCards.length === 0 ? (
+        <Card
+          sx={{
+            bgcolor: '#0f172a',
+            border: '1px solid #1e293b',
+            borderRadius: 4,
+            color: '#94a3b8',
+          }}
+        >
+          <CardContent sx={{ py: 8, textAlign: 'center' }}>
+            <Typography>Chưa có subtopic nào trong project này.</Typography>
+          </CardContent>
+        </Card>
+      ) : (
+        <Grid container spacing={3}>
+          {subtopicCards.map((sub) => (
+            <Grid item xs={12} sm={6} md={4} lg={3} key={sub.id || sub.subtopicId}>
+              <Card
+                sx={{
+                  bgcolor: '#111827',
+                  border: '1px solid #1f2937',
+                  borderRadius: 4,
+                  color: '#e2e8f0',
+                  height: '100%',
+                }}
+              >
+                <CardContent>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      mb: 2,
+                    }}
+                  >
+                    <Typography fontWeight={700}>{sub.name}</Typography>
+                    <Chip
+                      size="small"
+                      label={sub.total > 0 ? statusLabel(sub.effectiveTasks[0]?.status) : 'Chưa có item'}
+                      sx={{
+                        bgcolor: '#374151',
+                        color: '#cbd5e1',
+                      }}
+                    />
+                  </Box>
+
+                  <Grid container spacing={1} sx={{ mb: 2 }}>
+                    <Grid item xs={6}>
+                      <Card sx={{ bgcolor: '#0b1220', color: '#e2e8f0' }}>
+                        <CardContent sx={{ p: 1.5 }}>
+                          <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                            Tổng item
+                          </Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {sub.total}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    <Grid item xs={6}>
+                      <Card sx={{ bgcolor: '#2a2f24', color: '#facc15' }}>
+                        <CardContent sx={{ p: 1.5 }}>
+                          <Typography variant="body2">Chờ review</Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {sub.waitingReview}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    <Grid item xs={6}>
+                      <Card sx={{ bgcolor: '#102938', color: '#2dd4bf' }}>
+                        <CardContent sx={{ p: 1.5 }}>
+                          <Typography variant="body2">Đã làm</Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {sub.done}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    <Grid item xs={6}>
+                      <Card sx={{ bgcolor: '#2b1f2b', color: '#fb7185' }}>
+                        <CardContent sx={{ p: 1.5 }}>
+                          <Typography variant="body2">Bị trả lại</Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {sub.rejected}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  </Grid>
+
+                  <Box sx={{ mb: 1 }}>
+                    <Typography variant="body2" sx={{ color: '#94a3b8', mb: 0.5 }}>
+                      Tiến độ
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={sub.progress}
+                        sx={{
+                          flex: 1,
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor: '#334155',
+                        }}
+                      />
+                      <Typography variant="body2" fontWeight={700}>
+                        {sub.progress}%
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {project.deadline ? (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: '#94a3b8',
+                        mb: 2,
+                        mt: 2,
+                      }}
+                    >
+                      <CalendarTodayIcon sx={{ fontSize: 16 }} />
+                      <Typography variant="body2">
+                        Deadline: {new Date(project.deadline).toLocaleDateString('vi-VN')}
+                      </Typography>
+                    </Box>
+                  ) : null}
+
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    onClick={() => handleStartSubtopic(sub)}
+                    sx={{
+                      mt: 1,
+                      borderRadius: 3,
+                      textTransform: 'none',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Bắt đầu
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+    </Box>
   );
 };
 
-export default AnnotatorProjectDetail;
+export default ProjectDetail;

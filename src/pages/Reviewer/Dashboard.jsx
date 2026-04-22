@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { getArray } from '../../utils/api';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -52,17 +53,29 @@ const ReviewerDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(API_URL + '/api/reviews/all', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      const [pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 } }),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 } }),
+      ]);
       setAllTasks({
-        pending: res.data.pending || [],
-        reviewed: res.data.reviewed || [],
+        pending: getArray(pendingRes.data),
+        reviewed: getArray(reviewedRes.data),
       });
-    } catch (err) { setError(err.response?.data?.message || 'Failed'); } finally { setLoading(false); }
+      setError('');
+    } catch (err) {
+      // 403 = reviewer not allowed on these endpoints; show empty state gracefully
+      if (err.response?.status === 403) {
+        setAllTasks({ pending: [], reviewed: [] });
+        setError('');
+      } else {
+        setError(err.response?.data?.message || 'Failed to load tasks');
+      }
+    } finally { setLoading(false); }
   };
 
   const getMyVote = (task) => {
     if (!user) return null;
-    const r = task.reviewers?.find((rev) => sameId(rev.reviewerId?._id || rev.reviewerId, user?._id || user?.id));
+    const r = task.reviewers?.find((rev) => sameId(rev.reviewerId?.id || rev.reviewerId, user?.id || user?.id));
     return r?.status || null;
   };
 
@@ -70,7 +83,7 @@ const ReviewerDashboard = () => {
     const all = [...allTasks.pending, ...allTasks.reviewed];
     const projMap = {};
     all.forEach((t) => {
-      const pid = t.projectId?._id || t.projectId;
+      const pid = t.projectId?.id || t.projectId;
       if (!pid) return;
       if (!projMap[pid]) {
         projMap[pid] = {
@@ -85,7 +98,7 @@ const ReviewerDashboard = () => {
     return Object.values(projMap).map((pg) => {
       const byAnno = {};
       pg.tasks.forEach((t) => {
-        const aid = String(t.annotatorId?._id || t.annotatorId || '');
+        const aid = String(t.annotatorId?.id || t.annotatorId || '');
         const aname = t.annotatorId?.fullName || t.annotatorId?.username || 'Unknown';
         if (!byAnno[aid]) byAnno[aid] = { annotatorId: aid, annotatorName: aname, tasks: [] };
         byAnno[aid].tasks.push(t);
@@ -119,20 +132,20 @@ const ReviewerDashboard = () => {
     const anns = sel.join(',');
     const eligible = pg.tasks
       .filter((t) => {
-        const aid = String(t.annotatorId?._id || t.annotatorId || '');
+        const aid = String(t.annotatorId?.id || t.annotatorId || '');
         if (!sel.includes(aid)) return false;
         return t.status === 'submitted' && (!getMyVote(t) || getMyVote(t) === 'pending');
       })
       .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0));
     if (eligible.length === 0) { alert('Khong co task nao de review'); return; }
-    navigate('/reviewer/tasks/' + eligible[0]._id + '?anns=' + anns);
+    navigate('/reviewer/tasks/' + eligible[0].id + '?anns=' + anns);
   };
 
   const queueTasks = (pg) => {
     const sel = selectedAnnotators[pg.projectId] || [];
     if (sel.length === 0) return pg.tasks;
     return pg.tasks.filter((t) => {
-      const aid = String(t.annotatorId?._id || t.annotatorId || '');
+      const aid = String(t.annotatorId?.id || t.annotatorId || '');
       return sel.includes(aid);
     });
   };
@@ -295,16 +308,16 @@ const ReviewerDashboard = () => {
                               <tbody>
                                 {qTasks.map((t) => {
                                   const vote = getMyVote(t);
-                                  const annName = pg.annotators.find((a) => sameId(a.annotatorId, t.annotatorId?._id || t.annotatorId))?.annotatorName || '?';
+                                  const annName = pg.annotators.find((a) => sameId(a.annotatorId, t.annotatorId?.id || t.annotatorId))?.annotatorName || '?';
                                   return (
-                                    <tr key={t._id} className="border-t border-gray-700/50 hover:bg-gray-700/20 transition">
+                                    <tr key={t.id} className="border-t border-gray-700/50 hover:bg-gray-700/20 transition">
                                       <td className="px-4 py-3 text-gray-300">{annName}</td>
-                                      <td className="px-4 py-3 text-gray-300">{t.dataItem?.originalName || t.dataItem?.filename || 'Task ' + t._id.slice(-4)}</td>
+                                      <td className="px-4 py-3 text-gray-300">{t.dataItem?.originalName || t.dataItem?.filename || 'Task ' + t.id.slice(-4)}</td>
                                       <td className="px-4 py-3 text-gray-400">{t.submittedAt ? new Date(t.submittedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</td>
                                       <td className="px-4 py-3"><span className={'rounded border px-2 py-0.5 text-xs font-semibold ' + statusColor(t.status)}>{t.status}</span></td>
                                       <td className="px-4 py-3"><span className={'rounded px-2 py-0.5 text-xs font-semibold ' + (vote === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : vote === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-gray-700 text-gray-400')}>{vote || 'pending'}</span></td>
                                       <td className="px-4 py-3 text-right">
-                                        <button onClick={() => navigate('/reviewer/tasks/' + t._id + '?anns=' + sel.join(','))} className="rounded-lg border border-blue-500/50 px-3 py-1 text-xs text-blue-400 hover:bg-blue-500/10 transition">Review</button>
+                                        <button onClick={() => navigate('/reviewer/tasks/' + t.id + '?anns=' + sel.join(','))} className="rounded-lg border border-blue-500/50 px-3 py-1 text-xs text-blue-400 hover:bg-blue-500/10 transition">Review</button>
                                       </td>
                                     </tr>
                                   );

@@ -1,0 +1,5 @@
+- Tech stack: React + MUI + backend API
+- Ưu tiên sửa đúng flow hiện tại, không refactor lớn
+- Không đổi UI nếu không được yêu cầu
+- Khi sửa bug, giải thích nguyên nhân trước rồi mới đề xuất patch
+- Bỏ qua node_modules, dist, build

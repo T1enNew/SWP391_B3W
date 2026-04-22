@@ -55,6 +55,8 @@ import {
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
+const getAuthToken = () => sessionStorage.getItem('token');
+
 // ─────────────────────────────────────────────
 // Status config
 // ─────────────────────────────────────────────
@@ -94,7 +96,7 @@ const AdminDatasets = () => {
   const fetchDatasets = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/datasets`);
+      const response = await axios.get(`${API_URL}/api/datasets`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       const data = response.data || [];
       setDatasets(data);
       setStats({
@@ -150,7 +152,7 @@ const AdminDatasets = () => {
     setDetailOpen(true);
     setDetailItemsLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/datasets/${dataset._id}/items`);
+      const response = await axios.get(`${API_URL}/api/datasets/${dataset.id}/items`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       setDetailItems(response.data?.items || []);
     } catch (error) {
       console.error('Error fetching dataset items:', error);
@@ -351,7 +353,7 @@ const AdminDatasets = () => {
               </TableRow>
             ) : (
               filteredDatasets.map((dataset) => (
-                <TableRow key={dataset._id} sx={{ '&:hover': { bgcolor: '#33415520' } }}>
+                <TableRow key={dataset.id} sx={{ '&:hover': { bgcolor: '#33415520' } }}>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                       <Box sx={{ p: 0.75, borderRadius: 1, bgcolor: `${getDatasetColor(dataset.type)}20`, color: getDatasetColor(dataset.type), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

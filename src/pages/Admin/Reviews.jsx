@@ -38,6 +38,9 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
+
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const AdminReviews = () => {
   const [reviews, setReviews] = useState([]);
@@ -57,10 +60,13 @@ const AdminReviews = () => {
   const fetchReviews = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/reviews/all`);
-      
-      const pending = response.data?.pending || [];
-      const reviewed = response.data?.reviewed || [];
+      const [pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/reviews/pending`, { params: { page: 1, limit: 100 }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { params: { page: 1, limit: 100 }, headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+      ]);
+
+      const pending = getArray(pendingRes.data);
+      const reviewed = getArray(reviewedRes.data);
       const allTasks = [...pending, ...reviewed];
       
       setReviews(allTasks);
@@ -92,7 +98,7 @@ const AdminReviews = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(t =>
-        t._id?.toLowerCase().includes(term) ||
+        t.id?.toLowerCase().includes(term) ||
         t.projectId?.name?.toLowerCase().includes(term) ||
         t.datasetId?.name?.toLowerCase().includes(term) ||
         t.annotatorId?.username?.toLowerCase().includes(term) ||
@@ -276,10 +282,10 @@ const AdminReviews = () => {
               </TableRow>
             ) : (
               filteredReviews.map((task) => (
-                <TableRow key={task._id} sx={{ '&:hover': { bgcolor: '#33415520' } }}>
+                <TableRow key={task.id} sx={{ '&:hover': { bgcolor: '#33415520' } }}>
                   <TableCell>
                     <Typography sx={{ color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {task._id?.substring(0, 8).toUpperCase()}
+                      {task.id?.substring(0, 8).toUpperCase()}
                     </Typography>
                   </TableCell>
                   <TableCell>
@@ -347,7 +353,7 @@ const AdminReviews = () => {
             <Grid container spacing={3}>
               <Grid item xs={6}>
                 <Typography variant="caption" sx={{ color: '#94a3b8' }}>Task ID</Typography>
-                <Typography sx={{ color: '#e2e8f0', fontFamily: 'monospace', mb: 2 }}>{selectedTask._id}</Typography>
+                <Typography sx={{ color: '#e2e8f0', fontFamily: 'monospace', mb: 2 }}>{selectedTask.id}</Typography>
                 
                 <Typography variant="caption" sx={{ color: '#94a3b8' }}>Project</Typography>
                 <Typography sx={{ color: '#e2e8f0', mb: 2 }}>{selectedTask.projectId?.name || 'N/A'}</Typography>

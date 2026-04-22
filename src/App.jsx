@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -14,6 +14,7 @@ import CreateProject from './pages/Manager/CreateProject';
 import Datasets from './pages/Manager/Datasets';
 import DatasetItemDetail from './pages/Manager/DatasetItemDetail';
 import TopicManagement from './pages/Manager/TopicManagement';
+import Labels from './pages/Manager/Labels';
 import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorProjectList from './pages/Annotator/ProjectList';
 import AnnotatorProjectDetail from './pages/Annotator/ProjectDetail';
@@ -30,6 +31,7 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminDatasets from './pages/Admin/Datasets';
 import LayoutTailwind from './components/LayoutTailwind';
+import ErrorBoundary from './components/ErrorBoundary';
 import LayoutAnnotator from './components/LayoutAnnotator';
 import LayoutReviewer from './components/LayoutReviewer';
 
@@ -59,7 +61,7 @@ function App() {
           <Routes>
             <Route path='/login' element={<Login />} />
             <Route path='/register' element={<Register />} />
-            <Route element={<PrivateRoute><LayoutTailwind /></PrivateRoute>}>
+            <Route element={<PrivateRoute><ErrorBoundary><LayoutTailwind /></ErrorBoundary></PrivateRoute>}>
               <Route path='/dashboard' element={<ManagerDashboard />} />
               <Route path='/manager/projects' element={<ManagerProjects />} />
               <Route path='/manager/projects/create' element={<CreateProject />} />
@@ -69,6 +71,7 @@ function App() {
               <Route path='/manager/datasets/:id' element={<DatasetItemDetail />} />
               <Route path='/manager/datasets/:id/items/*' element={<DatasetItemDetail />} />
               <Route path='/manager/topics' element={<TopicManagement />} />
+              <Route path='/manager/labels' element={<Labels />} />
               <Route path='/admin/users' element={<AdminUsers />} />
               <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
               <Route path='/admin/datasets' element={<AdminDatasets />} />

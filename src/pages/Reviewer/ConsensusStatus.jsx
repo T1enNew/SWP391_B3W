@@ -29,7 +29,7 @@ const ConsensusStatus = ({ reviewers = [], task }) => {
           if (reviewer.status === 'rejected') bgColor = 'bg-rose-500';
           return (
             <div
-              key={reviewer.reviewerId?._id || reviewer.reviewerId || idx}
+              key={reviewer.reviewerId?.id || reviewer.reviewerId || idx}
               className={`h-full ${bgColor} transition-all duration-300`}
               style={{ width: `${width}%` }}
               title={`${reviewer.reviewerId?.fullName || reviewer.reviewerId?.username || 'Reviewer ' + (idx + 1)}: ${reviewer.status}`}
@@ -64,10 +64,10 @@ const ConsensusStatus = ({ reviewers = [], task }) => {
       <div className="space-y-2">
         {reviewers.map((reviewer, idx) => {
           const name = reviewer.reviewerId?.fullName || reviewer.reviewerId?.username || `Reviewer ${idx + 1}`;
-          const isMe = reviewer.reviewerId?._id === task?.currentUserId || reviewer.reviewerId === task?.currentUserId;
+          const isMe = reviewer.reviewerId?.id === task?.currentUserId || reviewer.reviewerId === task?.currentUserId;
 
           return (
-            <div key={reviewer.reviewerId?._id || reviewer.reviewerId || idx} className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2">
+            <div key={reviewer.reviewerId?.id || reviewer.reviewerId || idx} className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2">
               <div className="flex items-center gap-2 min-w-0">
                 <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                   reviewer.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' :

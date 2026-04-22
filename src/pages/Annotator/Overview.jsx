@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const StatCard = ({ title, value, hint }) => (
   <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg transition hover:border-gray-600">
@@ -23,15 +26,17 @@ const AnnotatorOverview = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/tasks/my-tasks`);
-        const tasks = res.data || [];
+        const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+        });
+        const tasks = getArray(res.data);
         const now = new Date();
         const total = tasks.length;
         const completed = tasks.filter(t => t.status === 'approved').length;
         const inProgress = tasks.filter(t =>
-          ['in_progress', 'completed', 'assigned', 'revised'].includes(t.status)
+          ['assigned', 'in_progress', 'completed', 'revised', 'rejected'].includes(t.status)
         ).length;
-        const submitted = tasks.filter(t => t.status === 'submitted').length;
+        const submitted = tasks.filter(t => ['submitted', 'resubmitted'].includes(t.status)).length;
         const overdue = tasks.filter(t =>
           t.projectId?.deadline &&
           new Date(t.projectId.deadline) < now &&

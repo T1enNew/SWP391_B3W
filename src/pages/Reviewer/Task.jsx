@@ -2,7 +2,10 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
+
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
@@ -551,27 +554,22 @@ const ReviewerWorkspace = () => {
     setFetchError(null);
     try {
       const params = {};
-      if (subtopicFilter) params.subtopicId = subtopicFilter;
-      const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
-      let taskList = res.data || [];
-
-      // Client-side filter: chi lay tasks thuoc project hien tai
-      if (projectId) {
-        taskList = taskList.filter(t => t.projectId?._id === projectId);
-      }
+      if (projectId) params.project_id = projectId;
+      const res = await axios.get(`${API_URL}/api/reviews/pending`, { headers: { Authorization: `Bearer ${getAuthToken()}` }, params });
+      let taskList = res.data?.reviews || [];
 
       // Client-side filter: neu co subtopicFilter, chi lay tasks thuoc subtopic do
       if (subtopicFilter) {
         taskList = taskList.filter(t => {
-          const taskSubId = t.subtopicId?._id || t.subtopicId;
+          const taskSubId = t.subtopicId?.id || t.subtopicId;
           return taskSubId === subtopicFilter;
         });
       }
 
       const itemMap = new Map();
       taskList.forEach((task) => {
-        const itemKey = task.dataItem?.filename || task.dataItem?.path || task._id;
-        const color = stringToColor(task.annotatorId?._id || task.annotatorId || task._id);
+        const itemKey = task.dataItem?.filename || task.dataItem?.path || task.id;
+        const color = stringToColor(task.annotatorId?.id || task.annotatorId || task.id);
 
         if (!itemMap.has(itemKey)) {
           itemMap.set(itemKey, {
@@ -581,9 +579,9 @@ const ReviewerWorkspace = () => {
             kind: getTaskKind(task),
             status: 'pending_review',
             projectName: task.projectId?.name || '',
-            projectId: task.projectId?._id,
+            projectId: task.projectId?.id,
             subtopicName: task.subtopicId?.name || task.subtopicName || '',
-            subtopicId: task.subtopicId?._id,
+            subtopicId: task.subtopicId?.id,
             guideline: task.projectId?.guidelines || '',
             availableLabels: task.availableLabels || task.projectId?.availableLabels || task.labelsetId?.labels || [],
             submissions: [],
@@ -592,8 +590,8 @@ const ReviewerWorkspace = () => {
 
         const item = itemMap.get(itemKey);
         item.submissions.push({
-          submissionId: task._id,
-          annotatorId: task.annotatorId?._id || task.annotatorId,
+          submissionId: task.id,
+          annotatorId: task.annotatorId?.id || task.annotatorId,
           annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
           status: getAnnotatorStatus(task),
           labels: task.labels || {},
@@ -660,7 +658,7 @@ const ReviewerWorkspace = () => {
     if (!submission?.task) return;
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { reviewComments: feedback });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/approve`, { review_comments: feedback }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'approved', '');
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
@@ -675,7 +673,7 @@ const ReviewerWorkspace = () => {
     setShowRejectConfirm(false);
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { reviewComments: feedback, errorCategory: errorCategory || 'other' });
+      await axios.post(`${API_URL}/api/reviews/${submission.submissionId}/reject`, { review_comments: feedback, error_category: errorCategory || 'other' }, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       doUpdateItem(submission, 'rejected', feedback);
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');

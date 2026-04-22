@@ -1,601 +1,506 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Paper, Typography, Button, Grid, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, FormControl, InputLabel, Select, MenuItem, Chip, Tooltip, Snackbar, Alert, CircularProgress, InputAdornment } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Folder as FolderIcon, Search as SearchIcon, Image as ImageIcon, Label as LabelIcon, LocalOffer as TagIcon, Upload as UploadIcon, Description as TextFileIcon, AudioFile as AudioIcon } from '@mui/icons-material';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  IconButton,
+  LinearProgress,
+  Paper,
+  Snackbar,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  Folder as FolderIcon,
+  Image as ImageIcon,
+  Label as LabelIcon,
+  Upload as UploadIcon,
+} from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
-const getAuthToken = () => sessionStorage.getItem('token');
-
-const panelSx = { borderRadius: 3, boxShadow: '0 16px 32px rgba(0,0,0,0.35)', background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' };
-const inputSx = { '& .MuiOutlinedInput-root': { bgcolor: '#0f172a', color: '#e2e8f0', borderRadius: '10px', '& fieldset': { borderColor: '#475569' }, '&:hover fieldset': { borderColor: '#64748b' }, '&.Mui-focused fieldset': { borderColor: '#3b82f6' } }, '& .MuiInputLabel-root': { color: '#94a3b8' }, '& .MuiSvgIcon-root': { color: '#94a3b8' } };
-const btnPrimary = { borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#2563eb', color: 'white', '&:hover': { bgcolor: '#3b82f6' } };
-const btnSecondary = { borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#334155', color: '#e2e8f0', border: '1px solid #475569', '&:hover': { bgcolor: '#475569' } };
-const modalSx = { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' };
-const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
-
-const getImgUrl = (path) => {
-  if (!path) return '';
-  const base = API_URL.replace(/\/+$/, '');
-  return base + '/' + path.replace(/^\/+/, '');
+const getAuthHeaders = () => {
+  const token = sessionStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-const getFileIcon = (filename) => {
-  if (!filename) return <ImageIcon sx={{ color: '#64748b', fontSize: 32 }} />;
-  const ext = filename.split('.').pop()?.toLowerCase();
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return <ImageIcon sx={{ color: '#f59e0b', fontSize: 32 }} />;
-  if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext)) return <AudioIcon sx={{ color: '#f472b6', fontSize: 32 }} />;
-  if (['txt', 'csv', 'json', 'xml', 'pdf', 'doc', 'docx'].includes(ext)) return <TextFileIcon sx={{ color: '#34d399', fontSize: 32 }} />;
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return <FolderIcon sx={{ color: '#a78bfa', fontSize: 32 }} />;
-  return <TextFileIcon sx={{ color: '#64748b', fontSize: 32 }} />;
+const panelSx = {
+  borderRadius: 3,
+  background: '#1e293b',
+  border: '1px solid #334155',
+  color: '#e2e8f0',
+  boxShadow: '0 16px 32px rgba(0,0,0,0.25)',
 };
 
-const AssetThumb = ({ asset, onDelete, onPreview }) => {
-  const url = getImgUrl(asset.path);
-  const filename = asset.originalName || asset.path || '';
-  const ext = filename.split('.').pop()?.toLowerCase();
-  const isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
-
-  return (
-    <Box sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden', border: '1px solid #334155', '&:hover .del-btn': { opacity: 1 }, '&:hover': { borderColor: '#3b82f6', cursor: 'pointer' } }}>
-      <Box onClick={() => isImg && onPreview && onPreview(asset)}>
-        {isImg && url ? (
-          <img src={url} alt={filename} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} />
-        ) : (
-          <Box sx={{ width: '100%', height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#0f172a' }}>
-            {getFileIcon(filename)}
-          </Box>
-        )}
-      </Box>
-      <Box className="del-btn" sx={{ position: 'absolute', top: 2, right: 2, opacity: 0, transition: 'opacity 0.2s' }}>
-        <IconButton size="small" sx={{ bgcolor: 'rgba(0,0,0,0.6)', color: '#f87171', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }} onClick={() => onDelete(asset._id)}>
-          <DeleteIcon sx={{ fontSize: 14 }} />
-        </IconButton>
-      </Box>
-      <Box sx={{ p: 0.5, bgcolor: '#0f172a' }}>
-        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {filename}
-        </Typography>
-      </Box>
-    </Box>
-  );
+const inputSx = {
+  '& .MuiOutlinedInput-root': {
+    bgcolor: '#0f172a',
+    color: '#e2e8f0',
+    borderRadius: '10px',
+    '& fieldset': { borderColor: '#475569' },
+    '&:hover fieldset': { borderColor: '#64748b' },
+    '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
+  },
+  '& .MuiInputLabel-root': { color: '#94a3b8' },
 };
 
-const SubtopicCard = ({ subtopic, selected, onSelect, onEdit, onDelete }) => (
-  <Box onClick={onSelect} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 2, cursor: 'pointer', mb: 0.5, border: '1px solid', borderColor: selected ? '#3b82f6' : 'transparent', bgcolor: selected ? 'rgba(59,130,246,0.15)' : 'transparent', '&:hover': { bgcolor: selected ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.05)' } }}>
-    <ImageIcon sx={{ color: '#60a5fa', fontSize: 20, flexShrink: 0 }} />
-    <Box sx={{ flex: 1, overflow: 'hidden' }}>
-      <Typography variant="body2" fontWeight={600} sx={{ color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtopic.name}</Typography>
-      <Typography variant="caption" sx={{ color: '#64748b' }}>{subtopic.assets?.length || 0} Assets</Typography>
-    </Box>
-    <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={e => { e.stopPropagation(); onEdit(subtopic); }}><EditIcon sx={{ fontSize: 16 }} /></IconButton>
-    <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); onDelete(subtopic._id); }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton>
-  </Box>
-);
+const normalizeTopic = (t) => ({
+  ...t,
+  id: t?.id || t?._id,
+  name: t?.name || t?.title || 'Untitled Topic',
+  description: t?.description || '',
+});
 
-const LabelChip = ({ label }) => (
-  <Chip
-    label={label.name}
-    size="small"
-    sx={{ bgcolor: label.color + '30', color: label.color, border: '1px solid ' + label.color, fontWeight: 600, mr: 0.5, mb: 0.5 }}
-  />
-);
+const normalizeSubtopic = (s) => ({
+  ...s,
+  id: s?.id || s?._id || s?.subtopicId,
+  name: s?.name || s?.title || 'Untitled Subtopic',
+  topic_id: s?.topic_id || s?.topicId || s?.topic?.id || null,
+});
 
-const SubtopicPanel = ({ selectedSubtopic, onSubtopicUpdate }) => {
-  const fileInputRef = useRef();
-  const [labelSets, setLabelSets] = useState([]);
-  const [labelSetsLoading, setLabelSetsLoading] = useState(false);
-  const [labelDialog, setLabelDialog] = useState({ open: false, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } });
-  const [labelInput, setLabelInput] = useState('');
-  const [labelColor, setLabelColor] = useState('#3b82f6');
-  const [assets, setAssets] = useState([]);
-  const [assetsLoading, setAssetsLoading] = useState(false);
-  const [uploadFiles, setUploadFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [assetSearch, setAssetSearch] = useState('');
-  const [dragOver, setDragOver] = useState(false);
-  const [previewAsset, setPreviewAsset] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [dataLoaded, setDataLoaded] = useState(false);
-
-  useEffect(() => {
-    if (selectedSubtopic) {
-      setDataLoaded(false);
-      loadLabelSets();
-      loadAssets();
-    }
-  }, [selectedSubtopic?._id]);
-
-  const loadLabelSets = async () => {
-    setLabelSetsLoading(true);
-    try {
-      const r = await axios.get(API_URL + '/api/labelsets?subtopicId=' + selectedSubtopic._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setLabelSets(Array.isArray(r.data) ? r.data : []);
-    } catch { setLabelSets([]); }
-    setLabelSetsLoading(false);
-    setDataLoaded(true);
-  };
-
-  const loadAssets = async () => {
-    setAssetsLoading(true);
-    try {
-      const r = await axios.get(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setAssets(Array.isArray(r.data) ? r.data : []);
-    } catch { setAssets([]); }
-    setAssetsLoading(false);
-    setDataLoaded(true);
-  };
-
-  const saveLabelSet = async () => {
-    try {
-      if (labelDialog.edit)
-        await axios.put(API_URL + '/api/labelsets/' + labelDialog.data._id, labelDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      else
-        await axios.post(API_URL + '/api/labelsets', { ...labelDialog.data, subtopicId: selectedSubtopic._id }, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setLabelDialog({ open: false, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } });
-      loadLabelSets();
-      setSnackbar({ open: true, message: 'Luu labelset thanh cong!', severity: 'success' });
-    } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
-    }
-  };
-
-  const addLabel = () => {
-    if (!labelInput.trim()) return;
-    setLabelDialog({ ...labelDialog, data: { ...labelDialog.data, labels: [...labelDialog.data.labels, { name: labelInput.trim(), color: labelColor, description: '', shortcut: '' }] } });
-    setLabelInput('');
-  };
-
-  const removeLabel = (name) => setLabelDialog({ ...labelDialog, data: { ...labelDialog.data, labels: labelDialog.data.labels.filter(l => l.name !== name) } });
-
-  const handleDeleteLabelSet = async (id) => {
-    if (!confirm('Xoa labelset?')) return;
-    try {
-      await axios.delete(API_URL + '/api/labelsets/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      loadLabelSets();
-      setSnackbar({ open: true, message: 'Xoa labelset thanh cong!', severity: 'success' });
-    } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
-    }
-  };
-
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length) setUploadFiles(prev => [...prev, ...files]);
-    e.target.value = '';
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    if (files.length) setUploadFiles(prev => [...prev, ...files]);
-  };
-
-  const handleUploadAssets = async () => {
-    if (uploadFiles.length === 0) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      uploadFiles.forEach(f => fd.append('files', f));
-      await axios.post(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets', fd, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setUploadFiles([]);
-      loadAssets();
-      onSubtopicUpdate();
-      setSnackbar({ open: true, message: 'Upload thanh cong!', severity: 'success' });
-    } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
-    }
-    setUploading(false);
-  };
-
-  const handleDeleteAsset = async (assetId) => {
-    if (!confirm('Xoa asset?')) return;
-    try {
-      await axios.delete(API_URL + '/api/subtopics/' + selectedSubtopic._id + '/assets/' + assetId, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      loadAssets();
-      onSubtopicUpdate();
-    } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
-    }
-  };
-
-  const filteredAssets = assetSearch ? assets.filter(a => (a.originalName || '').toLowerCase().includes(assetSearch.toLowerCase())) : assets;
-  const totalLabels = labelSets.reduce((acc, ls) => acc + (ls.labels?.length || 0), 0);
-  const totalAssets = assets.length;
-
-  if (!selectedSubtopic) return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 400 }}>
-      <Box sx={{ textAlign: 'center' }}>
-        <FolderIcon sx={{ fontSize: 64, color: '#334155', mb: 2 }} />
-        <Typography variant="h6" sx={{ color: '#475569' }}>Chon 1 subtopic de xem chi tiet</Typography>
-      </Box>
-    </Box>
-  );
-
-  return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <Box sx={{ p: 2, borderBottom: '1px solid #334155' }}>
-        <Typography variant="h6" fontWeight={700} sx={{ color: '#e2e8f0' }}>Subtopic: {selectedSubtopic.name}</Typography>
-        {selectedSubtopic.guideline && (
-          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>{selectedSubtopic.guideline}</Typography>
-        )}
-      </Box>
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-        <Box sx={{ display: dataLoaded ? 'flex' : 'none', gap: 2, mb: 3 }}>
-          {[
-            { icon: <ImageIcon />, label: 'Assets', value: totalAssets, color: '#3b82f6' },
-            { icon: <TagIcon />, label: 'Labels', value: totalLabels, color: '#22c55e' },
-          ].map(s => (
-            <Box key={s.label} sx={{ flex: 1, p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box sx={{ color: s.color }}>{s.icon}</Box>
-              <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color: '#e2e8f0', lineHeight: 1 }}>{s.value}</Typography>
-                <Typography variant="caption" sx={{ color: '#64748b' }}>{s.label}</Typography>
-              </Box>
-            </Box>
-          ))}
-        </Box>
-
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={7}>
-            <Paper sx={{ ...panelSx, p: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#e2e8f0' }}>Asset Gallery</Typography>
-                <Button size="small" variant="contained" startIcon={<UploadIcon />} onClick={() => fileInputRef.current?.click()} sx={{ ...btnPrimary, py: 0.5, px: 1.5, fontSize: '0.75rem' }}>Upload</Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={handleFileSelect}
-                  accept="image/*,audio/*,.zip,.rar,.7z,.tar,.gz,.csv,.json,.xml,.txt,.pdf,.doc,.docx"
-                />
-              </Box>
-
-              {uploadFiles.length > 0 && (
-                <Box sx={{ mb: 2, p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px dashed #3b82f6' }}>
-                  <Typography variant="caption" sx={{ color: '#60a5fa', mb: 1, display: 'block' }}>{uploadFiles.length} files cho upload</Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                    {uploadFiles.map((f, i) => (
-                      <Chip key={i} label={f.name} size="small" onDelete={() => setUploadFiles(prev => prev.filter((_, idx) => idx !== i))} sx={{ bgcolor: '#334155', color: '#e2e8f0' }} />
-                    ))}
-                  </Box>
-                  <Button size="small" variant="contained" onClick={handleUploadAssets} disabled={uploading} sx={btnPrimary}>
-                    {uploading ? 'Dang upload...' : 'Upload'}
-                  </Button>
-                </Box>
-              )}
-
-              <TextField size="small" placeholder="Filter..." value={assetSearch} onChange={e => setAssetSearch(e.target.value)} fullWidth sx={{ ...inputSx, mb: 2 }} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> }} />
-
-              {assetsLoading ? (
-                <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', mt: 4 }} />
-              ) : filteredAssets.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 6, border: '2px dashed #334155', borderRadius: 2, cursor: 'pointer', bgcolor: dragOver ? 'rgba(59,130,246,0.1)' : 'transparent', borderColor: dragOver ? '#3b82f6' : '#334155' }}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={handleDrop}
-                >
-                  <UploadIcon sx={{ fontSize: 40, color: '#475569', mb: 1 }} />
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>Drop files here or click Upload</Typography>
-                  <Typography variant="caption" sx={{ color: '#475569', display: 'block', mt: 1 }}>Ho tro: hinh anh, audio, text, zip, rar, pdf...</Typography>
-                </Box>
-              ) : (
-                <Grid container spacing={1}>
-                  {filteredAssets.map(a => (
-                    <Grid item xs={4} sm={3} key={a._id}>
-                      <AssetThumb asset={a} onDelete={handleDeleteAsset} onPreview={setPreviewAsset} />
-                    </Grid>
-                  ))}
-                </Grid>
-              )}
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12} md={5}>
-            <Paper sx={{ ...panelSx, p: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#e2e8f0' }}>Label Management</Typography>
-                <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setLabelDialog({ open: true, edit: false, data: { name: 'Default', labels: [], allowMultiple: false } })} sx={{ ...btnPrimary, py: 0.5, px: 1.5, fontSize: '0.75rem' }}>Define</Button>
-              </Box>
-              {labelSetsLoading ? (
-                <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', mt: 4 }} />
-              ) : labelSets.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <TagIcon sx={{ fontSize: 40, color: '#334155', mb: 1 }} />
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>Chua co labelset nao</Typography>
-                </Box>
-              ) : labelSets.map(ls => (
-                <Box key={ls._id} sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="caption" fontWeight={700} sx={{ color: '#60a5fa', textTransform: 'uppercase' }}>{ls.name} ({ls.labels?.length || 0})</Typography>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setLabelDialog({ open: true, edit: true, data: ls })}><EditIcon sx={{ fontSize: 14 }} /></IconButton>
-                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => handleDeleteLabelSet(ls._id)}><DeleteIcon sx={{ fontSize: 14 }} /></IconButton>
-                    </Box>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap' }}>
-                    {(ls.labels || []).map(l => <LabelChip key={l.name} label={l} />)}
-                  </Box>
-                </Box>
-              ))}
-            </Paper>
-          </Grid>
-        </Grid>
-      </Box>
-
-      <Dialog open={labelDialog.open} onClose={() => setLabelDialog({ ...labelDialog, open: false })} maxWidth="sm" fullWidth PaperProps={{ sx: modalSx }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>{labelDialog.edit ? 'Sua Labelset' : 'Tao Labelset'}</DialogTitle>
-        <DialogContent>
-          <TextField fullWidth label="Ten Labelset" value={labelDialog.data.name} onChange={e => setLabelDialog({ ...labelDialog, data: { ...labelDialog.data, name: e.target.value } })} sx={{ mt: 2, mb: 2, ...inputSx }} />
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, color: '#94a3b8' }}>Labels</Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 1 }}>
-              {(labelDialog.data.labels || []).map(l => (
-                <Chip key={l.name} label={l.name} size="small" sx={{ bgcolor: l.color + '30', color: l.color, border: '1px solid ' + l.color, mr: 0.5, mb: 0.5 }} onDelete={() => removeLabel(l.name)} deleteIcon={<DeleteIcon sx={{ fontSize: 14 }} />} />
-              ))}
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <TextField size="small" placeholder="Label name" value={labelInput} onChange={e => setLabelInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addLabel()} sx={{ flex: 1, ...inputSx }} />
-              <TextField type="color" value={labelColor} onChange={e => setLabelColor(e.target.value)} sx={{ width: 50, '& input': { p: 0.5, height: 40 } }} />
-              <Button onClick={addLabel} variant="outlined" sx={{ border: '1px solid #3b82f6', color: '#3b82f6', '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' }, borderRadius: 2, py: 0.5 }}>Add</Button>
-            </Box>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setLabelDialog({ ...labelDialog, open: false })} sx={btnSecondary}>Huy</Button>
-          <Button variant="contained" onClick={saveLabelSet} sx={btnPrimary}>{labelDialog.edit ? 'Luu' : 'Tao'}</Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar open={snackbar.open} autoHideDuration={3000} onClose={() => setSnackbar({ ...snackbar, open: false })}>
-        <Alert severity={snackbar.severity} sx={{ bgcolor: '#1e293b', color: '#e2e8f0' }}>{snackbar.message}</Alert>
-      </Snackbar>
-
-      <Dialog open={!!previewAsset} onClose={() => setPreviewAsset(null)} maxWidth="lg" PaperProps={{ sx: { bgcolor: 'transparent', boxShadow: 'none', border: 'none', borderRadius: 2, maxWidth: '90vw' } }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {previewAsset && (
-            <img
-              src={getImgUrl(previewAsset.path)}
-              alt={previewAsset.originalName || 'preview'}
-              style={{ maxWidth: '85vw', maxHeight: '80vh', borderRadius: 8, border: '2px solid #334155', objectFit: 'contain', cursor: 'pointer' }}
-              onClick={() => setPreviewAsset(null)}
-            />
-          )}
-        </Box>
-      </Dialog>
-    </Box>
-  );
+const getAssetUrl = (asset) => {
+  if (asset?.signed_url) return asset.signed_url;
+  if (asset?.storage_url && /^https?:/i.test(asset.storage_url)) return asset.storage_url;
+  if (asset?.storage_url) return `${API_URL.replace(/\/+$/, '')}/${String(asset.storage_url).replace(/^\/+/, '')}`;
+  if (asset?.filename) return `${API_URL.replace(/\/+$/, '')}/uploads/datasets/${asset.filename}`;
+  return '';
 };
 
-const TopicManagement = () => {
+export default function TopicManagement() {
+  const fileInputRef = useRef(null);
   const [topics, setTopics] = useState([]);
-  const [selectedTopic, setSelectedTopic] = useState(null);
-  const [selectedSubtopic, setSelectedSubtopic] = useState(null);
-  const [expandedTopic, setExpandedTopic] = useState(null);
+  const [subtopics, setSubtopics] = useState([]);
+  const [selectedTopicId, setSelectedTopicId] = useState('');
+  const [selectedSubtopicId, setSelectedSubtopicId] = useState('');
+  const [assets, setAssets] = useState([]);
+  const [labelsets, setLabelsets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [topicSearch, setTopicSearch] = useState('');
-  const [topicDialog, setTopicDialog] = useState({ open: false, edit: false, data: { name: '', description: '', color: '#3b82f6' } });
-  const [subtopicDialog, setSubtopicDialog] = useState({ open: false, edit: false, data: { name: '', description: '', guideline: '', taskType: 'bbox' } });
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [subLoading, setSubLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  const [topicDialog, setTopicDialog] = useState({ open: false, edit: null, name: '', description: '' });
+  const [subtopicDialog, setSubtopicDialog] = useState({ open: false, edit: null, name: '', description: '' });
+  const [labelDialog, setLabelDialog] = useState({ open: false, name: '', labels: [] });
+  const [newLabel, setNewLabel] = useState('');
+  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => { loadTopics(); }, []);
+  const selectedTopic = useMemo(() => topics.find(t => String(t.id) === String(selectedTopicId)) || null, [topics, selectedTopicId]);
+  const selectedSubtopic = useMemo(() => subtopics.find(s => String(s.id) === String(selectedSubtopicId)) || null, [subtopics, selectedSubtopicId]);
+
+  const showToast = (message, severity = 'success') => setToast({ open: true, message, severity });
 
   const loadTopics = async () => {
     setLoading(true);
     try {
-      const r = await axios.get(API_URL + '/api/topics', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setTopics(Array.isArray(r.data) ? r.data : []);
-    } catch { setTopics([]); }
-    setLoading(false);
-  };
-
-  const loadSubtopicsForTopic = async (topic) => {
-    try {
-      const r = await axios.get(API_URL + '/api/subtopics?topicId=' + topic._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      return Array.isArray(r.data) ? r.data : [];
-    } catch { return []; }
-  };
-
-  const saveTopic = async () => {
-    try {
-      if (topicDialog.edit)
-        await axios.put(API_URL + '/api/topics/' + selectedTopic._id, topicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      else
-        await axios.post(API_URL + '/api/topics', topicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setTopicDialog({ ...topicDialog, open: false });
-      loadTopics();
-      setSnackbar({ open: true, message: topicDialog.edit ? 'Cap nhat topic thanh cong!' : 'Tao topic thanh cong!', severity: 'success' });
+      const res = await axios.get(`${API_URL}/api/topics`, { headers: getAuthHeaders() });
+      const list = getArray(res.data).map(normalizeTopic);
+      setTopics(list);
+      if (!selectedTopicId && list[0]?.id) setSelectedTopicId(list[0].id);
     } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
+      setError(e?.response?.data?.message || e.message || 'Không tải được topic');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleDeleteTopic = async (id) => {
-    if (!confirm('Xoa topic nay?')) return;
+  const loadSubtopics = async (topicId) => {
+    if (!topicId) {
+      setSubtopics([]);
+      setSelectedSubtopicId('');
+      return;
+    }
+    setSubLoading(true);
     try {
-      await axios.delete(API_URL + '/api/topics/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      if (selectedTopic?._id === id) {
-        setSelectedTopic(null);
-        setSelectedSubtopic(null);
-      }
-      loadTopics();
-      setSnackbar({ open: true, message: 'Xoa topic thanh cong!', severity: 'success' });
+      const res = await axios.get(`${API_URL}/api/subtopics`, {
+        params: { topic_id: topicId },
+        headers: getAuthHeaders(),
+      });
+      const list = getArray(res.data).map(normalizeSubtopic);
+      setSubtopics(list);
+      setSelectedSubtopicId(prev => (list.some(s => String(s.id) === String(prev)) ? prev : list[0]?.id || ''));
     } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
+      setSubtopics([]);
+      showToast(e?.response?.data?.message || e.message || 'Không tải được subtopic', 'error');
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
+  const loadSubtopicDetail = async (subtopicId) => {
+    if (!subtopicId) {
+      setAssets([]);
+      setLabelsets([]);
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      const [assetRes, labelRes] = await Promise.all([
+        axios.get(`${API_URL}/api/subtopics/${subtopicId}/assets`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/subtopics/${subtopicId}/labelsets`, { headers: getAuthHeaders() }),
+      ]);
+      setAssets(getArray(assetRes.data));
+      setLabelsets(getArray(labelRes.data));
+    } catch (e) {
+      setAssets([]);
+      setLabelsets([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  useEffect(() => { loadTopics(); }, []);
+  useEffect(() => { if (selectedTopicId) loadSubtopics(selectedTopicId); }, [selectedTopicId]);
+  useEffect(() => { if (selectedSubtopicId) loadSubtopicDetail(selectedSubtopicId); else { setAssets([]); setLabelsets([]);} }, [selectedSubtopicId]);
+
+  const saveTopic = async () => {
+    try {
+      const payload = { name: topicDialog.name.trim(), description: topicDialog.description.trim() };
+      if (!payload.name) return showToast('Nhập tên topic', 'warning');
+      if (topicDialog.edit?.id) {
+        await axios.put(`${API_URL}/api/topics/${topicDialog.edit.id}`, payload, { headers: getAuthHeaders() });
+      } else {
+        await axios.post(`${API_URL}/api/topics`, payload, { headers: getAuthHeaders() });
+      }
+      setTopicDialog({ open: false, edit: null, name: '', description: '' });
+      await loadTopics();
+      showToast('Lưu topic thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Lưu topic thất bại', 'error');
     }
   };
 
   const saveSubtopic = async () => {
-    if (!selectedTopic) return;
     try {
-      if (subtopicDialog.edit)
-        await axios.put(API_URL + '/api/subtopics/' + selectedSubtopic._id, subtopicDialog.data, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      else
-        await axios.post(API_URL + '/api/subtopics', { ...subtopicDialog.data, topicId: selectedTopic._id }, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setSubtopicDialog({ ...subtopicDialog, open: false });
-      const subs = await loadSubtopicsForTopic(selectedTopic);
-      setExpandedTopic({ ...selectedTopic, subtopics: subs });
-      setSelectedSubtopic(null);
-      loadTopics();
-      setSnackbar({ open: true, message: subtopicDialog.edit ? 'Cap nhat subtopic thanh cong!' : 'Tao subtopic thanh cong!', severity: 'success' });
-    } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
-    }
-  };
-
-  const handleDeleteSubtopic = async (id) => {
-    if (!confirm('Xoa subtopic nay?')) return;
-    try {
-      await axios.delete(API_URL + '/api/subtopics/' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      if (selectedSubtopic?._id === id) setSelectedSubtopic(null);
-      if (expandedTopic) {
-        const subs = await loadSubtopicsForTopic(expandedTopic);
-        setExpandedTopic({ ...expandedTopic, subtopics: subs });
+      const payload = { name: subtopicDialog.name.trim(), description: subtopicDialog.description.trim(), topic_id: selectedTopicId };
+      if (!payload.name) return showToast('Nhập tên subtopic', 'warning');
+      if (!payload.topic_id) return showToast('Chọn topic trước', 'warning');
+      if (subtopicDialog.edit?.id) {
+        await axios.put(`${API_URL}/api/subtopics/${subtopicDialog.edit.id}`, payload, { headers: getAuthHeaders() });
+      } else {
+        await axios.post(`${API_URL}/api/subtopics`, payload, { headers: getAuthHeaders() });
       }
-      loadTopics();
-      setSnackbar({ open: true, message: 'Xoa subtopic thanh cong!', severity: 'success' });
+      setSubtopicDialog({ open: false, edit: null, name: '', description: '' });
+      await loadSubtopics(selectedTopicId);
+      showToast('Lưu subtopic thành công');
     } catch (e) {
-      setSnackbar({ open: true, message: 'Loi: ' + (e.response?.data?.message || e.message), severity: 'error' });
+      showToast(e?.response?.data?.message || e.message || 'Lưu subtopic thất bại', 'error');
     }
   };
 
-  const handleTopicClick = async (topic) => {
-    if (selectedTopic?._id === topic._id) {
-      setSelectedTopic(null);
-      setSelectedSubtopic(null);
-      setExpandedTopic(null);
-      return;
+  const deleteTopic = async (topic) => {
+    if (!window.confirm(`Xóa topic "${topic.name}"?`)) return;
+    try {
+      await axios.delete(`${API_URL}/api/topics/${topic.id}`, { headers: getAuthHeaders() });
+      await loadTopics();
+      showToast('Xóa topic thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Xóa topic thất bại', 'error');
     }
-    setSelectedTopic(topic);
-    setSelectedSubtopic(null);
-    const subs = await loadSubtopicsForTopic(topic);
-    setExpandedTopic({ ...topic, subtopics: subs });
   };
 
-  const filteredTopics = topics.filter(t => !topicSearch.trim() || t.name.toLowerCase().includes(topicSearch.toLowerCase()));
+  const deleteSubtopic = async (subtopic) => {
+    if (!window.confirm(`Xóa subtopic "${subtopic.name}"?`)) return;
+    try {
+      await axios.delete(`${API_URL}/api/subtopics/${subtopic.id}`, { headers: getAuthHeaders() });
+      await loadSubtopics(selectedTopicId);
+      showToast('Xóa subtopic thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Xóa subtopic thất bại', 'error');
+    }
+  };
 
-  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400, bgcolor: '#0f172a' }}><CircularProgress /></Box>;
+  const uploadAssets = async (files) => {
+    if (!selectedSubtopicId || !files?.length) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      files.forEach(file => fd.append('files', file));
+      await axios.post(`${API_URL}/api/subtopics/${selectedSubtopicId}/assets`, fd, { headers: getAuthHeaders() });
+      await loadSubtopicDetail(selectedSubtopicId);
+      showToast('Upload asset thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Upload asset thất bại', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
 
+  const deleteAsset = async (assetId) => {
+    if (!window.confirm('Xóa asset này?')) return;
+    try {
+      await axios.delete(`${API_URL}/api/subtopics/${selectedSubtopicId}/assets/${assetId}`, { headers: getAuthHeaders() });
+      await loadSubtopicDetail(selectedSubtopicId);
+      showToast('Xóa asset thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Xóa asset thất bại', 'error');
+    }
+  };
+
+  const saveLabelset = async () => {
+    try {
+      const payload = { name: labelDialog.name.trim(), labels: labelDialog.labels, allowMultiple: false };
+      if (!payload.name) return showToast('Nhập tên labelset', 'warning');
+      await axios.post(`${API_URL}/api/subtopics/${selectedSubtopicId}/labelsets`, payload, { headers: getAuthHeaders() });
+      setLabelDialog({ open: false, name: '', labels: [] });
+      setNewLabel('');
+      await loadSubtopicDetail(selectedSubtopicId);
+      showToast('Tạo labelset thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Tạo labelset thất bại', 'error');
+    }
+  };
+
+  const deleteLabelset = async (id) => {
+    if (!window.confirm('Xóa labelset này?')) return;
+    try {
+      await axios.delete(`${API_URL}/api/labelsets/${id}`, { headers: getAuthHeaders() });
+      await loadSubtopicDetail(selectedSubtopicId);
+      showToast('Xóa labelset thành công');
+    } catch (e) {
+      showToast(e?.response?.data?.message || e.message || 'Xóa labelset thất bại', 'error');
+    }
+  };
+const handleSaveLabelSet = async () => {
+  try {
+    if (!selectedSubtopic?.id) return;
+
+    const payload = {
+      name: labelDialog.data.name?.trim() || 'Default',
+      description: labelDialog.data.description || '',
+      allow_multiple: !!labelDialog.data.allowMultiple,
+      required: true,
+      labels: (labelDialog.data.labels || []).map((l, idx) => ({
+        name: l.name?.trim(),
+        color: l.color || '#3b82f6',
+        description: l.description || '',
+        shortcut: l.shortcut || '',
+        sort_order: idx,
+      })),
+    };
+
+    console.log('LABELSET PAYLOAD =', payload);
+
+    await axios.post(
+      `${API_URL}/api/subtopics/${selectedSubtopic.id}/labelsets`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${sessionStorage.getItem('token')}`,
+        },
+      }
+    );
+
+    alert('Tạo labelset thành công');
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    alert('Tạo labelset thất bại');
+  }
+};
   return (
-    <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh', bgcolor: '#0f172a' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" fontWeight={800} sx={{ color: '#e2e8f0', mb: 0.5 }}>Topic Management</Typography>
-          <Typography variant="body2" sx={{ color: '#94a3b8' }}>Quan ly chu de lon, chu de nho, upload assets va tao nhan</Typography>
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setTopicDialog({ open: true, edit: false, data: { name: '', description: '', color: '#3b82f6' } })} sx={btnPrimary}>+ Tao Topic</Button>
+    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2 }}>
+        <Typography variant="h4" fontWeight={700}>Topic Management</Typography>
+        <Stack direction="row" spacing={1.5}>
+          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setTopicDialog({ open: true, edit: null, name: '', description: '' })}>New Topic</Button>
+          <Button startIcon={<AddIcon />} variant="outlined" onClick={() => setSubtopicDialog({ open: true, edit: null, name: '', description: '' })} disabled={!selectedTopicId}>New Subtopic</Button>
+        </Stack>
       </Box>
 
-      <Grid container spacing={3} sx={{ minHeight: 'calc(100vh - 220px)' }}>
-        <Grid item xs={12} md={selectedSubtopic ? 4 : 3}>
-          <Paper sx={{ ...panelSx, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{ p: 2, borderBottom: '1px solid #334155', flexShrink: 0 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: '#e2e8f0' }}>Topics ({topics.length})</Typography>
-                <Tooltip title="Tao Topic moi">
-                  <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setTopicDialog({ open: true, edit: false, data: { name: '', description: '', color: '#3b82f6' } })}>
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              <TextField size="small" placeholder="Search topics..." value={topicSearch} onChange={e => setTopicSearch(e.target.value)} fullWidth sx={{ ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> }} />
-            </Box>
-            <Box sx={{ p: 2, flex: 1, overflow: 'auto' }}>
-              {filteredTopics.length === 0 ? (
-                <Alert severity="info" sx={{ borderRadius: 2 }}>Chua co topic nao</Alert>
-              ) : filteredTopics.map(t => (
-                <Box key={t._id} sx={{ mb: 1 }}>
-                  <Box onClick={() => handleTopicClick(t)} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 2, cursor: 'pointer', bgcolor: selectedTopic?._id === t._id ? 'rgba(59,130,246,0.15)' : 'transparent', border: '1px solid', borderColor: selectedTopic?._id === t._id ? '#3b82f6' : '#334155', '&:hover': { borderColor: '#3b82f6', bgcolor: selectedTopic?._id === t._id ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.05)' } }}>
-                    <FolderIcon sx={{ color: t.color || '#3b82f6', flexShrink: 0 }} />
-                    <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</Typography>
-                      <Typography variant="caption" sx={{ color: '#64748b' }}>{t.description || 'Khong co mo ta'}</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={e => { e.stopPropagation(); setTopicDialog({ open: true, edit: true, data: t }); }}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); handleDeleteTopic(t._id); }}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  </Box>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
 
-                  {selectedTopic?._id === t._id && expandedTopic && (
-                    <Box sx={{ pl: 3, mt: 1 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Typography variant="caption" fontWeight={700} sx={{ color: '#60a5fa', textTransform: 'uppercase', fontSize: '0.65rem' }}>Subtopics ({expandedTopic.subtopics?.length || 0})</Typography>
-                        <Tooltip title="Add Subtopic">
-                          <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setSubtopicDialog({ open: true, edit: false, data: { name: '', description: '', guideline: '', taskType: 'bbox' } })}>
-                            <AddIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ ...panelSx, p: 2 }}>
+            <Typography fontWeight={700} sx={{ mb: 2 }}>Topics</Typography>
+            <Stack spacing={1}>
+              {topics.map(topic => (
+                <Card key={topic.id} sx={{ bgcolor: String(topic.id) === String(selectedTopicId) ? 'rgba(59,130,246,0.16)' : '#0f172a', border: '1px solid', borderColor: String(topic.id) === String(selectedTopicId) ? '#3b82f6' : '#334155' }}>
+                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedTopicId(topic.id)}>
+                        <Typography fontWeight={700}>{topic.name}</Typography>
+                        <Typography variant="body2" sx={{ color: '#94a3b8' }}>{topic.description || 'Không có mô tả'}</Typography>
                       </Box>
-                      {(!expandedTopic.subtopics || expandedTopic.subtopics.length === 0) ? (
-                        <Typography variant="caption" sx={{ color: '#64748b', pl: 1 }}>Chua co subtopic</Typography>
-                      ) : expandedTopic.subtopics.map(s => (
-                        <SubtopicCard key={s._id} subtopic={s} selected={selectedSubtopic?._id === s._id} onSelect={() => setSelectedSubtopic(prev => prev?._id === s._id ? null : s)} onEdit={() => setSubtopicDialog({ open: true, edit: true, data: s })} onDelete={handleDeleteSubtopic} />
-                      ))}
+                      <IconButton size="small" onClick={() => setTopicDialog({ open: true, edit: topic, name: topic.name, description: topic.description || '' })}><EditIcon sx={{ fontSize: 18, color: '#60a5fa' }} /></IconButton>
+                      <IconButton size="small" onClick={() => deleteTopic(topic)}><DeleteIcon sx={{ fontSize: 18, color: '#f87171' }} /></IconButton>
                     </Box>
-                  )}
-                </Box>
+                  </CardContent>
+                </Card>
               ))}
-            </Box>
+            </Stack>
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={selectedSubtopic ? 8 : 9}>
-          <Paper sx={{ ...panelSx, height: '100%' }}>
-            <SubtopicPanel selectedSubtopic={selectedSubtopic} onSubtopicUpdate={loadTopics} />
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ ...panelSx, p: 2, minHeight: 420 }}>
+            <Typography fontWeight={700} sx={{ mb: 2 }}>Subtopics {selectedTopic ? `- ${selectedTopic.name}` : ''}</Typography>
+            {subLoading ? <LinearProgress sx={{ mb: 2 }} /> : null}
+            <Stack spacing={1}>
+              {subtopics.map(subtopic => (
+                <Card key={subtopic.id} sx={{ bgcolor: String(subtopic.id) === String(selectedSubtopicId) ? 'rgba(59,130,246,0.16)' : '#0f172a', border: '1px solid', borderColor: String(subtopic.id) === String(selectedSubtopicId) ? '#3b82f6' : '#334155' }}>
+                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelectedSubtopicId(subtopic.id)}>
+                        <Typography fontWeight={700}>{subtopic.name}</Typography>
+                      </Box>
+                      <IconButton size="small" onClick={() => setSubtopicDialog({ open: true, edit: subtopic, name: subtopic.name, description: subtopic.description || '' })}><EditIcon sx={{ fontSize: 18, color: '#60a5fa' }} /></IconButton>
+                      <IconButton size="small" onClick={() => deleteSubtopic(subtopic)}><DeleteIcon sx={{ fontSize: 18, color: '#f87171' }} /></IconButton>
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ ...panelSx, p: 2, minHeight: 420 }}>
+            {!selectedSubtopic ? (
+              <Box sx={{ minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#64748b' }}>
+                <FolderIcon sx={{ fontSize: 64, mb: 1 }} />
+                <Typography>Chọn subtopic để quản lý assets và labelsets</Typography>
+              </Box>
+            ) : (
+              <>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2 }}>
+                  <Box>
+                    <Typography variant="h6" fontWeight={700}>{selectedSubtopic.name}</Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>{assets.length} assets • {labelsets.length} labelsets</Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1}>
+                    <Button startIcon={<LabelIcon />} variant="outlined" onClick={() => setLabelDialog({ open: true, name: 'Default', labels: [] })}>New Labelset</Button>
+                    <Button startIcon={<UploadIcon />} variant="contained" onClick={() => fileInputRef.current?.click()} disabled={uploading}>{uploading ? 'Uploading...' : 'Upload'}</Button>
+                    <input ref={fileInputRef} type="file" multiple hidden onChange={(e) => uploadAssets(Array.from(e.target.files || []))} />
+                  </Stack>
+                </Box>
+
+                {detailLoading ? <LinearProgress sx={{ mb: 2 }} /> : null}
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <Typography fontWeight={700} sx={{ mb: 1 }}>Labelsets</Typography>
+                    <Stack spacing={1}>
+                      {labelsets.length === 0 ? <Typography sx={{ color: '#94a3b8' }}>Chưa có labelset</Typography> : null}
+                      {labelsets.map(ls => (
+                        <Card key={ls.id || ls._id} sx={{ bgcolor: '#0f172a', border: '1px solid #334155' }}>
+                          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                              <Box>
+                                <Typography fontWeight={700}>{ls.name || 'Labelset'}</Typography>
+                                <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                                  {(ls.labels || []).map((label, idx) => (
+                                    <Chip key={`${label.name}-${idx}`} size="small" label={label.name} sx={{ bgcolor: `${label.color || '#3b82f6'}22`, color: label.color || '#93c5fd', border: `1px solid ${label.color || '#3b82f6'}` }} />
+                                  ))}
+                                </Stack>
+                              </Box>
+                              <IconButton size="small" onClick={() => deleteLabelset(ls.id || ls._id)}><DeleteIcon sx={{ fontSize: 18, color: '#f87171' }} /></IconButton>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </Stack>
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Typography fontWeight={700} sx={{ mb: 1 }}>Assets</Typography>
+                    <Grid container spacing={1.5}>
+                      {assets.length === 0 ? <Grid item xs={12}><Typography sx={{ color: '#94a3b8' }}>Chưa có asset</Typography></Grid> : null}
+                      {assets.map(asset => (
+                        <Grid item xs={6} sm={4} md={3} key={asset.id || asset._id}>
+                          <Card sx={{ bgcolor: '#0f172a', border: '1px solid #334155' }}>
+                            <Box sx={{ position: 'relative', pt: '75%', bgcolor: '#111827' }}>
+                              {getAssetUrl(asset) ? (
+                                <Box component="img" src={getAssetUrl(asset)} alt={asset.original_name || asset.filename || 'asset'} sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon sx={{ color: '#64748b' }} /></Box>
+                              )}
+                            </Box>
+                            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                              <Typography variant="caption" sx={{ display: 'block', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {asset.original_name || asset.filename || 'asset'}
+                              </Typography>
+                              <Button size="small" color="error" onClick={() => deleteAsset(asset.id || asset._id)}>Delete</Button>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Grid>
+                </Grid>
+              </>
+            )}
           </Paper>
         </Grid>
       </Grid>
 
-      <Dialog open={topicDialog.open} onClose={() => setTopicDialog({ ...topicDialog, open: false })} maxWidth="sm" fullWidth PaperProps={{ sx: modalSx }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>{topicDialog.edit ? 'Sua Topic' : 'Tao Topic'}</DialogTitle>
+      <Dialog open={topicDialog.open} onClose={() => setTopicDialog({ open: false, edit: null, name: '', description: '' })} fullWidth maxWidth="sm">
+        <DialogTitle>{topicDialog.edit ? 'Edit Topic' : 'New Topic'}</DialogTitle>
         <DialogContent>
-          <TextField fullWidth label="Ten Topic" value={topicDialog.data.name} onChange={e => setTopicDialog({ ...topicDialog, data: { ...topicDialog.data, name: e.target.value } })} sx={{ mt: 2, mb: 2, ...inputSx }} />
-          <TextField fullWidth label="Mo ta" value={topicDialog.data.description} onChange={e => setTopicDialog({ ...topicDialog, data: { ...topicDialog.data, description: e.target.value } })} multiline rows={2} sx={{ mb: 2, ...inputSx }} />
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, color: '#94a3b8' }}>Mau sac</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField type="color" value={topicDialog.data.color} onChange={e => setTopicDialog({ ...topicDialog, data: { ...topicDialog.data, color: e.target.value } })} sx={{ width: 60, '& input': { p: 0.5, height: 36 } }} />
-              {COLORS.map(c => (
-                <Box key={c} onClick={() => setTopicDialog({ ...topicDialog, data: { ...topicDialog.data, color: c } })} sx={{ width: 28, height: 28, bgcolor: c, borderRadius: 1, cursor: 'pointer', border: topicDialog.data.color === c ? '2px solid white' : '2px solid transparent' }} />
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField label="Topic name" value={topicDialog.name} onChange={(e) => setTopicDialog(prev => ({ ...prev, name: e.target.value }))} sx={inputSx} />
+            <TextField label="Description" multiline minRows={3} value={topicDialog.description} onChange={(e) => setTopicDialog(prev => ({ ...prev, description: e.target.value }))} sx={inputSx} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTopicDialog({ open: false, edit: null, name: '', description: '' })}>Cancel</Button>
+          <Button onClick={saveTopic} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={subtopicDialog.open} onClose={() => setSubtopicDialog({ open: false, edit: null, name: '', description: '' })} fullWidth maxWidth="sm">
+        <DialogTitle>{subtopicDialog.edit ? 'Edit Subtopic' : 'New Subtopic'}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField label="Subtopic name" value={subtopicDialog.name} onChange={(e) => setSubtopicDialog(prev => ({ ...prev, name: e.target.value }))} sx={inputSx} />
+            <TextField label="Description" multiline minRows={3} value={subtopicDialog.description} onChange={(e) => setSubtopicDialog(prev => ({ ...prev, description: e.target.value }))} sx={inputSx} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSubtopicDialog({ open: false, edit: null, name: '', description: '' })}>Cancel</Button>
+          <Button onClick={saveSubtopic} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={labelDialog.open} onClose={() => setLabelDialog({ open: false, name: '', labels: [] })} fullWidth maxWidth="sm">
+        <DialogTitle>New Labelset</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField label="Labelset name" value={labelDialog.name} onChange={(e) => setLabelDialog(prev => ({ ...prev, name: e.target.value }))} sx={inputSx} />
+            <Stack direction="row" spacing={1}>
+              <TextField label="New label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} sx={inputSx} fullWidth />
+              <Button variant="contained" onClick={() => { if (!newLabel.trim()) return; setLabelDialog(prev => ({ ...prev, labels: [...prev.labels, { name: newLabel.trim(), color: '#3b82f6' }] })); setNewLabel(''); }}>Add</Button>
+            </Stack>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {labelDialog.labels.map((label, idx) => (
+                <Chip key={`${label.name}-${idx}`} label={label.name} onDelete={() => setLabelDialog(prev => ({ ...prev, labels: prev.labels.filter((_, i) => i !== idx) }))} />
               ))}
-            </Box>
-          </Box>
+            </Stack>
+          </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setTopicDialog({ ...topicDialog, open: false })} sx={btnSecondary}>Huy</Button>
-          <Button variant="contained" onClick={saveTopic} sx={btnPrimary}>{topicDialog.edit ? 'Luu' : 'Tao'}</Button>
+        <DialogActions>
+          <Button onClick={() => setLabelDialog({ open: false, name: '', labels: [] })}>Cancel</Button>
+          <Button onClick={saveLabelset} variant="contained">Save</Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={subtopicDialog.open} onClose={() => setSubtopicDialog({ ...subtopicDialog, open: false })} maxWidth="sm" fullWidth PaperProps={{ sx: modalSx }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>{subtopicDialog.edit ? 'Sua Subtopic' : 'Tao Subtopic'}</DialogTitle>
-        <DialogContent>
-          <TextField fullWidth label="Ten Subtopic" value={subtopicDialog.data.name} onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, name: e.target.value } })} sx={{ mt: 2, mb: 2, ...inputSx }} />
-          <FormControl fullWidth sx={{ mb: 2, ...inputSx }}>
-            <InputLabel>Loai Task</InputLabel>
-            <Select value={subtopicDialog.data.taskType} label="Loai Task" onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, taskType: e.target.value } })}>
-              <MenuItem value="bbox">Bounding Box</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setSubtopicDialog({ ...subtopicDialog, open: false })} sx={btnSecondary}>Huy</Button>
-          <Button variant="contained" onClick={saveSubtopic} sx={btnPrimary}>{subtopicDialog.edit ? 'Luu' : 'Tao'}</Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar open={snackbar.open} autoHideDuration={3000} onClose={() => setSnackbar({ ...snackbar, open: false })}>
-        <Alert severity={snackbar.severity} sx={{ bgcolor: '#1e293b', color: '#e2e8f0' }}>{snackbar.message}</Alert>
+      <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
+        <Alert severity={toast.severity} onClose={() => setToast(prev => ({ ...prev, open: false }))}>{toast.message}</Alert>
       </Snackbar>
     </Box>
   );
-};
-
-export default TopicManagement;
+}

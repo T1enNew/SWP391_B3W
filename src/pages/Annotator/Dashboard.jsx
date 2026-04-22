@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
+
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const fmtDate = (d) => {
   if (!d) return null;
@@ -26,22 +29,23 @@ const getProjStatus = (subs, allTasks) => {
 };
 
 const ProjectCard = ({ project, onOpen }) => {
-  const { total, done, pct } = getProjStatus(project.subtopics, project.tasks || []);
+  const subtasks = project.subtasks || project.subtopics || [];
+  const total = subtasks.reduce((sum, s) => sum + (s.total || 0), 0);
+  const done = subtasks.reduce((sum, s) => sum + (s.approved || 0), 0);
+  const pct = total ? Math.round((done / total) * 100) : 0;
   const overdue = project.deadline && new Date(project.deadline) < new Date();
-  const next = project.subtopics
-    ? project.subtopics.find((s) => (s.approved || 0) < (s.total || 0))
-    : (project.tasks || []).find(t => t.status !== 'approved' && t.status !== 'submitted');
+  const next = subtasks.find((s) => (s.approved || 0) < (s.total || 0));
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800 shadow-lg transition hover:border-gray-600 cursor-pointer" onClick={onOpen}>
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-lg font-semibold text-gray-100">{project.projectName}</h3>
+            <h3 className="truncate text-lg font-semibold text-gray-100">{project.projectName || project.name}</h3>
             {project.deadline && <p className={`text-sm mt-1 ${overdue ? 'text-rose-400' : 'text-gray-400'}`}>Deadline: {fmtDate(project.deadline)}</p>}
           </div>
           <span className={`shrink-0 rounded px-2 py-1 text-xs font-medium ${overdue ? 'bg-rose-500/10 text-rose-400' : 'bg-gray-700 text-gray-400'}`}>
-            {project.subtopics.length} subtopic{project.subtopics.length !== 1 ? 's' : ''}
+            {subtasks.length} subtopic{subtasks.length !== 1 ? 's' : ''}
           </span>
         </div>
         <div className="mt-4">
@@ -81,7 +85,7 @@ const SubtopicRow = ({ sub, onStart }) => {
     <div className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-gray-200">{sub.subtopicName || sub.name || 'Subtopic'}</p>
-        <p className="text-xs text-gray-400 mt-1">{sub.approved || 0}/{sub.total || 0} tasks</p>
+        <p className="text-xs text-gray-400 mt-1">{completedTasks}/{totalTasks} tasks</p>
         <div className="mt-1 h-1.5 w-full rounded-full bg-gray-700">
           <div className={`h-1.5 rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
         </div>
@@ -95,18 +99,19 @@ const SubtopicRow = ({ sub, onStart }) => {
 
 const ProjectModal = ({ project, onClose, onStart }) => {
   if (!project) return null;
+  const subtasks = project.subtasks || project.subtopics || [];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between border-b border-gray-700 p-5">
           <div>
-            <h3 className="text-xl font-bold text-gray-100">{project.projectName}</h3>
+            <h3 className="text-xl font-bold text-gray-100">{project.projectName || project.name}</h3>
             {project.deadline && <p className={`mt-1 text-sm ${new Date(project.deadline) < new Date() ? 'text-rose-400' : 'text-gray-400'}`}>Deadline: {fmtDate(project.deadline)}</p>}
           </div>
           <button onClick={onClose} className="rounded-lg border border-gray-600 px-3 py-1 text-sm text-gray-300 hover:bg-gray-800">Dong</button>
         </div>
         <div className="max-h-96 overflow-y-auto p-5 space-y-3">
-          {project.subtopics.map((sub) => <SubtopicRow key={sub.subtopicId} sub={sub} onStart={onStart} />)}
+          {subtasks.map((sub) => <SubtopicRow key={sub.subtopicId} sub={sub} onStart={onStart} />)}
         </div>
         {project.guidelines && (
           <div className="border-t border-gray-700 p-5">
@@ -133,8 +138,41 @@ const AnnotatorDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/annotator-projects`);
-      setProjects(res.data || []);
+      // Use /my-tasks which returns tasks per subtopic (annotator-appropriate)
+      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      const tasks = getArray(res.data);
+
+      // Group tasks by project from the task objects
+      const projMap = {};
+      tasks.forEach((t) => {
+        const pid = t.projectId?.id || t.projectId;
+        if (!pid) return;
+        if (!projMap[pid]) {
+          projMap[pid] = {
+            projectId: pid,
+            projectName: t.projectId?.name || 'Unknown Project',
+            deadline: t.projectId?.deadline || null,
+            subtasks: [],
+          };
+        }
+        const sid = t.subtopicId?.id || t.subtopicId;
+        const existing = projMap[pid].subtasks.find((s) => (s.subtopicId?.id || s.subtopicId) === sid);
+        if (existing) {
+          existing.total = (existing.total || 0) + 1;
+          if (t.status === 'approved') existing.approved = (existing.approved || 0) + 1;
+        } else {
+          projMap[pid].subtasks.push({
+            topicId: t.topicId,
+            subtopicId: sid,
+            subtopicName: t.subtopicId?.name || t.topicId?.name || 'Subtopic',
+            total: 1,
+            approved: t.status === 'approved' ? 1 : 0,
+          });
+        }
+      });
+      setProjects(Object.values(projMap));
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc project');
     } finally {
@@ -144,10 +182,14 @@ const AnnotatorDashboard = () => {
 
   const handleStart = async (sub) => {
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId: sub.subtopicId } });
-      const tasks = res.data || [];
+      const sid = sub.subtopicId?.id || sub.subtopicId;
+      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
+        params: { subtopic_id: sid },
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      const tasks = getArray(res.data);
       const target = tasks.find((t) => t.status !== 'approved' && t.status !== 'submitted') || tasks[0];
-      if (target) navigate(`/annotator/tasks/${target._id}`);
+      if (target) navigate(`/annotator/tasks/${target.id}`);
       else alert('Khong co task nao trong subtopic nay.');
     } catch {
       alert('Khong tai duoc task.');
@@ -155,8 +197,10 @@ const AnnotatorDashboard = () => {
   };
 
   const filtered = projects.filter((p) => {
+    const subtasks = p.subtasks || [];
+    const total = subtasks.reduce((sum, s) => sum + (s.total || 0), 0);
+    const done = subtasks.reduce((sum, s) => sum + (s.approved || 0), 0);
     if (filter === 'all') return true;
-    const { total, done } = getProjStatus(p.subtopics, p.tasks || []);
     if (filter === 'completed') return done === total && total > 0;
     if (filter === 'active') return done < total;
     if (filter === 'overdue') return p.deadline && new Date(p.deadline) < new Date();

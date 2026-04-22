@@ -1,851 +1,429 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
-  Box,
-  Typography,
-  Button,
-  TextField,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
-  Chip,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Checkbox,
-  IconButton,
-  Alert,
-  CircularProgress,
-  Snackbar,
+  Alert, Box, Button, Card, CardContent, Checkbox, CircularProgress,
+  Grid, IconButton, Snackbar, Stack, TextField, Typography, Chip,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
-  Delete as DeleteIcon,
-  Search as SearchIcon,
-  CheckCircle as CheckCircleIcon,
-  Add as AddIcon,
-  Refresh as RefreshIcon,
+  ArrowBack as ArrowBackIcon, CheckCircle as CheckCircleIcon,
+  Search as SearchIcon, Person as PersonIcon, Group as GroupIcon,
+  FolderOpen as FolderIcon, Label as LabelIcon,
 } from '@mui/icons-material';
-import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getArray } from '../../utils/api';
 
-const CreateProject = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    guidelines: '',
-    questions: [],
-    reviewPolicy: { mode: 'full', sampleRate: 1.0 },
-    deadline: '',
-    exportFormat: 'JSON',
-  });
-  const [selectedDatasets, setSelectedDatasets] = useState([]);
-  const [datasets, setDatasets] = useState([]);
-  const [selectedAnnotators, setSelectedAnnotators] = useState([]);
-  const [selectedReviewers, setSelectedReviewers] = useState([]);
-  const [lockDatasets, setLockDatasets] = useState(false);
-  const [annotators, setAnnotators] = useState([]);
-  const [reviewers, setReviewers] = useState([]);
-  const [annotatorSearch, setAnnotatorSearch] = useState('');
-  const [reviewerSearch, setReviewerSearch] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [datasetLabelsets, setDatasetLabelsets] = useState({});
-  const [loadingLabelsets, setLoadingLabelsets] = useState(false);
-  const [topics, setTopics] = useState({});
-  const [notification, setNotification] = useState({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
+/* ─── THEME ── */
+const BG='#080f1e', PANEL='#0f1a2e', CARD='#131f35', BORDER='#1e2d47';
+const PRIMARY='#3b82f6', TEXT='#e2e8f0', MUTED='#64748b';
 
-  const getAuthToken = () => sessionStorage.getItem('token');
-  const getAuthHeaders = () => {
-    const token = getAuthToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
+const getAuthHeaders = () => {
+  const t = sessionStorage.getItem('token') || '';
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+const coerceId = o => o?._id || o?.id || '';
+const normalizeUser = u => ({
+  ...u, id: coerceId(u) || u?.user_id,
+  fullName: u?.full_name || u?.fullName || u?.username || u?.email || 'User',
+});
 
-  const showNotification = (message, severity = 'info') => {
-    setNotification({ open: true, message, severity });
-  };
+const inputSx = {
+  '& .MuiOutlinedInput-root': {
+    bgcolor:'#08121f', color:TEXT, borderRadius:'10px',
+    '& fieldset':{ borderColor:BORDER },
+    '&:hover fieldset':{ borderColor:'#2d4060' },
+    '&.Mui-focused fieldset':{ borderColor:PRIMARY },
+  },
+  '& .MuiInputLabel-root':{ color:MUTED },
+};
 
-  useEffect(() => {
-    fetchUsers();
-    fetchDatasets();
-  }, []);
-
-  // Refresh datasets when navigating from Datasets page
-  useEffect(() => {
-    if (location.state?.refreshDatasets) {
-      fetchDatasets();
-
-      if (location.state?.datasetName) {
-        setFormData(prev => ({
-          ...prev,
-          name: location.state.datasetName,
-          description: prev.description || ''
-        }));
-      }
-
-      if (Array.isArray(location.state?.preselectedDatasetIds) && location.state.preselectedDatasetIds.length > 0) {
-        setSelectedDatasets(location.state.preselectedDatasetIds);
-        setLockDatasets(true);
-      } else {
-        setLockDatasets(false);
-      }
-
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state]);
-
-  // Refresh datasets when page becomes visible (user returns from Datasets page)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchDatasets();
-      }
-    };
-    const handleFocus = () => {
-      fetchDatasets();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, []);
-
-  // Load labelsets when selectedDatasets changes
-  useEffect(() => {
-    if (selectedDatasets.length > 0) {
-      loadDatasetLabelsets(selectedDatasets);
-    } else {
-      setDatasetLabelsets({});
-    }
-  }, [selectedDatasets]);
-
-  const loadDatasetLabelsets = async (datasetIds) => {
-    setLoadingLabelsets(true);
-    console.log('loadDatasetLabelsets called with:', datasetIds);
-    try {
-      const results = {};
-      await Promise.all(datasetIds.map(async (dsId) => {
-        const ds = datasets.find(d => d._id === dsId) || {};
-        console.log('Dataset:', ds._id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId);
-        const subtopicIds = ds.subtopicIds || (ds.subtopicId ? [ds.subtopicId] : []);
-        console.log('Resolved subtopicIds:', subtopicIds);
-        const subtopicInfoList = [];
-        for (const stId of subtopicIds) {
-          try {
-            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`, { headers: getAuthHeaders() });
-            console.log('Subtopic response:', stId, stRes.data);
-            const stData = stRes.data?.subtopic || stRes.data || {};
-            const topicInfo = stData.topicId?._id ? { _id: stData.topicId._id, name: stData.topicId.name } : null;
-            const lsRes = await axios.get(`${API_URL}/api/labelsets?subtopicId=${stId}`, { headers: getAuthHeaders() });
-            console.log('Labelsets response for', stId, ':', lsRes.data);
-            const labels = Array.isArray(lsRes.data) ? lsRes.data : [];
-            subtopicInfoList.push({
-              _id: stId,
-              name: stData.name || stId,
-              topic: topicInfo,
-              labelsets: labels,
-            });
-          } catch (e) {
-            console.error('Error loading subtopic', stId, e);
-          }
-        }
-        results[dsId] = {
-          subtopicIds,
-          subtopics: subtopicInfoList,
-        };
-      }));
-      console.log('Final datasetLabelsets results:', results);
-      setDatasetLabelsets(results);
-    } catch (err) {
-      console.error('Error loadDatasetLabelsets:', err);
-      setDatasetLabelsets({});
-    } finally {
-      setLoadingLabelsets(false);
-    }
-  };
-
-  const fetchDatasets = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/datasets`, {
-        headers: getAuthHeaders()
-      });
-      const allDatasets = response.data || [];
-      console.log('All datasets from API:', JSON.stringify(allDatasets, null, 2));
-      // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
-      const unassignedDatasets = allDatasets.filter(ds => !ds.projectId || ds.projectId === null);
-      console.log('Unassigned datasets:', unassignedDatasets);
-      setDatasets(unassignedDatasets);
-    } catch (error) {
-      console.error('Error fetching datasets:', error);
-      setError('Không thể tải danh sách datasets: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/users`);
-      const allUsers = Array.isArray(response.data) ? response.data : [];
-      setAnnotators(allUsers.filter(u => u.role === 'annotator' && u.isActive));
-      setReviewers(allUsers.filter(u => u.role === 'reviewer' && u.isActive));
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      setError('Không thể tải danh sách users. Vui lòng kiểm tra kết nối.');
-    }
-  };
-
-
-  const filteredAnnotators = annotators.filter(ann => {
-    const matchSearch = annotatorSearch === '' || 
-      ann.fullName?.toLowerCase().includes(annotatorSearch.toLowerCase()) ||
-      ann.username?.toLowerCase().includes(annotatorSearch.toLowerCase());
-    return matchSearch;
-  });
-
-  const filteredReviewers = reviewers.filter(rev => {
-    const matchSearch = reviewerSearch === '' || 
-      rev.fullName?.toLowerCase().includes(reviewerSearch.toLowerCase()) ||
-      rev.username?.toLowerCase().includes(reviewerSearch.toLowerCase());
-    return matchSearch;
-  });
-
-  const isDatasetTypeConsistent = (ds) => {
-    const dsType = (ds?.type || '').toLowerCase();
-    const files = Array.isArray(ds?.files) ? ds.files : [];
-    if (files.length === 0) return true;
-
-    return files.every((f) => {
-      const name = (f?.originalName || f?.filename || '').toLowerCase();
-      const mime = (f?.mimeType || '').toLowerCase();
-      if (dsType === 'image') return mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].some((ext) => name.endsWith(ext));
-      if (dsType === 'audio') return mime.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.mp4'].some((ext) => name.endsWith(ext));
-      if (dsType === 'text') return mime.startsWith('text/') || ['.txt', '.csv', '.json', '.xml'].some((ext) => name.endsWith(ext));
-      return false;
-    });
-  };
-
-  const validDatasets = datasets.filter((ds) => isDatasetTypeConsistent(ds));
-  const selectedDatasetObjects = selectedDatasets
-    .map((id) => validDatasets.find((d) => d._id === id))
-    .filter(Boolean);
-
-  const handleSaveDraft = async () => {
-    if (!formData.name.trim()) {
-      showNotification('Vui lòng nhập tên project', 'warning');
-      return;
-    }
-    if (!formData.guidelines.trim()) {
-      showNotification('Vui lòng nhập guidelines', 'warning');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await axios.post(`${API_URL}/api/projects`, {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || '',
-        guidelines: formData.guidelines.trim(),
-        questions: formData.questions || [],
-        status: 'draft',
-        reviewPolicy: formData.reviewPolicy,
-        deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: getAuthHeaders()
-      });
-      showNotification('Đã lưu draft thành công!');
-      navigate('/manager/projects');
-    } catch (error) {
-      console.error('Error saving draft:', error);
-      showNotification('Lỗi khi lưu draft: ' + (error.response?.data?.message || error.message));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCreateProject = async () => {
-    // Validation
-    if (!formData.name.trim()) {
-      showNotification('Vui lòng nhập tên project', 'warning');
-      return;
-    }
-    if (!formData.guidelines.trim()) {
-      showNotification('Vui lòng nhập guidelines', 'warning');
-      return;
-    }
-    if (selectedDatasets.length === 0) {
-      showNotification('Vui lòng chọn 1 dataset');
-      return;
-    }
-    if (selectedAnnotators.length === 0) {
-      showNotification('Vui lòng chọn ít nhất một annotator');
-      return;
-    }
-    if (selectedAnnotators.length % 2 === 0) {
-      showNotification('Số annotator phải là số lẻ (1, 3, 5, ...). Vui lòng bỏ bớt hoặc thêm 1 annotator.');
-      return;
-    }
-    if (selectedReviewers.length === 0) {
-      showNotification('Vui lòng chọn ít nhất một reviewer');
-      return;
-    }
-    if (selectedReviewers.length % 2 === 0) {
-      showNotification('Số reviewer phải là số lẻ (1, 3, 5, ...). Vui lòng bỏ bớt hoặc thêm 1 reviewer.');
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      // Step 1: Create project
-      const projectRes = await axios.post(`${API_URL}/api/projects`, {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || '',
-        guidelines: formData.guidelines.trim(),
-        questions: formData.questions || [],
-        status: 'active',
-        reviewPolicy: formData.reviewPolicy,
-        deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: getAuthHeaders()
-      });
-      const projectId = projectRes.data._id;
-
-      // Step 2: Link selected datasets to project
-      for (const datasetId of selectedDatasets) {
-        await axios.put(`${API_URL}/api/datasets/${datasetId}`, {
-          projectId: projectId
-        }, {
-          headers: getAuthHeaders()
-        });
-      }
-
-      // Step 3: Assign tasks for each selected dataset
-      for (const datasetId of selectedDatasets) {
-        await axios.post(`${API_URL}/api/tasks/assign`, {
-          projectId,
-          datasetId: datasetId,
-          annotatorIds: selectedAnnotators,
-          reviewerIds: selectedReviewers,
-        }, {
-          headers: getAuthHeaders()
-        });
-      }
-
-      showNotification('Tạo project và phân công thành công!');
-      navigate(`/manager/projects/${projectId}`);
-    } catch (error) {
-      console.error('Error creating project:', error);
-      let errorMsg = 'Có lỗi xảy ra';
-      
-      if (error.response) {
-        if (error.response.data?.errors && Array.isArray(error.response.data.errors)) {
-          errorMsg = error.response.data.errors.map(e => e.msg || e.message).join(', ');
-        } else if (error.response.data?.message) {
-          errorMsg = error.response.data.message;
-        } else {
-          errorMsg = error.response.statusText || 'Server error';
-        }
-      } else if (error.request) {
-        errorMsg = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối.';
-      } else {
-        errorMsg = error.message || 'Có lỗi xảy ra';
-      }
-      
-      setError(`Lỗi: ${errorMsg}`);
-      showNotification(`Lỗi khi tạo project: ${errorMsg}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-
-  return (
-    <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto', minHeight: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton onClick={() => navigate('/manager/projects')}>
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography variant="h4">Create New Project</Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button variant="outlined" onClick={handleSaveDraft} disabled={saving}>
-            Save Draft
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleCreateProject}
-            disabled={saving}
-            startIcon={saving ? <CircularProgress size={16} /> : <CheckCircleIcon />}
-          >
-            {saving ? 'Đang tạo...' : 'Create Project'}
-          </Button>
+/* ── Section card wrapper ── */
+const Section = ({ icon, title, subtitle, children }) => (
+  <Card sx={{ bgcolor:PANEL, border:`1px solid ${BORDER}`, borderRadius:3, color:TEXT }}>
+    <CardContent sx={{ p:3 }}>
+      <Box sx={{ display:'flex', alignItems:'center', gap:1.5, mb:2.5, pb:2, borderBottom:`1px solid ${BORDER}` }}>
+        <Box sx={{ color:PRIMARY }}>{icon}</Box>
+        <Box>
+          <Typography sx={{ fontWeight:800, fontSize:16 }}>{title}</Typography>
+          {subtitle && <Typography sx={{ color:MUTED, fontSize:13 }}>{subtitle}</Typography>}
         </Box>
       </Box>
+      {children}
+    </CardContent>
+  </Card>
+);
 
-      {/* Error Message */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+/* ── User checkbox list ── */
+const UserList = ({ users, selected, onToggle, search, onSearch, placeholder }) => (
+  <Stack spacing={1.5}>
+    <TextField size="small" placeholder={placeholder} value={search} onChange={e => onSearch(e.target.value)}
+      sx={inputSx} InputProps={{ startAdornment: <SearchIcon sx={{ color:MUTED, mr:1, fontSize:18 }} /> }} />
+    <Box sx={{ maxHeight:280, overflowY:'auto', display:'flex', flexDirection:'column', gap:0.8 }}>
+      {users.length === 0 && <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>Không có người dùng</Typography>}
+      {users.map(u => {
+        const checked = selected.includes(u.id);
+        return (
+          <Box key={u.id} onClick={() => onToggle(u.id)}
+            sx={{
+              display:'flex', alignItems:'center', gap:1.5, p:1.5, borderRadius:2, cursor:'pointer',
+              bgcolor: checked ? 'rgba(59,130,246,0.12)' : CARD,
+              border:`1px solid ${checked ? PRIMARY : BORDER}`,
+              transition:'all 0.15s', '&:hover':{ borderColor:'#2d4060' },
+            }}>
+            <Box sx={{
+              width:34, height:34, borderRadius:'50%', bgcolor: checked ? PRIMARY : '#1e293b',
+              display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+              fontSize:13, fontWeight:700, color: checked ? '#fff' : MUTED,
+            }}>
+              {u.fullName.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
+            </Box>
+            <Box sx={{ flex:1, minWidth:0 }}>
+              <Typography sx={{ fontWeight:700, fontSize:14, color:TEXT }}>{u.fullName}</Typography>
+              <Typography sx={{ color:MUTED, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}</Typography>
+            </Box>
+            <Checkbox checked={checked} size="small" sx={{ color:MUTED, '&.Mui-checked':{ color:PRIMARY }, p:0 }} onChange={()=>{}} />
+          </Box>
+        );
+      })}
+    </Box>
+    {selected.length > 0 && (
+      <Typography sx={{ color:'#93c5fd', fontSize:12 }}>✓ Đã chọn {selected.length} người</Typography>
+    )}
+  </Stack>
+);
 
-      {/* Main Form - All in One Page */}
-      <Paper
-        sx={{
-          p: 4,
-          maxHeight: 'calc(100vh - 200px)',
-          overflowY: 'auto',
-          bgcolor: '#1e293b',
-          border: '1px solid #334155',
-          borderRadius: 3,
-          color: '#e2e8f0',
-          '& .MuiTypography-root': { color: '#e2e8f0' },
-          '& .MuiInputLabel-root': { color: '#94a3b8' },
-          '& .MuiOutlinedInput-root': {
-            color: '#e2e8f0',
-            backgroundColor: '#0f172a',
-            '& fieldset': { borderColor: '#475569' },
-            '&:hover fieldset': { borderColor: '#64748b' },
-            '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
-          },
-          '& .MuiSelect-icon': { color: '#94a3b8' },
-          '& .MuiCard-root': {
-            backgroundColor: '#1e293b',
-            borderColor: '#334155',
-            color: '#e2e8f0',
-          },
-        }}
-      >
-        <Grid container spacing={4}>
-          {/* Left Column - Project Details & Dataset */}
-          <Grid item xs={12} md={7}>
-            {/* Project Basic Info */}
-            <Box sx={{ mb: 4 }}>
-              <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
-                Project Information
-              </Typography>
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Project Name *"
-                    placeholder="e.g., Medical Image Labeling Q4"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    label="Description"
-                    placeholder="Explain the objective of this project..."
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={5}
-                    label="Guidelines *"
-                    placeholder="Provide detailed guidelines for annotators..."
-                    value={formData.guidelines}
-                    onChange={(e) => setFormData({ ...formData, guidelines: e.target.value })}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Deadline"
-                    type="datetime-local"
-                    value={formData.deadline}
-                    onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    helperText="Set project deadline (optional)"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Export Format</InputLabel>
-                    <Select
-                      value={formData.exportFormat}
-                      onChange={(e) => setFormData({ ...formData, exportFormat: e.target.value })}
-                      label="Export Format"
-                    >
-                      <MenuItem value="JSON">JSON (Default)</MenuItem>
-                      <MenuItem value="YOLO">YOLO</MenuItem>
-                      <MenuItem value="VOC">VOC (Pascal VOC)</MenuItem>
-                      <MenuItem value="COCO">COCO</MenuItem>
-                      <MenuItem value="CSV">CSV</MenuItem>
-                    </Select>
-                    <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                      Format for exporting labeled data
+/* ── Dataset picker ── */
+const DatasetPicker = ({ datasets, selected, onSelect }) => (
+  <Box sx={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:0.8 }}>
+    {datasets.length === 0 && <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>Chưa có dataset nào</Typography>}
+    {datasets.map(ds => {
+      const isSelected = selected === coerceId(ds);
+      const total = ds.total_items || ds.totalItems || 0;
+      return (
+        <Box key={coerceId(ds)} onClick={() => onSelect(isSelected ? '' : coerceId(ds))}
+          sx={{
+            display:'flex', alignItems:'center', gap:1.5, p:1.5, borderRadius:2, cursor:'pointer',
+            bgcolor: isSelected ? 'rgba(59,130,246,0.12)' : CARD,
+            border:`1px solid ${isSelected ? PRIMARY : BORDER}`,
+            transition:'all 0.15s', '&:hover':{ borderColor:'#2d4060' },
+          }}>
+          <FolderIcon sx={{ color: isSelected ? PRIMARY : MUTED, fontSize:22, flexShrink:0 }} />
+          <Box sx={{ flex:1, minWidth:0 }}>
+            <Typography sx={{ fontWeight:700, fontSize:14, color:TEXT }}>{ds.name}</Typography>
+            {ds.description && <Typography sx={{ color:MUTED, fontSize:12 }}>{ds.description}</Typography>}
+          </Box>
+          <Chip size="small" label={`${total} ảnh`}
+            sx={{ bgcolor:'rgba(59,130,246,0.14)', color:'#93c5fd', fontWeight:700, fontSize:11 }} />
+          {isSelected && <CheckCircleIcon sx={{ color:PRIMARY, fontSize:20, flexShrink:0 }} />}
+        </Box>
+      );
+    })}
+  </Box>
+);
+
+/* ── Label picker (from master labels) ── */
+const LabelPicker = ({ labels, selected, onToggle }) => (
+  <Box>
+    {labels.length === 0 && (
+      <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>
+        Chưa có nhãn nào. Hãy tạo nhãn ở tab Labels trước.
+      </Typography>
+    )}
+    <Box sx={{ display:'flex', flexWrap:'wrap', gap:1 }}>
+      {labels.map(l => {
+        const isSelected = selected.includes(l._labelsetId || l.id);
+        return (
+          <Chip
+            key={l.id}
+            label={l.name}
+            onClick={() => onToggle(l._labelsetId || l.id)}
+            sx={{
+              bgcolor: isSelected ? `${l.color}33` : 'rgba(255,255,255,0.05)',
+              color: isSelected ? l.color : MUTED,
+              border:`1px solid ${isSelected ? l.color : BORDER}`,
+              fontWeight: isSelected ? 700 : 500,
+              cursor:'pointer', transition:'all 0.15s',
+              '&:hover':{ bgcolor:`${l.color}22`, color:l.color },
+            }}
+          />
+        );
+      })}
+    </Box>
+    {selected.length > 0 && (
+      <Typography sx={{ color:'#93c5fd', fontSize:12, mt:1 }}>✓ Đã chọn {selected.length} nhãn</Typography>
+    )}
+  </Box>
+);
+
+/* ─── MAIN ─────────────────────────────────────────────── */
+const MASTER_TOPIC_NAME = '__master_labels__';
+const MASTER_SUBTOPIC_NAME = '__labels__';
+
+export default function CreateProject() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+  const [toast, setToast]     = useState({ open:false, msg:'', sev:'success' });
+
+  const [datasets, setDatasets]     = useState([]);
+  const [annotators, setAnnotators] = useState([]);
+  const [reviewers, setReviewers]   = useState([]);
+  const [masterLabels, setMasterLabels] = useState([]);
+
+  const [form, setForm] = useState({ name:'', description:'', guidelines:'', deadline:'', sampleRate: 100 });
+  const [selectedDatasetId, setSelectedDatasetId]     = useState('');
+  const [selectedLabelsetIds, setSelectedLabelsetIds] = useState([]);
+  const [selectedAnnotators, setSelectedAnnotators]   = useState([]);
+  const [selectedReviewers, setSelectedReviewers]     = useState([]);
+  const [annoSearch, setAnnoSearch] = useState('');
+  const [revSearch, setRevSearch]   = useState('');
+
+  const showToast = (msg, sev='success') => setToast({ open:true, msg, sev });
+
+  /* ── load master labels from localStorage (same key as Labels.jsx) ── */
+  const loadMasterLabels = () => {
+    try {
+      const raw = localStorage.getItem('master_labels_v1');
+      setMasterLabels(raw ? JSON.parse(raw) : []);
+    } catch {
+      setMasterLabels([]);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [dsRes, userRes] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/datasets`, { headers:getAuthHeaders() }),
+          axios.get(`${API_URL}/api/users`, { headers:getAuthHeaders() }),
+        ]);
+        if (dsRes.status === 'fulfilled') setDatasets(getArray(dsRes.value.data));
+        if (userRes.status === 'fulfilled') {
+          const users = getArray(userRes.value.data).map(normalizeUser);
+          setAnnotators(users.filter(u => u.role === 'annotator' && u.is_active !== false));
+          setReviewers(users.filter(u => u.role === 'reviewer' && u.is_active !== false));
+        }
+        loadMasterLabels();
+      } catch (e) {
+        setError(e?.response?.data?.message || e.message || 'Không tải được dữ liệu');
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const filteredAnnotators = useMemo(() => {
+    const q = annoSearch.toLowerCase();
+    return annotators.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q));
+  }, [annotators, annoSearch]);
+
+  const filteredReviewers = useMemo(() => {
+    const q = revSearch.toLowerCase();
+    return reviewers.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q));
+  }, [reviewers, revSearch]);
+
+  const toggleAnnotator = id => setSelectedAnnotators(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleReviewer  = id => setSelectedReviewers(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleLabel     = id => setSelectedLabelsetIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+
+  const handleCreate = async () => {
+    if (!form.name.trim() || !form.deadline || !selectedDatasetId) {
+      showToast('Vui lòng điền đủ tên project, deadline và chọn 1 dataset', 'warning');
+      return;
+    }
+    if (!selectedAnnotators.length || !selectedReviewers.length) {
+      showToast('Vui lòng chọn ít nhất 1 Annotator và 1 Reviewer', 'warning');
+      return;
+    }
+    if (form.sampleRate < 1 || form.sampleRate > 100) {
+      showToast('Sample Rate phải nằm trong khoảng từ 1% đến 100%', 'warning');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        guidelines: form.guidelines.trim() || 'No guidelines',
+        deadline: new Date(form.deadline).toISOString(),
+        export_format: 'JSON',
+        review_policy: { 
+          mode: form.sampleRate < 100 ? 'sample' : 'full', 
+          sample_rate: form.sampleRate / 100, 
+          reviewers_per_item: 1 
+        },
+        dataset_id: selectedDatasetId,
+        annotator_ids: selectedAnnotators,
+        reviewer_ids: selectedReviewers,
+      };
+      const res = await axios.post(`${API_URL}/api/projects`, payload, { headers:getAuthHeaders() });
+      const project = res.data?.project || res.data;
+      const projectId = coerceId(project);
+      if (!projectId) throw new Error('Server không trả về project ID');
+      showToast('Tạo project thành công!');
+      setTimeout(() => navigate(`/manager/projects/${projectId}`), 800);
+    } catch (e) {
+      let errorMsg = 'Tạo project thất bại';
+      const data = e?.response?.data;
+      if (data) {
+        if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+          errorMsg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
+        } else if (data.message) {
+          errorMsg = data.message;
+        } else if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            errorMsg = data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ');
+          } else {
+            errorMsg = String(data.detail);
+          }
+        }
+      } else if (e.message) {
+        errorMsg = e.message;
+      }
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
+    } finally { setSaving(false); }
+  };
+
+  if (loading) return (
+    <Box sx={{ minHeight:'100vh', bgcolor:BG, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <CircularProgress sx={{ color:PRIMARY }} />
+    </Box>
+  );
+
+  return (
+    <Box sx={{ minHeight:'100vh', bgcolor:BG, color:TEXT }}>
+      {/* ── Header ── */}
+      <Box sx={{ px:3.5, py:3, borderBottom:`1px solid ${BORDER}`, bgcolor:PANEL,
+        display:'flex', justifyContent:'space-between', alignItems:'center', gap:2, flexWrap:'wrap' }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <IconButton onClick={() => navigate('/manager/projects')} sx={{ color:MUTED }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Box>
+            <Typography sx={{ fontWeight:800, fontSize:24, color:TEXT }}>Tạo Project mới</Typography>
+            <Typography sx={{ color:MUTED, fontSize:13 }}>Thiết lập dự án annotation bounding box</Typography>
+          </Box>
+        </Stack>
+        <Button variant="contained" onClick={handleCreate} disabled={saving}
+          startIcon={saving ? <CircularProgress size={16} sx={{ color:'#fff' }} /> : <CheckCircleIcon />}
+          sx={{ bgcolor:PRIMARY, borderRadius:2, fontWeight:700, textTransform:'none', px:3, '&:hover':{ bgcolor:'#2563eb' } }}>
+          {saving ? 'Đang tạo...' : 'Tạo Project'}
+        </Button>
+      </Box>
+
+      <Box sx={{ p:3.5 }}>
+        {error && <Alert severity="error" sx={{ mb:3, borderRadius:2 }}>{error}</Alert>}
+
+        <Grid container spacing={3}>
+          {/* ── Left col: info ── */}
+          <Grid item xs={12} lg={5}>
+            <Stack spacing={3}>
+              {/* Basic info */}
+              <Section icon={<CheckCircleIcon />} title="Thông tin cơ bản" subtitle="Tên, mô tả và deadline của project">
+                <Stack spacing={2}>
+                  <TextField fullWidth label="Tên project *" value={form.name}
+                    onChange={e => setForm(p=>({...p, name:e.target.value}))}
+                    placeholder="VD: Phân loại chó mèo Q2/2026" sx={inputSx} />
+                  <TextField fullWidth label="Mô tả" multiline minRows={3} value={form.description}
+                    onChange={e => setForm(p=>({...p, description:e.target.value}))} sx={inputSx} />
+                  <TextField fullWidth label="Hướng dẫn cho annotator" multiline minRows={3} value={form.guidelines}
+                    onChange={e => setForm(p=>({...p, guidelines:e.target.value}))}
+                    placeholder="Mô tả cách gán nhãn, quy tắc vẽ bounding box..." sx={inputSx} />
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TextField fullWidth type="datetime-local" label="Deadline"
+                      InputLabelProps={{ shrink:true }} value={form.deadline}
+                      onChange={e => setForm(p=>({...p, deadline:e.target.value}))} sx={{ ...inputSx, flex: 2 }} />
+                    <TextField fullWidth type="number" label="Sample Rate (%)"
+                      InputProps={{ inputProps: { min: 1, max: 100 } }}
+                      value={form.sampleRate}
+                      onChange={e => setForm(p=>({...p, sampleRate: e.target.value ? Number(e.target.value) : ''}))}
+                      placeholder="VD: 10" sx={{ ...inputSx, flex: 1 }} />
+                  </Box>
+                  {form.sampleRate < 100 && form.sampleRate > 0 && (
+                    <Typography sx={{ color: '#fbbf24', fontSize: 13, mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CheckCircleIcon sx={{ fontSize: 16 }} />
+                      Annotator làm 100%. Reviewer chỉ kiểm tra ngẫu nhiên {form.sampleRate}% số ảnh.
                     </Typography>
-                  </FormControl>
-                </Grid>
-              </Grid>
-            </Box>
+                  )}
+                </Stack>
+              </Section>
 
-            {/* Labels Info */}
-            <Box sx={{ mb: 4, p: 2, borderRadius: 2, bgcolor: 'rgba(59,130,246,0.08)', border: '1px solid #3b82f6' }}>
-              <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#60a5fa', mb: 1.5 }}>
-                Labels tu Dataset → Subtopic → LabelSet
-              </Typography>
-              {selectedDatasets.length === 0 ? (
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontStyle: 'italic' }}>
-                  Chon dataset de xem thong tin labels.
-                </Typography>
-              ) : loadingLabelsets ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CircularProgress size={16} sx={{ color: '#60a5fa' }} />
-                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Dang tai labels...</Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {selectedDatasets.map(dsId => {
-                    const info = datasetLabelsets[dsId] || {};
-                    const ds = datasets.find(d => d._id === dsId);
-                    return (
-                      <Box key={dsId} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#0f172a' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e' }} />
-                          <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{ds?.name || dsId}</Typography>
-                          <Chip label={(ds?.type || 'image').toUpperCase()} size="small" sx={{ bgcolor: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700, fontSize: '0.65rem', height: 18 }} />
-                        </Box>
-                        {info.subtopics && info.subtopics.length > 0 ? (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {info.subtopics.map((sub) => (
-                              <Box key={sub._id} sx={{ p: 1.2, borderRadius: 1, border: '1px solid #334155', bgcolor: '#1e293b' }}>
-                                {sub.topic && (
-                                  <Typography variant="caption" sx={{ color: '#a78bfa', fontWeight: 600, display: 'block', mb: 0.3 }}>
-                                    Topic: {sub.topic.name || sub.topic}
-                                  </Typography>
-                                )}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#3b82f6' }} />
-                                  <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{sub.name}</Typography>
-                                </Box>
-                                {sub.labelsets && sub.labelsets.length > 0 ? (
-                                  <Box sx={{ pl: 1.5 }}>
-                                    {sub.labelsets.map((ls, lsIdx) => (
-                                      <Box key={ls._id || lsIdx} sx={{ mb: 0.5 }}>
-                                        <Typography variant="caption" fontWeight={600} sx={{ color: '#60a5fa' }}>
-                                          LabelSet: {ls.name}
-                                        </Typography>
-                                        {ls.labels && ls.labels.length > 0 && (
-                                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.3, pl: 1 }}>
-                                            {ls.labels.map((lbl, lIdx) => (
-                                              <Chip
-                                                key={lbl._id || lIdx}
-                                                label={lbl.name || lbl}
-                                                size="small"
-                                                sx={{ bgcolor: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontWeight: 600, fontSize: '0.65rem', height: 18 }}
-                                              />
-                                            ))}
-                                          </Box>
-                                        )}
-                                      </Box>
-                                    ))}
-                                  </Box>
-                                ) : (
-                                  <Typography variant="caption" sx={{ color: '#f87171', pl: 1.5, fontStyle: 'italic' }}>
-                                    Khong co LabelSet nao
-                                  </Typography>
-                                )}
-                              </Box>
-                            ))}
-                          </Box>
-                        ) : (
-                          <Typography variant="caption" sx={{ color: '#f87171', pl: 2 }}>
-                            Khong co Subtopic nao. Dam bao Dataset da duoc gan Subtopic co LabelSet trong Topics.
-                          </Typography>
-                        )}
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
-            </Box>
+              {/* Dataset */}
+              <Section icon={<FolderIcon />} title="Chọn Dataset *"
+                subtitle={selectedDatasetId ? `✓ Đã chọn dataset` : 'Chọn 1 bộ ảnh cho project này'}>
+                <DatasetPicker datasets={datasets} selected={selectedDatasetId} onSelect={setSelectedDatasetId} />
+              </Section>
 
-            {/* Dataset Selection */}
-            <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h5">
-                  Chọn Dataset *
-                </Typography>
-                <Button
-                  size="small"
-                  startIcon={<RefreshIcon />}
-                  onClick={fetchDatasets}
-                  variant="outlined"
-                >
-                  Refresh
-                </Button>
-              </Box>
-              {lockDatasets && selectedDatasetObjects.length > 0 ? (
-                <Box sx={{ mt: 1 }}>
-                  <Alert severity="success" sx={{ mb: 2 }}>
-                    Datasets đã được chọn sẵn từ bước tạo dataset. Project này sẽ dùng {selectedDatasetObjects.length} dataset bên dưới.
-                  </Alert>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    {selectedDatasetObjects.map((ds) => (
-                      <Box key={ds._id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, border: '1px solid #334155', borderRadius: 2, bgcolor: '#0f172a' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2">{ds.name}</Typography>
-                          <Chip label={(ds.type || 'unknown').toUpperCase()} size="small" sx={{ bgcolor: '#1d4ed8', color: '#dbeafe' }} />
-                        </Box>
-                        <Chip label={`${ds.totalItems || 0} files`} size="small" />
+              {/* Labels */}
+              <Section icon={<LabelIcon />} title="Chọn nhãn"
+                subtitle={`${selectedLabelsetIds.length} nhãn được chọn`}>
+                <LabelPicker labels={masterLabels} selected={selectedLabelsetIds} onToggle={toggleLabel} />
+              </Section>
+            </Stack>
+          </Grid>
+
+          {/* ── Right col: people ── */}
+          <Grid item xs={12} lg={7}>
+            <Stack spacing={3}>
+              <Section icon={<PersonIcon />} title="Phân công Annotators *"
+                subtitle={`${selectedAnnotators.length}/${annotators.length} người được chọn`}>
+                <UserList
+                  users={filteredAnnotators}
+                  selected={selectedAnnotators}
+                  onToggle={toggleAnnotator}
+                  search={annoSearch}
+                  onSearch={setAnnoSearch}
+                  placeholder="Tìm annotator..."
+                />
+              </Section>
+
+              <Section icon={<GroupIcon />} title="Phân công Reviewers *"
+                subtitle={`${selectedReviewers.length}/${reviewers.length} người được chọn`}>
+                <UserList
+                  users={filteredReviewers}
+                  selected={selectedReviewers}
+                  onToggle={toggleReviewer}
+                  search={revSearch}
+                  onSearch={setRevSearch}
+                  placeholder="Tìm reviewer..."
+                />
+              </Section>
+
+              {/* Summary */}
+              <Card sx={{ bgcolor:'rgba(59,130,246,0.08)', border:`1px solid rgba(59,130,246,0.3)`, borderRadius:3 }}>
+                <CardContent sx={{ p:2.5 }}>
+                  <Typography sx={{ fontWeight:800, color:TEXT, mb:1.5 }}>📋 Tóm tắt</Typography>
+                  <Stack spacing={0.8}>
+                    {[
+                      { label:'Project name', value: form.name || '—' },
+                      { label:'Dataset', value: datasets.find(d=>coerceId(d)===selectedDatasetId)?.name || '—' },
+                      { label:'Labels', value: selectedLabelsetIds.length ? `${selectedLabelsetIds.length} nhãn` : '—' },
+                      { label:'Annotators', value: selectedAnnotators.length ? `${selectedAnnotators.length} người` : '—' },
+                      { label:'Reviewers', value: selectedReviewers.length ? `${selectedReviewers.length} người` : '—' },
+                      { label:'Deadline', value: form.deadline ? new Date(form.deadline).toLocaleString('vi-VN') : '—' },
+                    ].map(row => (
+                      <Box key={row.label} sx={{ display:'flex', gap:1 }}>
+                        <Typography sx={{ color:MUTED, fontSize:13, minWidth:110 }}>{row.label}:</Typography>
+                        <Typography sx={{ color:TEXT, fontSize:13, fontWeight:600 }}>{row.value}</Typography>
                       </Box>
                     ))}
-                    <Typography variant="caption" sx={{ color: '#94a3b8', mt: 1, display: 'block' }}>
-                      Chi 1 dataset duoc phep chon cho 1 project.
-                    </Typography>
-                  </Box>
-                  <Button size="small" sx={{ mt: 2, textTransform: 'none' }} onClick={() => setLockDatasets(false)}>
-                    Chọn dataset khác
-                  </Button>
-                </Box>
-              ) : (
-                <>
-                  <FormControl fullWidth>
-                    <InputLabel>Chọn Dataset *</InputLabel>
-                    <Select
-                      value={selectedDatasets[0] || ''}
-                      onChange={(e) => setSelectedDatasets(e.target.value ? [e.target.value] : [])}
-                      label="Chọn Dataset *"
-                    >
-                      {validDatasets.length === 0 ? (
-                        <MenuItem disabled>
-                          <Typography variant="body2" color="textSecondary">
-                            Không có dataset hợp lệ để chọn.
-                          </Typography>
-                        </MenuItem>
-                      ) : (
-                        validDatasets.map((dataset) => (
-                          <MenuItem key={dataset._id} value={dataset._id}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <span>{dataset.name}</span>
-                                <Chip label={(dataset.type || 'unknown').toUpperCase()} size="small" sx={{ bgcolor: '#1d4ed8', color: '#dbeafe' }} />
-                              </Box>
-                              <Chip label={`${dataset.totalItems || 0} files`} size="small" sx={{ ml: 1 }} />
-                            </Box>
-                          </MenuItem>
-                        ))
-                      )}
-                    </Select>
-                  </FormControl>
-
-                </>
-              )}
-              {datasets.length === 0 && (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  Chưa có dataset nào. Vui lòng{' '}
-                  <Button 
-                    size="small" 
-                    onClick={() => navigate('/manager/datasets')}
-                    sx={{ textTransform: 'none' }}
-                  >
-                    tạo dataset trước
-                  </Button>
-                </Alert>
-              )}
-            </Box>
-          </Grid>
-
-          {/* Right Column - Team Assignment */}
-          <Grid item xs={12} md={5}>
-            <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
-              Team Assignment
-            </Typography>
-            
-            <Grid container spacing={3}>
-              {/* Annotators */}
-              <Grid item xs={12}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h6">Annotators</Typography>
-                      <Chip label={`${selectedAnnotators.length} Selected`} color="primary" size="small" />
-                    </Box>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Search by name..."
-                      value={annotatorSearch}
-                      onChange={(e) => setAnnotatorSearch(e.target.value)}
-                      InputProps={{
-                        startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                      }}
-                      sx={{ mb: 2 }}
-                    />
-                    <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 1, p: 1 }}>
-                      {filteredAnnotators.length === 0 ? (
-                        <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {annotators.length === 0 
-                            ? 'Chưa có annotator nào. Vui lòng tạo annotator trước.' 
-                            : 'Không tìm thấy annotator.'}
-                        </Typography>
-                      ) : (
-                        filteredAnnotators.map((ann) => {
-                          const isSelected = selectedAnnotators.includes(ann._id);
-                          return (
-                            <Box
-                              key={ann._id}
-                              sx={{
-                                p: 1.5,
-                                mb: 1,
-                                bgcolor: isSelected ? 'action.selected' : 'background.paper',
-                                borderRadius: 1,
-                                cursor: 'pointer',
-                                '&:hover': { bgcolor: 'action.hover' },
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 1,
-                              }}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedAnnotators(selectedAnnotators.filter(id => id !== ann._id));
-                                } else {
-                                  setSelectedAnnotators([...selectedAnnotators, ann._id]);
-                                }
-                              }}
-                            >
-                              <Checkbox checked={isSelected} size="small" />
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2">
-                                  {ann.fullName || ann.username}
-                                </Typography>
-                                <Typography variant="caption" color="textSecondary">
-                                  {ann.email}
-                                </Typography>
-                              </Box>
-                              <Chip label="Active" color="success" size="small" />
-                            </Box>
-                          );
-                        })
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Reviewers */}
-              <Grid item xs={12}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h6">Reviewers</Typography>
-                      <Chip label={`${selectedReviewers.length} Selected`} color="success" size="small" />
-                    </Box>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Search by name..."
-                      value={reviewerSearch}
-                      onChange={(e) => setReviewerSearch(e.target.value)}
-                      InputProps={{
-                        startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                      }}
-                      sx={{ mb: 2 }}
-                    />
-                    <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 1, p: 1 }}>
-                      {filteredReviewers.length === 0 ? (
-                        <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {reviewers.length === 0 
-                            ? 'Chưa có reviewer nào. Vui lòng tạo reviewer trước.' 
-                            : 'Không tìm thấy reviewer.'}
-                        </Typography>
-                      ) : (
-                        filteredReviewers.map((rev) => {
-                          const isSelected = selectedReviewers.includes(rev._id);
-                          return (
-                            <Box
-                              key={rev._id}
-                              sx={{
-                                p: 1.5,
-                                mb: 1,
-                                bgcolor: isSelected ? 'action.selected' : 'background.paper',
-                                borderRadius: 1,
-                                cursor: 'pointer',
-                                '&:hover': { bgcolor: 'action.hover' },
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 1,
-                              }}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedReviewers(selectedReviewers.filter(id => id !== rev._id));
-                                } else {
-                                  setSelectedReviewers([...selectedReviewers, rev._id]);
-                                }
-                              }}
-                            >
-                              <Checkbox checked={isSelected} size="small" />
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2">
-                                  {rev.fullName || rev.username}
-                                </Typography>
-                                <Typography variant="caption" color="textSecondary">
-                                  {rev.email}
-                                </Typography>
-                              </Box>
-                              <Chip label="Active" color="success" size="small" />
-                            </Box>
-                          );
-                        })
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-
-            <Alert severity="info" sx={{ mt: 3 }}>
-              Tasks will be automatically distributed among the selected {selectedAnnotators.length} annotator(s) 
-              and reviewed by {selectedReviewers.length} reviewer(s).
-            </Alert>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
           </Grid>
         </Grid>
-      </Paper>
+      </Box>
 
-      <Snackbar
-        open={notification.open}
-        autoHideDuration={3000}
-        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
-          severity={notification.severity}
-          variant="filled"
-          sx={{ width: '100%', mt: 2 }}
-        >
-          {notification.message}
+      <Snackbar open={toast.open} autoHideDuration={3500} onClose={() => setToast(p=>({...p,open:false}))}
+        anchorOrigin={{ vertical:'bottom', horizontal:'right' }}>
+        <Alert severity={toast.sev} onClose={() => setToast(p=>({...p,open:false}))} sx={{ borderRadius:2 }}>
+          {toast.msg}
         </Alert>
       </Snackbar>
     </Box>
   );
-};
-
-export default CreateProject;
+}

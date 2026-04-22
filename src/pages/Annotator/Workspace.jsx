@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { normalizeTask } from '../../utils/taskAdapter';
 import ImageAnnotator from '../../components/ImageAnnotator';
 import AudioAnnotator from '../../components/AudioAnnotator';
 import {
@@ -12,11 +13,26 @@ import {
   Button,
   Typography,
 } from '@mui/material';
+import { getAuthHeaders } from '../../utils/auth';
 
-// Task kind detection
+const getTaskDataItem = (t) => {
+  return t?.dataItem || t?.data_item || t?.datasetItemId || t?.itemId || null;
+};
+
 const getTaskKind = (t) => {
-  const mt = (t?.dataItem?.mimeType || '').toLowerCase();
-  const fileName = (t?.dataItem?.originalName || t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
+  const item = getTaskDataItem(t);
+console.log('ITEM =', item);
+console.log('URL =', buildFileUrl(item));
+  const mt = (item?.mimeType || item?.mime_type || '').toLowerCase();
+
+  const fileName = (
+    item?.originalName ||
+    item?.original_name ||
+    item?.filename ||
+    item?.path ||
+    ''
+  ).toLowerCase();
+
   if (mt.startsWith('image/')) return 'image';
   if (mt.startsWith('audio/')) return 'audio';
   if (mt.startsWith('text/')) return 'text';
@@ -25,21 +41,39 @@ const getTaskKind = (t) => {
   if (mt === 'video/mp4' && /\.(mp4|m4a)$/i.test(fileName)) return 'audio';
   if (['application/json', 'application/xml', 'text/csv'].includes(mt)) return 'text';
   if (/\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+
   return 'other';
 };
 
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
+
+  const directUrl =
+    dataItem.signedUrl ||
+    dataItem.signed_url ||
+    dataItem.storageUrl ||
+    dataItem.storage_url ||
+    dataItem.url ||
+    '';
+
+  if (directUrl) return directUrl;
+
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const rawPath = dataItem.path || '';
-  const cleanPath = rawPath.replace(/^\/+/, '');
-  if (cleanPath) {
-    if (dataItem.filename && cleanPath.endsWith(dataItem.filename)) {
-      return `${baseUrl}/${cleanPath}`;
-    }
-    return dataItem.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
-  }
-  return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+
+  const rawPath = (
+    dataItem.path ||
+    dataItem.storagePath ||
+    dataItem.storage_path ||
+    dataItem.filename ||
+    dataItem.originalName ||
+    dataItem.original_name ||
+    ''
+  ).replace(/^\/+/, '');
+
+  if (!rawPath) return '';
+  if (/^https?:\/\//i.test(rawPath)) return rawPath;
+
+  return `${baseUrl}/${rawPath}`;
 };
 
 // Status configuration
@@ -48,6 +82,7 @@ const TASK_STATUS = {
   in_progress: { label: 'Dang lam', color: 'bg-blue-600', textColor: 'text-blue-300', dotColor: 'bg-blue-400' },
   completed: { label: 'Hoan thanh', color: 'bg-yellow-600', textColor: 'text-yellow-300', dotColor: 'bg-yellow-400' },
   submitted: { label: 'Da nop', color: 'bg-orange-600', textColor: 'text-orange-300', dotColor: 'bg-orange-400' },
+  resubmitted: { label: 'Da nop lai', color: 'bg-orange-700', textColor: 'text-orange-200', dotColor: 'bg-orange-500' },
   approved: { label: 'Da duyet', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
   rejected: { label: 'Bi tra lai', color: 'bg-rose-600', textColor: 'text-rose-300', dotColor: 'bg-rose-400' },
   revised: { label: 'Dang sua', color: 'bg-amber-600', textColor: 'text-amber-300', dotColor: 'bg-amber-400' },
@@ -63,7 +98,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
 
   const getStatusConfig = (status) => TASK_STATUS[status] || TASK_STATUS.assigned;
 
-  const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'approved'];
+  const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted', 'approved'];
   const sortedTasks = [...tasks].sort((a, b) => {
     const aP = priorityOrder.indexOf(a.status);
     const bP = priorityOrder.indexOf(b.status);
@@ -91,13 +126,13 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
       <div className="flex-1 overflow-y-auto">
         {sortedTasks.map((task, idx) => {
           const cfg = getStatusConfig(task.status);
-          const isActive = task._id === currentTaskId;
+          const isActive = task.id === currentTaskId;
           const filename = task.dataItem?.originalName || task.dataItem?.filename || `Item ${idx + 1}`;
           const kind = getTaskKind(task);
           return (
             <div
-              key={task._id}
-              onClick={() => onSelect(task._id)}
+              key={task.id}
+              onClick={() => onSelect(task.id)}
               className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-l-2 ${
                 isActive ? 'bg-blue-600/15 border-blue-500' : 'border-transparent hover:bg-gray-800/60 hover:border-gray-600'
               }`}
@@ -128,7 +163,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
 const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit, onReset, saving, savingMessage }) => {
   const [rightTab, setRightTab] = useState('info');
   const labels = task?.availableLabels || [];
-  const isReadOnly = task?.status === 'submitted' || task?.status === 'approved';
+  const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
   const feedback = task?.reviewComments || task?.rejectionReason || '';
   const subtopicGuideline = task?.subtopicId?.guideline || guideline || '';
@@ -288,7 +323,7 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
             </button>
           </>
         )}
-        {task?.status === 'submitted' && (
+        {['submitted', 'resubmitted'].includes(task?.status) && (
           <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-center">
             <p className="text-xs text-yellow-400 font-medium">Item dang cho reviewer duyet</p>
           </div>
@@ -348,6 +383,8 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
   };
 
   if (!task) {
+    console.log('TASK DATA ITEM =', task?.dataItem);
+console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-800">
         <div className="text-center">
@@ -364,15 +401,18 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
         <div className="mx-auto max-w-6xl rounded-xl border border-gray-700 bg-gray-900 p-4 md:p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-base font-semibold text-gray-200">Ghi nhan Hinh anh</h3>
-            <span className="text-xs text-gray-500">{task?.dataItem?.filename || 'Image file'}</span>
+            <span className="text-xs text-gray-500">{getTaskDataItem(task)?.filename ||
+  getTaskDataItem(task)?.originalName ||
+  getTaskDataItem(task)?.original_name ||
+  'Image file'}</span>
           </div>
           <ImageAnnotator
-            imageUrl={buildFileUrl(task.dataItem)}
-            labelSet={task?.availableLabels || []}
+  imageUrl={buildFileUrl(getTaskDataItem(task))}
+              labelSet={task?.availableLabels || []}
             questions={task?.projectId?.questions || []}
             onAnnotationsChange={onAnnotationsChange}
             initialAnnotations={annotations}
-            readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+            readOnly={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
           />
         </div>
       </div>
@@ -395,7 +435,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
               ref={textContainerRef}
               className="border border-gray-700 rounded-lg bg-gray-800 p-4 max-h-96 overflow-auto text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"
               onMouseUp={() => {
-                if (task?.status === 'submitted' || task?.status === 'approved') return;
+                if (['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
                 const selection = window.getSelection();
                 if (!selection || selection.rangeCount === 0) return;
                 const range = selection.getRangeAt(0);
@@ -456,7 +496,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: labelInfo?.color || '#3b82f6' }} />
                       <span className="text-xs font-semibold text-gray-300 shrink-0">{span.label}</span>
                       <span className="text-xs text-gray-500 truncate flex-1">"{span.text}"</span>
-                      {task?.status !== 'submitted' && task?.status !== 'approved' && (
+                      {!['submitted', 'resubmitted', 'approved'].includes(task?.status) && (
                         <button onClick={() => setTextSpans(textSpans.filter((s) => s.id !== span.id))} className="text-rose-400 hover:text-rose-300 text-sm font-bold px-1 shrink-0">x</button>
                       )}
                     </div>
@@ -471,7 +511,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
               className="w-full rounded-lg border border-gray-700 bg-gray-800 text-gray-200 placeholder-gray-600 px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition-all resize-none"
               rows={3} placeholder="Nhap ghi chu tong the (neu can)..." value={annotationNote}
               onChange={(e) => setAnnotationNote(e.target.value)}
-              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+              disabled={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             />
           </div>
         </div>
@@ -488,10 +528,9 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
             <span className="text-xs text-gray-500">{task?.dataItem?.filename || 'Audio file'}</span>
           </div>
           <AudioAnnotator
-            audioUrl={buildFileUrl(task?.dataItem)}
-            labelSet={task?.availableLabels || []}
+  audioUrl={buildFileUrl(getTaskDataItem(task))}            labelSet={task?.availableLabels || []}
             initialSegments={labels?.segments || []}
-            readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+            readOnly={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             onChange={(segs) => onLabelsChange({ ...labels, segments: segs })}
           />
           <div className="mt-4">
@@ -500,7 +539,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
               className="w-full rounded-lg border border-gray-700 bg-gray-800 text-gray-200 placeholder-gray-600 px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition-all resize-none"
               rows={4} placeholder="Nhap ghi chu..." value={annotationNote}
               onChange={(e) => setAnnotationNote(e.target.value)}
-              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+              disabled={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             />
           </div>
         </div>
@@ -557,20 +596,23 @@ const Workspace = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId } });
-      const taskList = res.data || [];
+      const taskList = (res.data.data || []).map(normalizeTask).filter((item) => {
+        const sid = item.subtopicId?.id || item.subtopicId || item.dataItem?.subtopicId;
+        return !subtopicId || sid === subtopicId;
+      });
       if (!isMountedRef.current) return;
       setTasks(taskList);
       if (taskList.length > 0) {
         const first = taskList[0];
-        setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || '' });
-        setProjectInfo({ name: first.projectId?.name || '', id: first.projectId?._id || '' });
+        setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || first.dataItem?.subtopic?.name || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || first.dataItem?.subtopic?.guideline || '' });
+        setProjectInfo({ name: first.projectId?.name || first.project?.name || '', id: first.projectId?.id || first.project?.id || '' });
       }
       if (initialTaskId) {
         setCurrentTaskId(initialTaskId);
       } else if (taskList.length > 0) {
-        const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted'];
+        const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted'];
         const next = taskList.find((t) => priorityOrder.includes(t.status));
-        setCurrentTaskId(next?._id || taskList[0]._id);
+        setCurrentTaskId(next?.id || taskList[0].id);
       }
     } catch (err) {
       console.error('Error loading tasks:', err);
@@ -585,16 +627,57 @@ const Workspace = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/api/tasks/${taskId}`);
-      const taskData = res.data;
+      const taskData = normalizeTask(res.data);
+      let mergedTaskData = { ...taskData };
+
+try {
+  const assetRes = await axios.get(
+    `${API_URL}/api/subtopics/${subtopicId}/assets`
+  );
+
+  const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
+
+  const matchedAsset = assets.find((a) => {
+    return (
+      a.id === taskData?.dataItem?.id ||
+      a.id === taskData?.data_item?.id ||
+      a.filename === taskData?.dataItem?.filename ||
+      a.filename === taskData?.data_item?.filename ||
+      a.original_name === taskData?.dataItem?.originalName ||
+      a.original_name === taskData?.data_item?.original_name ||
+      a.original_name === taskData?.dataItem?.filename ||
+      a.original_name === taskData?.data_item?.filename
+    );
+  });
+
+  if (matchedAsset) {
+    mergedTaskData = {
+      ...taskData,
+      dataItem: {
+        ...(getTaskDataItem(taskData) || {}),
+        ...matchedAsset,
+        originalName: matchedAsset.original_name,
+        mimeType: matchedAsset.mime_type,
+        storageUrl: matchedAsset.storage_url,
+      },
+    };
+  }
+} catch (err) {
+  console.error('Cannot load assets for subtopic:', err);
+}
       if (!isMountedRef.current) return;
-      setTask(taskData);
-      const initialLabels = taskData.labels || {};
+      setTask(mergedTaskData);
+      const initialLabels = mergedTaskData.labels || mergedTaskData.annotation_data || {};
+
       setLabels(initialLabels);
-      const kind = getTaskKind(taskData);
+      const kind = getTaskKind(mergedTaskData);
 
       if (kind === 'text') {
         try {
-          const textRes = await axios.get(buildFileUrl(taskData.dataItem), { responseType: 'text' });
+const textRes = await axios.get(
+  buildFileUrl(getTaskDataItem(taskData)),
+  { responseType: 'text' }
+);
           if (isMountedRef.current) { setTextContent(textRes.data || ''); taskData._textContent = textRes.data || ''; }
         } catch { if (isMountedRef.current) setTextContent(''); }
         if (isMountedRef.current) {
@@ -636,7 +719,7 @@ const Workspace = () => {
 
   // Poll for status updates when submitted
   useEffect(() => {
-    if (!task || task.status !== 'submitted') return;
+    if (!task || !['submitted', 'resubmitted'].includes(task?.status)) return;
     const interval = setInterval(() => {
       if (isMountedRef.current && currentTaskIdRef.current) loadTaskDetail(currentTaskIdRef.current);
     }, 5000);
@@ -650,61 +733,187 @@ const Workspace = () => {
   // Auto-save: clear previous timer and set new one (2s debounce)
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    if (!task || task.status === 'submitted' || task.status === 'approved') return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     autoSaveTimerRef.current = setTimeout(() => { handleSave(); }, 2000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [annotations, textSpans, annotationNote]);
 
-  const handleSave = useCallback(async () => {
-    if (!task) return;
-    try {
-      const kind = getTaskKind(task);
-      let labelsPayload = {};
-      if (kind === 'image') labelsPayload = { objects: annotations.map((ann) => ({ label: ann.label, bbox: ann.bbox, confidence: ann.confidence, answer: ann.answer || null })) };
-      else if (kind === 'text') labelsPayload = { spans: textSpans.map(({ id, ...rest }) => rest), note: annotationNote?.trim() || '' };
-      else if (kind === 'audio') labelsPayload = { segments: labels.segments || [], note: annotationNote?.trim() || '' };
-      else labelsPayload = { note: annotationNote?.trim() || '', label: labels.label || '' };
-      await axios.put(`${API_URL}/api/tasks/${task._id}/label`, { labels: labelsPayload });
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'in_progress' } : t));
-    } catch { /* silent auto-save */ }
-  }, [task, annotations, labels, textSpans, annotationNote]);
+const handleSave = useCallback(async () => {
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
-  const handleComplete = useCallback(async () => {
-    if (!task) return;
+  try {
     const kind = getTaskKind(task);
-    if (kind === 'image' && annotations.length === 0) { alert('Vui long them it nhat mot nhan truoc khi hoan thanh.'); return; }
-    if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) { alert('Vui long ghi nhan it nhat mot phan hoac them ghi chu.'); return; }
-    if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) { alert('Vui long ghi nhan it nhat mot doan.'); return; }
-    setSaving(true);
-    try {
-      await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'completed' } : t));
-      setTask((prev) => prev ? { ...prev, status: 'completed' } : null);
-      setSavingMessage('Da danh dau hoan thanh!');
-      setTimeout(() => setSavingMessage(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
-    finally { setSaving(false); }
-  }, [task, annotations, labels, textSpans, annotationNote, handleSave]);
+    let labelsPayload = {};
+
+    if (kind === 'image') {
+      labelsPayload = {
+        objects: annotations.map((ann) => ({
+          label: ann.label,
+          bbox: ann.bbox,
+          confidence: ann.confidence,
+          answer: ann.answer || null,
+        })),
+      };
+    } else if (kind === 'text') {
+      labelsPayload = {
+        spans: textSpans.map(({ id, ...rest }) => rest),
+        note: annotationNote?.trim() || '',
+      };
+    } else if (kind === 'audio') {
+      labelsPayload = {
+        segments: labels.segments || [],
+        note: annotationNote?.trim() || '',
+      };
+    } else {
+      labelsPayload = {
+        note: annotationNote?.trim() || '',
+        label: labels.label || '',
+      };
+    }
+
+    await axios.put(
+      `${API_URL}/api/tasks/${task.id}/save`,
+      { annotation_data: labelsPayload },
+      { headers: getAuthHeaders() }
+    );
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        (t.id === task.id && (t.status === 'assigned' || t.status === 'rejected')) ? { ...t, status: 'in_progress' } : t
+      )
+    );
+
+    setTask((prev) =>
+      (prev && (prev.status === 'assigned' || prev.status === 'rejected')) ? { ...prev, status: 'in_progress' } : prev
+    );
+  } catch (err) {
+    console.error('Save failed:', err?.response?.data || err);
+  }
+}, [task, annotations, labels, textSpans, annotationNote]);
+
+const handleComplete = useCallback(async () => {
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
+
+  const kind = getTaskKind(task);
+
+  if (kind === 'image' && annotations.length === 0) {
+    alert('Vui long them it nhat mot nhan truoc khi hoan thanh.');
+    return;
+  }
+
+  if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) {
+    alert('Vui long ghi nhan it nhat mot phan hoac them ghi chu.');
+    return;
+  }
+
+  if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) {
+    alert('Vui long ghi nhan it nhat mot doan.');
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+    // 1) Start task nếu đang assigned hoặc rejected
+    if (task.status === 'assigned' || task.status === 'rejected') {
+      await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, status: 'in_progress' } : t
+        )
+      );
+
+      setTask((prev) =>
+        prev ? { ...prev, status: 'in_progress' } : prev
+      );
+    }
+
+    // 2) Save
+    await handleSave();
+
+    // 3) Submit
+    await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: 'submitted' } : t
+      )
+    );
+
+    setTask((prev) =>
+      prev ? { ...prev, status: 'submitted' } : null
+    );
+
+    setSavingMessage('Da danh dau hoan thanh!');
+    setTimeout(() => setSavingMessage(''), 3000);
+  } catch (err) {
+    alert('Loi: ' + (err.response?.data?.message || err.message));
+  } finally {
+    setSaving(false);
+  }
+}, [task, annotations, labels, textSpans, annotationNote, handleSave]);
 
   const handleSubmit = useCallback(async () => { if (!task) return; setShowSubmitConfirm(true); }, [task]);
 
-  const handleConfirmSubmit = useCallback(async () => {
-    if (!task) return;
-    setShowSubmitConfirm(false); setSaving(true);
-    try {
-      await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
-      setTasks((prev) => prev.map((t) => t._id === task._id ? { ...t, status: 'submitted' } : t));
-      setTask((prev) => prev ? { ...prev, status: 'submitted' } : null);
-      setSavingMessage('Da nop thanh cong!');
-      setTimeout(() => setSavingMessage(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
-    finally { setSaving(false); }
-  }, [task, handleSave]);
+const handleConfirmSubmit = useCallback(async () => {
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
+
+  setShowSubmitConfirm(false);
+  setSaving(true);
+
+  try {
+    // 1) Lấy status thật từ backend
+    const latestRes = await axios.get(`${API_URL}/api/tasks/${task.id}`, {
+      headers: getAuthHeaders(),
+    });
+
+    const latestTask = normalizeTask(latestRes.data);
+    const backendStatus = latestTask?.status;
+
+    console.log('BACKEND STATUS BEFORE SUBMIT =', backendStatus);
+
+    // 2) Nếu backend vẫn là assigned hoặc rejected thì start thật trên server
+    if (backendStatus === 'assigned' || backendStatus === 'rejected') {
+      await axios.put(
+        `${API_URL}/api/tasks/${task.id}/start`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+    }
+
+    // 3) Save draft
+    await handleSave();
+
+    // 4) Submit
+    await axios.post(
+      `${API_URL}/api/tasks/${task.id}/submit`,
+      {},
+      { headers: getAuthHeaders() }
+    );
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: 'submitted' } : t
+      )
+    );
+
+    setTask((prev) =>
+      prev ? { ...prev, status: 'submitted' } : prev
+    );
+
+    setSavingMessage('Da nop thanh cong!');
+    setTimeout(() => setSavingMessage(''), 3000);
+  } catch (err) {
+    console.error('Submit failed:', err?.response?.data || err);
+    alert('Loi: ' + (err.response?.data?.message || err.message));
+  } finally {
+    setSaving(false);
+  }
+}, [task, handleSave]);
 
   const handleReset = useCallback(() => {
-    if (!task) return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     const kind = getTaskKind(task);
     if (kind === 'image') setAnnotations([]);
     if (kind === 'text') { setTextSpans([]); setAnnotationNote(''); }
@@ -718,9 +927,9 @@ const Workspace = () => {
   }, [subtopicId, navigate]);
 
   const handleNavigateTask = useCallback((direction) => {
-    const currentIdx = tasks.findIndex((t) => t._id === currentTaskId);
-    if (direction === 'prev' && currentIdx > 0) handleTaskSelect(tasks[currentIdx - 1]._id);
-    else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1]._id);
+    const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
+    if (direction === 'prev' && currentIdx > 0) handleTaskSelect(tasks[currentIdx - 1].id);
+    else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1].id);
   }, [tasks, currentTaskId, handleTaskSelect]);
 
   // Keyboard shortcuts
@@ -728,8 +937,8 @@ const Workspace = () => {
     if (loading) return;
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') handleSave(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') handleSubmit(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSave(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSubmit(); }
       if (e.key === 'ArrowLeft') handleNavigateTask('prev');
       if (e.key === 'ArrowRight') handleNavigateTask('next');
     };
@@ -737,8 +946,8 @@ const Workspace = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [loading, saving, task?.status, handleSave, handleSubmit, handleNavigateTask]);
 
-  const currentIdx = tasks.findIndex((t) => t._id === currentTaskId);
-  const completedCount = tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length;
+  const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
+  const completedCount = tasks.filter((t) => ['submitted', 'resubmitted', 'approved'].includes(t.status)).length;
   const pct = tasks.length > 0 ? Math.round(((currentIdx + 1) / tasks.length) * 100) : 0;
   const taskWithContent = task ? { ...task, _textContent: textContent } : null;
 
@@ -787,7 +996,7 @@ const Workspace = () => {
               {task?.status === 'approved' && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/30">Da duyet</span>
               )}
-              {task?.status === 'submitted' && (
+              {['submitted', 'resubmitted'].includes(task?.status) && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-medium text-yellow-400 border border-yellow-500/30">Dang cho review</span>
               )}
             </div>

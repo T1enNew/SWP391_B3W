@@ -105,11 +105,11 @@ const Login = () => {
           </Typography>
           <Box sx={{ display: 'flex', gap: 8, mt: 5 }}>
             <Box>
-              <Typography sx={{ color: '#22d3ee', fontSize: 42, fontWeight: 800 }}>TEAM8</Typography>
+              <Typography sx={{ color: '#22d3ee', fontSize: 42, fontWeight: 800 }}>TEAM_4</Typography>
               <Typography sx={{ color: '#94a3b8', letterSpacing: 2 }}>Data Labeling</Typography>
             </Box>
             <Box>
-              <Typography sx={{ color: '#22d3ee', fontSize: 42, fontWeight: 800 }}>WDP301</Typography>
+              <Typography sx={{ color: '#22d3ee', fontSize: 42, fontWeight: 800 }}>SWP</Typography>
               <Typography sx={{ color: '#94a3b8', letterSpacing: 2 }}>Support System</Typography>
             </Box>
           </Box>
