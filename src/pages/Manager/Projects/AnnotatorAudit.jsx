@@ -27,8 +27,13 @@ import {
   Pending as PendingIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
-import AudioAnnotator from '../../components/AudioAnnotator';
-import { API_URL } from '../../config/api';
+import AudioAnnotator from '../../../components/AudioAnnotator';
+import { API_URL } from '../../../config/api';
+
+const getAuthHeaders = () => {
+  const token = sessionStorage.getItem('token') || localStorage.getItem('token') || '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 const AnnotatorAuditDetail = () => {
   const { projectId, annotatorId } = useParams();
@@ -70,15 +75,20 @@ const AnnotatorAuditDetail = () => {
     try {
       setLoading(true);
       const [projectRes, annotatorRes, tasksRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects/${projectId}`),
-        axios.get(`${API_URL}/api/users/${annotatorId}`),
-        axios.get(`${API_URL}/api/tasks/my-tasks`),
+        axios.get(`${API_URL}/api/projects/${projectId}`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/users/${annotatorId}`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/tasks/project/${projectId}`, { headers: getAuthHeaders() }),
       ]);
 
-      setProject(projectRes.data);
+      setProject(projectRes.data?.project || projectRes.data);
       setAnnotator(annotatorRes.data?.user || annotatorRes.data);
-      const projectTasks = (tasksRes.data?.data || []).filter(
-        (t) => t.project?.id === projectId && t.annotator?.id === annotatorId
+      
+      const rawTasks = Array.isArray(tasksRes.data) 
+        ? tasksRes.data 
+        : (tasksRes.data?.data || tasksRes.data?.tasks || []);
+
+      const projectTasks = rawTasks.filter(
+        (t) => (t.annotator?.id || t.annotatorId || t.annotator?._id) === annotatorId
       );
       setTasks(projectTasks);
     } catch (error) {

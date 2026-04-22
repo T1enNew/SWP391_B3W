@@ -14,7 +14,11 @@ import {
   DialogTitle,
   Grid,
   IconButton,
+  FormControl,
+  InputLabel,
   LinearProgress,
+  MenuItem,
+  Select,
   Snackbar,
   Stack,
   TextField,
@@ -32,8 +36,8 @@ import {
   CheckCircle as CheckCircleIcon,
   InsertDriveFile as FileIcon,
 } from '@mui/icons-material';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
 
 /* ─── THEME TOKENS ─────────────────────────────────────── */
 const BG       = '#080f1e';
@@ -116,6 +120,7 @@ export default function Datasets() {
 
   /* list state */
   const [datasets, setDatasets]   = useState([]);
+  const [topics, setTopics]       = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
   const [error, setError]         = useState('');
@@ -123,7 +128,7 @@ export default function Datasets() {
 
   /* create-dataset dialog */
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ name:'', description:'' });
+  const [createForm, setCreateForm] = useState({ name:'', description:'', topic_id:'' });
   const [creating, setCreating]     = useState(false);
 
   /* detail panel (right side) */
@@ -151,6 +156,15 @@ export default function Datasets() {
     }
   }, []);
 
+  const fetchTopics = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/topics`, { headers: getAuthHeaders() });
+      setTopics(getArray(res.data));
+    } catch (e) {
+      console.error('Failed to fetch topics:', e);
+    }
+  }, []);
+
   const fetchDatasetItems = useCallback(async (ds) => {
     if (!ds) return;
     setItemsLoading(true);
@@ -167,7 +181,10 @@ export default function Datasets() {
     }
   }, []);
 
-  useEffect(() => { fetchDatasets(); }, [fetchDatasets]);
+  useEffect(() => { 
+    fetchDatasets();
+    fetchTopics();
+  }, [fetchDatasets, fetchTopics]);
 
   useEffect(() => {
     if (selectedDs) fetchDatasetItems(selectedDs);
@@ -190,12 +207,11 @@ export default function Datasets() {
         name: createForm.name.trim(), 
         description: createForm.description.trim(), 
         type: 'image',
-        // The backend requires a valid UUID format for topic_id, even if the topic table doesn't exist anymore
-        topic_id: crypto.randomUUID()
+        topic_id: createForm.topic_id || null
       };
       await axios.post(`${API_URL}/api/datasets`, payload, { headers: getAuthHeaders() });
       setCreateOpen(false);
-      setCreateForm({ name:'', description:'' });
+      setCreateForm({ name:'', description:'', topic_id:'' });
       await fetchDatasets();
       showToast('Tạo dataset thành công');
     } catch (e) {
@@ -543,6 +559,21 @@ export default function Datasets() {
             <TextField fullWidth label="Mô tả" multiline minRows={3} value={createForm.description}
               onChange={e => setCreateForm(p => ({ ...p, description: e.target.value }))}
               placeholder="Mô tả ngắn về bộ dữ liệu này..." sx={inputSx} />
+            
+            <FormControl fullWidth sx={inputSx}>
+              <InputLabel id="topic-select-label">Topic (Phân loại) *</InputLabel>
+              <Select
+                labelId="topic-select-label"
+                value={createForm.topic_id}
+                label="Topic (Phân loại) *"
+                onChange={e => setCreateForm(p => ({ ...p, topic_id: e.target.value }))}
+              >
+                {topics.length === 0 && <MenuItem disabled value=""><em>Không có topic nào</em></MenuItem>}
+                {topics.map(t => (
+                  <MenuItem key={t.id || t._id} value={t.id || t._id}>{t.name || t.title}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ borderTop:`1px solid ${BORDER}`, px:3, py:2, gap:1 }}>

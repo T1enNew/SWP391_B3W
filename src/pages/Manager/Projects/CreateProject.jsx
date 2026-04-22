@@ -10,8 +10,8 @@ import {
   Search as SearchIcon, Person as PersonIcon, Group as GroupIcon,
   FolderOpen as FolderIcon, Label as LabelIcon,
 } from '@mui/icons-material';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
 
 /* ─── THEME ── */
 const BG='#080f1e', PANEL='#0f1a2e', CARD='#131f35', BORDER='#1e2d47';
@@ -175,7 +175,7 @@ export default function CreateProject() {
   const [selectedDatasetId, setSelectedDatasetId]     = useState('');
   const [selectedLabelsetIds, setSelectedLabelsetIds] = useState([]);
   const [selectedAnnotators, setSelectedAnnotators]   = useState([]);
-  const [selectedReviewers, setSelectedReviewers]     = useState([]);
+  const [selectedReviewer, setSelectedReviewer]       = useState('');
   const [annoSearch, setAnnoSearch] = useState('');
   const [revSearch, setRevSearch]   = useState('');
 
@@ -223,7 +223,7 @@ export default function CreateProject() {
   }, [reviewers, revSearch]);
 
   const toggleAnnotator = id => setSelectedAnnotators(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
-  const toggleReviewer  = id => setSelectedReviewers(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleReviewer  = id => setSelectedReviewer(prev => prev === id ? '' : id);
   const toggleLabel     = id => setSelectedLabelsetIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
 
   const handleCreate = async () => {
@@ -231,7 +231,7 @@ export default function CreateProject() {
       showToast('Vui lòng điền đủ tên project, deadline và chọn 1 dataset', 'warning');
       return;
     }
-    if (!selectedAnnotators.length || !selectedReviewers.length) {
+    if (!selectedAnnotators.length || !selectedReviewer) {
       showToast('Vui lòng chọn ít nhất 1 Annotator và 1 Reviewer', 'warning');
       return;
     }
@@ -256,7 +256,7 @@ export default function CreateProject() {
         },
         dataset_id: selectedDatasetId,
         annotator_ids: selectedAnnotators,
-        reviewer_ids: selectedReviewers,
+        reviewer_id: selectedReviewer,
       };
       const res = await axios.post(`${API_URL}/api/projects`, payload, { headers:getAuthHeaders() });
       const project = res.data?.project || res.data;
@@ -381,10 +381,10 @@ export default function CreateProject() {
               </Section>
 
               <Section icon={<GroupIcon />} title="Phân công Reviewers *"
-                subtitle={`${selectedReviewers.length}/${reviewers.length} người được chọn`}>
+                subtitle={selectedReviewer ? `1/${reviewers.length} người được chọn` : `0/${reviewers.length} người được chọn`}>
                 <UserList
                   users={filteredReviewers}
-                  selected={selectedReviewers}
+                  selected={selectedReviewer ? [selectedReviewer] : []}
                   onToggle={toggleReviewer}
                   search={revSearch}
                   onSearch={setRevSearch}
@@ -402,7 +402,7 @@ export default function CreateProject() {
                       { label:'Dataset', value: datasets.find(d=>coerceId(d)===selectedDatasetId)?.name || '—' },
                       { label:'Labels', value: selectedLabelsetIds.length ? `${selectedLabelsetIds.length} nhãn` : '—' },
                       { label:'Annotators', value: selectedAnnotators.length ? `${selectedAnnotators.length} người` : '—' },
-                      { label:'Reviewers', value: selectedReviewers.length ? `${selectedReviewers.length} người` : '—' },
+                      { label:'Reviewer', value: selectedReviewer ? `1 người` : '—' },
                       { label:'Deadline', value: form.deadline ? new Date(form.deadline).toLocaleString('vi-VN') : '—' },
                     ].map(row => (
                       <Box key={row.label} sx={{ display:'flex', gap:1 }}>

@@ -29,8 +29,8 @@ import {
   Upload as UploadIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('token');
