@@ -34,9 +34,9 @@ const AnnotatorOverview = () => {
         const total = tasks.length;
         const completed = tasks.filter(t => t.status === 'approved').length;
         const inProgress = tasks.filter(t =>
-          ['in_progress', 'completed', 'assigned', 'revised'].includes(t.status)
+          ['assigned', 'in_progress', 'completed', 'revised', 'rejected'].includes(t.status)
         ).length;
-        const submitted = tasks.filter(t => t.status === 'submitted').length;
+        const submitted = tasks.filter(t => ['submitted', 'resubmitted'].includes(t.status)).length;
         const overdue = tasks.filter(t =>
           t.projectId?.deadline &&
           new Date(t.projectId.deadline) < now &&

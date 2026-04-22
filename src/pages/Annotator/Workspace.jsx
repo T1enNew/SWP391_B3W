@@ -82,6 +82,7 @@ const TASK_STATUS = {
   in_progress: { label: 'Dang lam', color: 'bg-blue-600', textColor: 'text-blue-300', dotColor: 'bg-blue-400' },
   completed: { label: 'Hoan thanh', color: 'bg-yellow-600', textColor: 'text-yellow-300', dotColor: 'bg-yellow-400' },
   submitted: { label: 'Da nop', color: 'bg-orange-600', textColor: 'text-orange-300', dotColor: 'bg-orange-400' },
+  resubmitted: { label: 'Da nop lai', color: 'bg-orange-700', textColor: 'text-orange-200', dotColor: 'bg-orange-500' },
   approved: { label: 'Da duyet', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
   rejected: { label: 'Bi tra lai', color: 'bg-rose-600', textColor: 'text-rose-300', dotColor: 'bg-rose-400' },
   revised: { label: 'Dang sua', color: 'bg-amber-600', textColor: 'text-amber-300', dotColor: 'bg-amber-400' },
@@ -97,7 +98,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
 
   const getStatusConfig = (status) => TASK_STATUS[status] || TASK_STATUS.assigned;
 
-  const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'approved'];
+  const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted', 'approved'];
   const sortedTasks = [...tasks].sort((a, b) => {
     const aP = priorityOrder.indexOf(a.status);
     const bP = priorityOrder.indexOf(b.status);
@@ -162,7 +163,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
 const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit, onReset, saving, savingMessage }) => {
   const [rightTab, setRightTab] = useState('info');
   const labels = task?.availableLabels || [];
-  const isReadOnly = task?.status === 'submitted' || task?.status === 'approved';
+  const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
   const feedback = task?.reviewComments || task?.rejectionReason || '';
   const subtopicGuideline = task?.subtopicId?.guideline || guideline || '';
@@ -322,7 +323,7 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
             </button>
           </>
         )}
-        {task?.status === 'submitted' && (
+        {['submitted', 'resubmitted'].includes(task?.status) && (
           <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-center">
             <p className="text-xs text-yellow-400 font-medium">Item dang cho reviewer duyet</p>
           </div>
@@ -411,7 +412,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
             questions={task?.projectId?.questions || []}
             onAnnotationsChange={onAnnotationsChange}
             initialAnnotations={annotations}
-            readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+            readOnly={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
           />
         </div>
       </div>
@@ -434,7 +435,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
               ref={textContainerRef}
               className="border border-gray-700 rounded-lg bg-gray-800 p-4 max-h-96 overflow-auto text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"
               onMouseUp={() => {
-                if (task?.status === 'submitted' || task?.status === 'approved') return;
+                if (['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
                 const selection = window.getSelection();
                 if (!selection || selection.rangeCount === 0) return;
                 const range = selection.getRangeAt(0);
@@ -495,7 +496,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: labelInfo?.color || '#3b82f6' }} />
                       <span className="text-xs font-semibold text-gray-300 shrink-0">{span.label}</span>
                       <span className="text-xs text-gray-500 truncate flex-1">"{span.text}"</span>
-                      {task?.status !== 'submitted' && task?.status !== 'approved' && (
+                      {!['submitted', 'resubmitted', 'approved'].includes(task?.status) && (
                         <button onClick={() => setTextSpans(textSpans.filter((s) => s.id !== span.id))} className="text-rose-400 hover:text-rose-300 text-sm font-bold px-1 shrink-0">x</button>
                       )}
                     </div>
@@ -510,7 +511,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
               className="w-full rounded-lg border border-gray-700 bg-gray-800 text-gray-200 placeholder-gray-600 px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition-all resize-none"
               rows={3} placeholder="Nhap ghi chu tong the (neu can)..." value={annotationNote}
               onChange={(e) => setAnnotationNote(e.target.value)}
-              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+              disabled={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             />
           </div>
         </div>
@@ -529,7 +530,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
           <AudioAnnotator
   audioUrl={buildFileUrl(getTaskDataItem(task))}            labelSet={task?.availableLabels || []}
             initialSegments={labels?.segments || []}
-            readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+            readOnly={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             onChange={(segs) => onLabelsChange({ ...labels, segments: segs })}
           />
           <div className="mt-4">
@@ -538,7 +539,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
               className="w-full rounded-lg border border-gray-700 bg-gray-800 text-gray-200 placeholder-gray-600 px-3 py-2 text-sm focus:outline-none focus:border-blue-500/50 transition-all resize-none"
               rows={4} placeholder="Nhap ghi chu..." value={annotationNote}
               onChange={(e) => setAnnotationNote(e.target.value)}
-              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+              disabled={['submitted', 'resubmitted', 'approved'].includes(task?.status)}
             />
           </div>
         </div>
@@ -609,7 +610,7 @@ const Workspace = () => {
       if (initialTaskId) {
         setCurrentTaskId(initialTaskId);
       } else if (taskList.length > 0) {
-        const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted'];
+        const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted'];
         const next = taskList.find((t) => priorityOrder.includes(t.status));
         setCurrentTaskId(next?.id || taskList[0].id);
       }
@@ -718,7 +719,7 @@ const textRes = await axios.get(
 
   // Poll for status updates when submitted
   useEffect(() => {
-    if (!task || task.status !== 'submitted') return;
+    if (!task || !['submitted', 'resubmitted'].includes(task?.status)) return;
     const interval = setInterval(() => {
       if (isMountedRef.current && currentTaskIdRef.current) loadTaskDetail(currentTaskIdRef.current);
     }, 5000);
@@ -732,13 +733,13 @@ const textRes = await axios.get(
   // Auto-save: clear previous timer and set new one (2s debounce)
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    if (!task || task.status === 'submitted' || task.status === 'approved') return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     autoSaveTimerRef.current = setTimeout(() => { handleSave(); }, 2000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [annotations, textSpans, annotationNote]);
 
 const handleSave = useCallback(async () => {
-  if (!task) return;
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
   try {
     const kind = getTaskKind(task);
@@ -778,12 +779,12 @@ const handleSave = useCallback(async () => {
 
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === task.id ? { ...t, status: 'in_progress' } : t
+        (t.id === task.id && (t.status === 'assigned' || t.status === 'rejected')) ? { ...t, status: 'in_progress' } : t
       )
     );
 
     setTask((prev) =>
-      prev ? { ...prev, status: 'in_progress' } : prev
+      (prev && (prev.status === 'assigned' || prev.status === 'rejected')) ? { ...prev, status: 'in_progress' } : prev
     );
   } catch (err) {
     console.error('Save failed:', err?.response?.data || err);
@@ -791,7 +792,7 @@ const handleSave = useCallback(async () => {
 }, [task, annotations, labels, textSpans, annotationNote]);
 
 const handleComplete = useCallback(async () => {
-  if (!task) return;
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
   const kind = getTaskKind(task);
 
@@ -856,7 +857,7 @@ const handleComplete = useCallback(async () => {
   const handleSubmit = useCallback(async () => { if (!task) return; setShowSubmitConfirm(true); }, [task]);
 
 const handleConfirmSubmit = useCallback(async () => {
-  if (!task) return;
+  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
   setShowSubmitConfirm(false);
   setSaving(true);
@@ -912,7 +913,7 @@ const handleConfirmSubmit = useCallback(async () => {
 }, [task, handleSave]);
 
   const handleReset = useCallback(() => {
-    if (!task) return;
+    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     const kind = getTaskKind(task);
     if (kind === 'image') setAnnotations([]);
     if (kind === 'text') { setTextSpans([]); setAnnotationNote(''); }
@@ -936,8 +937,8 @@ const handleConfirmSubmit = useCallback(async () => {
     if (loading) return;
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') handleSave(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') handleSubmit(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSave(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSubmit(); }
       if (e.key === 'ArrowLeft') handleNavigateTask('prev');
       if (e.key === 'ArrowRight') handleNavigateTask('next');
     };
@@ -946,7 +947,7 @@ const handleConfirmSubmit = useCallback(async () => {
   }, [loading, saving, task?.status, handleSave, handleSubmit, handleNavigateTask]);
 
   const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
-  const completedCount = tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length;
+  const completedCount = tasks.filter((t) => ['submitted', 'resubmitted', 'approved'].includes(t.status)).length;
   const pct = tasks.length > 0 ? Math.round(((currentIdx + 1) / tasks.length) * 100) : 0;
   const taskWithContent = task ? { ...task, _textContent: textContent } : null;
 
@@ -995,7 +996,7 @@ const handleConfirmSubmit = useCallback(async () => {
               {task?.status === 'approved' && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/30">Da duyet</span>
               )}
-              {task?.status === 'submitted' && (
+              {['submitted', 'resubmitted'].includes(task?.status) && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-medium text-yellow-400 border border-yellow-500/30">Dang cho review</span>
               )}
             </div>

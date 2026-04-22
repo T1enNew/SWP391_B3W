@@ -2,301 +2,427 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Checkbox,
-  CircularProgress,
-  Grid,
-  IconButton,
-  MenuItem,
-  Select,
-  Snackbar,
-  Stack,
-  TextField,
-  Typography,
+  Alert, Box, Button, Card, CardContent, Checkbox, CircularProgress,
+  Grid, IconButton, Snackbar, Stack, TextField, Typography, Chip,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
-  CheckCircle as CheckCircleIcon,
-  Refresh as RefreshIcon,
-  Search as SearchIcon,
+  ArrowBack as ArrowBackIcon, CheckCircle as CheckCircleIcon,
+  Search as SearchIcon, Person as PersonIcon, Group as GroupIcon,
+  FolderOpen as FolderIcon, Label as LabelIcon,
 } from '@mui/icons-material';
 import { API_URL } from '../../config/api';
 import { getArray } from '../../utils/api';
 
+/* ─── THEME ── */
+const BG='#080f1e', PANEL='#0f1a2e', CARD='#131f35', BORDER='#1e2d47';
+const PRIMARY='#3b82f6', TEXT='#e2e8f0', MUTED='#64748b';
+
 const getAuthHeaders = () => {
-  const token = sessionStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const t = sessionStorage.getItem('token') || '';
+  return t ? { Authorization: `Bearer ${t}` } : {};
 };
+const coerceId = o => o?._id || o?.id || '';
+const normalizeUser = u => ({
+  ...u, id: coerceId(u) || u?.user_id,
+  fullName: u?.full_name || u?.fullName || u?.username || u?.email || 'User',
+});
 
 const inputSx = {
   '& .MuiOutlinedInput-root': {
-    bgcolor: '#0f172a',
-    color: '#e2e8f0',
-    borderRadius: '10px',
-    '& fieldset': { borderColor: '#475569' },
-    '&:hover fieldset': { borderColor: '#64748b' },
-    '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
+    bgcolor:'#08121f', color:TEXT, borderRadius:'10px',
+    '& fieldset':{ borderColor:BORDER },
+    '&:hover fieldset':{ borderColor:'#2d4060' },
+    '&.Mui-focused fieldset':{ borderColor:PRIMARY },
   },
-  '& .MuiInputLabel-root': { color: '#94a3b8' },
+  '& .MuiInputLabel-root':{ color:MUTED },
 };
 
-const normalizeId = (v) => typeof v === 'string' ? v : v?.id || v?._id || v?.user_id || v?.dataset_id || null;
-const normalizeDataset = (d) => ({ ...d, id: d?.id || d?._id, name: d?.name || 'Dataset', project_id: d?.project_id || null });
-const normalizeUser = (u) => ({ ...u, id: u?.id || u?._id || u?.user_id, fullName: u?.fullName || u?.full_name || u?.username || u?.email || 'User', is_active: u?.is_active ?? true });
+/* ── Section card wrapper ── */
+const Section = ({ icon, title, subtitle, children }) => (
+  <Card sx={{ bgcolor:PANEL, border:`1px solid ${BORDER}`, borderRadius:3, color:TEXT }}>
+    <CardContent sx={{ p:3 }}>
+      <Box sx={{ display:'flex', alignItems:'center', gap:1.5, mb:2.5, pb:2, borderBottom:`1px solid ${BORDER}` }}>
+        <Box sx={{ color:PRIMARY }}>{icon}</Box>
+        <Box>
+          <Typography sx={{ fontWeight:800, fontSize:16 }}>{title}</Typography>
+          {subtitle && <Typography sx={{ color:MUTED, fontSize:13 }}>{subtitle}</Typography>}
+        </Box>
+      </Box>
+      {children}
+    </CardContent>
+  </Card>
+);
+
+/* ── User checkbox list ── */
+const UserList = ({ users, selected, onToggle, search, onSearch, placeholder }) => (
+  <Stack spacing={1.5}>
+    <TextField size="small" placeholder={placeholder} value={search} onChange={e => onSearch(e.target.value)}
+      sx={inputSx} InputProps={{ startAdornment: <SearchIcon sx={{ color:MUTED, mr:1, fontSize:18 }} /> }} />
+    <Box sx={{ maxHeight:280, overflowY:'auto', display:'flex', flexDirection:'column', gap:0.8 }}>
+      {users.length === 0 && <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>Không có người dùng</Typography>}
+      {users.map(u => {
+        const checked = selected.includes(u.id);
+        return (
+          <Box key={u.id} onClick={() => onToggle(u.id)}
+            sx={{
+              display:'flex', alignItems:'center', gap:1.5, p:1.5, borderRadius:2, cursor:'pointer',
+              bgcolor: checked ? 'rgba(59,130,246,0.12)' : CARD,
+              border:`1px solid ${checked ? PRIMARY : BORDER}`,
+              transition:'all 0.15s', '&:hover':{ borderColor:'#2d4060' },
+            }}>
+            <Box sx={{
+              width:34, height:34, borderRadius:'50%', bgcolor: checked ? PRIMARY : '#1e293b',
+              display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+              fontSize:13, fontWeight:700, color: checked ? '#fff' : MUTED,
+            }}>
+              {u.fullName.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
+            </Box>
+            <Box sx={{ flex:1, minWidth:0 }}>
+              <Typography sx={{ fontWeight:700, fontSize:14, color:TEXT }}>{u.fullName}</Typography>
+              <Typography sx={{ color:MUTED, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.email}</Typography>
+            </Box>
+            <Checkbox checked={checked} size="small" sx={{ color:MUTED, '&.Mui-checked':{ color:PRIMARY }, p:0 }} onChange={()=>{}} />
+          </Box>
+        );
+      })}
+    </Box>
+    {selected.length > 0 && (
+      <Typography sx={{ color:'#93c5fd', fontSize:12 }}>✓ Đã chọn {selected.length} người</Typography>
+    )}
+  </Stack>
+);
+
+/* ── Dataset picker ── */
+const DatasetPicker = ({ datasets, selected, onSelect }) => (
+  <Box sx={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:0.8 }}>
+    {datasets.length === 0 && <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>Chưa có dataset nào</Typography>}
+    {datasets.map(ds => {
+      const isSelected = selected === coerceId(ds);
+      const total = ds.total_items || ds.totalItems || 0;
+      return (
+        <Box key={coerceId(ds)} onClick={() => onSelect(isSelected ? '' : coerceId(ds))}
+          sx={{
+            display:'flex', alignItems:'center', gap:1.5, p:1.5, borderRadius:2, cursor:'pointer',
+            bgcolor: isSelected ? 'rgba(59,130,246,0.12)' : CARD,
+            border:`1px solid ${isSelected ? PRIMARY : BORDER}`,
+            transition:'all 0.15s', '&:hover':{ borderColor:'#2d4060' },
+          }}>
+          <FolderIcon sx={{ color: isSelected ? PRIMARY : MUTED, fontSize:22, flexShrink:0 }} />
+          <Box sx={{ flex:1, minWidth:0 }}>
+            <Typography sx={{ fontWeight:700, fontSize:14, color:TEXT }}>{ds.name}</Typography>
+            {ds.description && <Typography sx={{ color:MUTED, fontSize:12 }}>{ds.description}</Typography>}
+          </Box>
+          <Chip size="small" label={`${total} ảnh`}
+            sx={{ bgcolor:'rgba(59,130,246,0.14)', color:'#93c5fd', fontWeight:700, fontSize:11 }} />
+          {isSelected && <CheckCircleIcon sx={{ color:PRIMARY, fontSize:20, flexShrink:0 }} />}
+        </Box>
+      );
+    })}
+  </Box>
+);
+
+/* ── Label picker (from master labels) ── */
+const LabelPicker = ({ labels, selected, onToggle }) => (
+  <Box>
+    {labels.length === 0 && (
+      <Typography sx={{ color:MUTED, fontSize:13, py:2, textAlign:'center' }}>
+        Chưa có nhãn nào. Hãy tạo nhãn ở tab Labels trước.
+      </Typography>
+    )}
+    <Box sx={{ display:'flex', flexWrap:'wrap', gap:1 }}>
+      {labels.map(l => {
+        const isSelected = selected.includes(l._labelsetId || l.id);
+        return (
+          <Chip
+            key={l.id}
+            label={l.name}
+            onClick={() => onToggle(l._labelsetId || l.id)}
+            sx={{
+              bgcolor: isSelected ? `${l.color}33` : 'rgba(255,255,255,0.05)',
+              color: isSelected ? l.color : MUTED,
+              border:`1px solid ${isSelected ? l.color : BORDER}`,
+              fontWeight: isSelected ? 700 : 500,
+              cursor:'pointer', transition:'all 0.15s',
+              '&:hover':{ bgcolor:`${l.color}22`, color:l.color },
+            }}
+          />
+        );
+      })}
+    </Box>
+    {selected.length > 0 && (
+      <Typography sx={{ color:'#93c5fd', fontSize:12, mt:1 }}>✓ Đã chọn {selected.length} nhãn</Typography>
+    )}
+  </Box>
+);
+
+/* ─── MAIN ─────────────────────────────────────────────── */
+const MASTER_TOPIC_NAME = '__master_labels__';
+const MASTER_SUBTOPIC_NAME = '__labels__';
 
 export default function CreateProject() {
   const navigate = useNavigate();
-  const [datasets, setDatasets] = useState([]);
-  const [annotators, setAnnotators] = useState([]);
-  const [reviewers, setReviewers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
-  const [annotatorSearch, setAnnotatorSearch] = useState('');
-  const [reviewerSearch, setReviewerSearch] = useState('');
-  const [formData, setFormData] = useState({
-    name: '', description: '', guidelines: '', deadline: '', exportFormat: 'JSON',
-    reviewPolicy: { mode: 'full', sampleRate: 1, reviewersPerItem: 1 },
-  });
-  const [selectedDatasetId, setSelectedDatasetId] = useState('');
-  const [selectedAnnotators, setSelectedAnnotators] = useState([]);
-  const [selectedReviewers, setSelectedReviewers] = useState([]);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+  const [toast, setToast]     = useState({ open:false, msg:'', sev:'success' });
 
-  const showToast = (message, severity = 'success') => setToast({ open: true, message, severity });
+  const [datasets, setDatasets]     = useState([]);
+  const [annotators, setAnnotators] = useState([]);
+  const [reviewers, setReviewers]   = useState([]);
+  const [masterLabels, setMasterLabels] = useState([]);
 
-  const loadData = async () => {
-    setLoading(true);
+  const [form, setForm] = useState({ name:'', description:'', guidelines:'', deadline:'', sampleRate: 100 });
+  const [selectedDatasetId, setSelectedDatasetId]     = useState('');
+  const [selectedLabelsetIds, setSelectedLabelsetIds] = useState([]);
+  const [selectedAnnotators, setSelectedAnnotators]   = useState([]);
+  const [selectedReviewers, setSelectedReviewers]     = useState([]);
+  const [annoSearch, setAnnoSearch] = useState('');
+  const [revSearch, setRevSearch]   = useState('');
+
+  const showToast = (msg, sev='success') => setToast({ open:true, msg, sev });
+
+  /* ── load master labels from localStorage (same key as Labels.jsx) ── */
+  const loadMasterLabels = () => {
     try {
-      const [datasetRes, userRes] = await Promise.all([
-        axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
-        axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() }),
-      ]);
-      const ds = getArray(datasetRes.data).map(normalizeDataset).filter(d => !d.project_id);
-      const users = getArray(userRes.data).map(normalizeUser);
-      setDatasets(ds);
-      setAnnotators(users.filter(u => String(u.role).toLowerCase() === 'annotator' && u.is_active));
-      setReviewers(users.filter(u => String(u.role).toLowerCase() === 'reviewer' && u.is_active));
-    } catch (e) {
-      setError(e?.response?.data?.message || e.message || 'Không tải được dữ liệu');
-    } finally {
-      setLoading(false);
+      const raw = localStorage.getItem('master_labels_v1');
+      setMasterLabels(raw ? JSON.parse(raw) : []);
+    } catch {
+      setMasterLabels([]);
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [dsRes, userRes] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/datasets`, { headers:getAuthHeaders() }),
+          axios.get(`${API_URL}/api/users`, { headers:getAuthHeaders() }),
+        ]);
+        if (dsRes.status === 'fulfilled') setDatasets(getArray(dsRes.value.data));
+        if (userRes.status === 'fulfilled') {
+          const users = getArray(userRes.value.data).map(normalizeUser);
+          setAnnotators(users.filter(u => u.role === 'annotator' && u.is_active !== false));
+          setReviewers(users.filter(u => u.role === 'reviewer' && u.is_active !== false));
+        }
+        loadMasterLabels();
+      } catch (e) {
+        setError(e?.response?.data?.message || e.message || 'Không tải được dữ liệu');
+      } finally { setLoading(false); }
+    })();
+  }, []);
 
   const filteredAnnotators = useMemo(() => {
-    const q = annotatorSearch.toLowerCase().trim();
-    return annotators.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
-  }, [annotators, annotatorSearch]);
-  const filteredReviewers = useMemo(() => {
-    const q = reviewerSearch.toLowerCase().trim();
-    return reviewers.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
-  }, [reviewers, reviewerSearch]);
+    const q = annoSearch.toLowerCase();
+    return annotators.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q));
+  }, [annotators, annoSearch]);
 
-  const extractDataItemIds = async (datasetId) => {
-    const dsRes = await axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() });
-    const dsData = dsRes.data || {};
-    let rawItems = dsData.data_items || dsData.items || dsData.assets || dsData.lib_data_item_list || dsData.data || [];
-    if (!Array.isArray(rawItems) && Array.isArray(dsData)) rawItems = dsData;
-    let ids = (Array.isArray(rawItems) ? rawItems : []).map(it => typeof it === 'string' ? it : it?.id || it?._id || it?.dataItemId || it?.assetId || null).filter(Boolean);
-    if (!ids.length) {
-      const subIds = Array.isArray(dsData.subtopicIds) ? dsData.subtopicIds : Array.isArray(dsData.subtopic_ids) ? dsData.subtopic_ids : dsData.subtopicId ? [dsData.subtopicId] : dsData.subtopic_id ? [dsData.subtopic_id] : [];
-      for (const subId of subIds) {
-        try {
-          const assetRes = await axios.get(`${API_URL}/api/subtopics/${subId}/assets`, { headers: getAuthHeaders() });
-          const assets = getArray(assetRes.data);
-          ids.push(...assets.map(a => a?.id || a?._id || a?.assetId || a?.dataItemId || null).filter(Boolean));
-        } catch {}
-      }
-    }
-    return [...new Set(ids)];
-  };
+  const filteredReviewers = useMemo(() => {
+    const q = revSearch.toLowerCase();
+    return reviewers.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q));
+  }, [reviewers, revSearch]);
+
+  const toggleAnnotator = id => setSelectedAnnotators(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleReviewer  = id => setSelectedReviewers(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  const toggleLabel     = id => setSelectedLabelsetIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
 
   const handleCreate = async () => {
-    if (!formData.name.trim()) return showToast('Nhập tên project', 'warning');
-    if (!formData.guidelines.trim()) return showToast('Nhập guidelines', 'warning');
-    if (!selectedDatasetId) return showToast('Chọn dataset', 'warning');
-    if (!selectedAnnotators.length) return showToast('Chọn annotator', 'warning');
-    if (!selectedReviewers.length) return showToast('Chọn reviewer', 'warning');
+    if (!form.name.trim() || !form.deadline || !selectedDatasetId) {
+      showToast('Vui lòng điền đủ tên project, deadline và chọn 1 dataset', 'warning');
+      return;
+    }
+    if (!selectedAnnotators.length || !selectedReviewers.length) {
+      showToast('Vui lòng chọn ít nhất 1 Annotator và 1 Reviewer', 'warning');
+      return;
+    }
+    if (form.sampleRate < 1 || form.sampleRate > 100) {
+      showToast('Sample Rate phải nằm trong khoảng từ 1% đến 100%', 'warning');
+      return;
+    }
 
     setSaving(true);
+    setError('');
     try {
       const payload = {
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        guidelines: formData.guidelines.trim(),
-        deadline: formData.deadline || undefined,
-        export_format: formData.exportFormat || 'JSON',
-        review_policy: {
-          mode: formData.reviewPolicy.mode || 'full',
-          sample_rate: Number(formData.reviewPolicy.sampleRate || 1),
-          reviewers_per_item: Number(formData.reviewPolicy.reviewersPerItem || 1),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        guidelines: form.guidelines.trim() || 'No guidelines',
+        deadline: new Date(form.deadline).toISOString(),
+        export_format: 'JSON',
+        review_policy: { 
+          mode: form.sampleRate < 100 ? 'sample' : 'full', 
+          sample_rate: form.sampleRate / 100, 
+          reviewers_per_item: 1 
         },
         dataset_id: selectedDatasetId,
         annotator_ids: selectedAnnotators,
         reviewer_ids: selectedReviewers,
       };
-      const res = await axios.post(`${API_URL}/api/projects`, payload, { headers: getAuthHeaders() });
-      const normalizeId = (val) => {
-  if (!val) return null;
-  if (typeof val === 'string') return val;
-  if (val.id) return val.id;
-  return null;
-};
-
-const handleCreateProject = async () => {
-  try {
-    const payload = {
-      name: formData.name.trim(),
-      description: formData.description?.trim() || '',
-      guidelines: formData.guidelines?.trim() || '',
-      deadline: formData.deadline
-        ? new Date(formData.deadline).toISOString()
-        : undefined,
-      export_format: formData.exportFormat || 'JSON',
-      review_policy: {
-        mode: formData.reviewPolicy?.mode || 'full',
-        sample_rate: Number(formData.reviewPolicy?.sampleRate || 1),
-        reviewers_per_item: Number(
-          formData.reviewPolicy?.reviewersPerItem || 1
-        ),
-      },
-      dataset_id: normalizeId(selectedDataset),
-      annotator_ids: selectedAnnotators.map(normalizeId).filter(Boolean),
-      reviewer_ids: selectedReviewers.map(normalizeId).filter(Boolean),
-    };
-
-    console.log('PROJECT PAYLOAD =', payload);
-
-    const res = await axios.post(
-      `${API_URL}/api/projects`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${sessionStorage.getItem('token')}`,
-        },
-      }
-    );
-
-    alert('Tạo project thành công');
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    alert('Tạo project thất bại');
-  }
-};
+      const res = await axios.post(`${API_URL}/api/projects`, payload, { headers:getAuthHeaders() });
       const project = res.data?.project || res.data;
-      const projectId = project?.id || project?._id;
-      if (!projectId) throw new Error('Server không trả về id project');
-
-      const itemIds = await extractDataItemIds(selectedDatasetId);
-      if (itemIds.length) {
-        for (const annotatorId of selectedAnnotators) {
-          await axios.post(`${API_URL}/api/tasks/assign`, {
-            project_id: projectId,
-            dataset_id: selectedDatasetId,
-            annotator_id: annotatorId,
-            reviewer_ids: selectedReviewers,
-            data_item_ids: itemIds,
-          }, { headers: getAuthHeaders() });
-        }
-      }
-
-      showToast('Tạo project thành công', 'success');
-      navigate(`/manager/projects/${projectId}`);
+      const projectId = coerceId(project);
+      if (!projectId) throw new Error('Server không trả về project ID');
+      showToast('Tạo project thành công!');
+      setTimeout(() => navigate(`/manager/projects/${projectId}`), 800);
     } catch (e) {
-      setError(e?.response?.data?.message || e.message || 'Tạo project thất bại');
-      showToast(e?.response?.data?.message || e.message || 'Tạo project thất bại', 'error');
-    } finally {
-      setSaving(false);
-    }
+      let errorMsg = 'Tạo project thất bại';
+      const data = e?.response?.data;
+      if (data) {
+        if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+          errorMsg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
+        } else if (data.message) {
+          errorMsg = data.message;
+        } else if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            errorMsg = data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ');
+          } else {
+            errorMsg = String(data.detail);
+          }
+        }
+      } else if (e.message) {
+        errorMsg = e.message;
+      }
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
+    } finally { setSaving(false); }
   };
 
-  if (loading) return <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>;
+  if (loading) return (
+    <Box sx={{ minHeight:'100vh', bgcolor:BG, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <CircularProgress sx={{ color:PRIMARY }} />
+    </Box>
+  );
 
   return (
-    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+    <Box sx={{ minHeight:'100vh', bgcolor:BG, color:TEXT }}>
+      {/* ── Header ── */}
+      <Box sx={{ px:3.5, py:3, borderBottom:`1px solid ${BORDER}`, bgcolor:PANEL,
+        display:'flex', justifyContent:'space-between', alignItems:'center', gap:2, flexWrap:'wrap' }}>
         <Stack direction="row" spacing={1} alignItems="center">
-          <IconButton sx={{ color: '#e2e8f0' }} onClick={() => navigate('/manager/projects')}><ArrowBackIcon /></IconButton>
-          <Typography variant="h4" fontWeight={700}>Create Project</Typography>
+          <IconButton onClick={() => navigate('/manager/projects')} sx={{ color:MUTED }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Box>
+            <Typography sx={{ fontWeight:800, fontSize:24, color:TEXT }}>Tạo Project mới</Typography>
+            <Typography sx={{ color:MUTED, fontSize:13 }}>Thiết lập dự án annotation bounding box</Typography>
+          </Box>
         </Stack>
-        <Stack direction="row" spacing={1}>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={loadData}>Refresh</Button>
-          <Button startIcon={saving ? <CircularProgress size={16} /> : <CheckCircleIcon />} variant="contained" onClick={handleCreate} disabled={saving}>{saving ? 'Creating...' : 'Create Project'}</Button>
-        </Stack>
+        <Button variant="contained" onClick={handleCreate} disabled={saving}
+          startIcon={saving ? <CircularProgress size={16} sx={{ color:'#fff' }} /> : <CheckCircleIcon />}
+          sx={{ bgcolor:PRIMARY, borderRadius:2, fontWeight:700, textTransform:'none', px:3, '&:hover':{ bgcolor:'#2563eb' } }}>
+          {saving ? 'Đang tạo...' : 'Tạo Project'}
+        </Button>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <Box sx={{ p:3.5 }}>
+        {error && <Alert severity="error" sx={{ mb:3, borderRadius:2 }}>{error}</Alert>}
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
-          <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155' }}>
-            <CardContent>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}><TextField fullWidth label="Project name" value={formData.name} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} sx={inputSx} /></Grid>
-                <Grid item xs={12} md={6}><TextField fullWidth type="datetime-local" label="Deadline" InputLabelProps={{ shrink: true }} value={formData.deadline} onChange={(e) => setFormData(prev => ({ ...prev, deadline: e.target.value }))} sx={inputSx} /></Grid>
-                <Grid item xs={12}><TextField fullWidth multiline minRows={3} label="Description" value={formData.description} onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))} sx={inputSx} /></Grid>
-                <Grid item xs={12}><TextField fullWidth multiline minRows={4} label="Guidelines" value={formData.guidelines} onChange={(e) => setFormData(prev => ({ ...prev, guidelines: e.target.value }))} sx={inputSx} /></Grid>
-                <Grid item xs={12} md={4}><Select fullWidth value={formData.exportFormat} onChange={(e) => setFormData(prev => ({ ...prev, exportFormat: e.target.value }))} sx={inputSx}><MenuItem value="JSON">JSON</MenuItem><MenuItem value="COCO">COCO</MenuItem><MenuItem value="YOLO">YOLO</MenuItem><MenuItem value="CSV">CSV</MenuItem></Select></Grid>
-                <Grid item xs={12} md={4}><Select fullWidth value={formData.reviewPolicy.mode} onChange={(e) => setFormData(prev => ({ ...prev, reviewPolicy: { ...prev.reviewPolicy, mode: e.target.value } }))} sx={inputSx}><MenuItem value="full">Full</MenuItem><MenuItem value="sample">Sample</MenuItem></Select></Grid>
-                <Grid item xs={12} md={2}><TextField fullWidth type="number" label="Sample rate" value={formData.reviewPolicy.sampleRate} onChange={(e) => setFormData(prev => ({ ...prev, reviewPolicy: { ...prev.reviewPolicy, sampleRate: e.target.value } }))} sx={inputSx} /></Grid>
-                <Grid item xs={12} md={2}><TextField fullWidth type="number" label="Reviewers/item" value={formData.reviewPolicy.reviewersPerItem} onChange={(e) => setFormData(prev => ({ ...prev, reviewPolicy: { ...prev.reviewPolicy, reviewersPerItem: e.target.value } }))} sx={inputSx} /></Grid>
-              </Grid>
-            </CardContent>
-          </Card>
+        <Grid container spacing={3}>
+          {/* ── Left col: info ── */}
+          <Grid item xs={12} lg={5}>
+            <Stack spacing={3}>
+              {/* Basic info */}
+              <Section icon={<CheckCircleIcon />} title="Thông tin cơ bản" subtitle="Tên, mô tả và deadline của project">
+                <Stack spacing={2}>
+                  <TextField fullWidth label="Tên project *" value={form.name}
+                    onChange={e => setForm(p=>({...p, name:e.target.value}))}
+                    placeholder="VD: Phân loại chó mèo Q2/2026" sx={inputSx} />
+                  <TextField fullWidth label="Mô tả" multiline minRows={3} value={form.description}
+                    onChange={e => setForm(p=>({...p, description:e.target.value}))} sx={inputSx} />
+                  <TextField fullWidth label="Hướng dẫn cho annotator" multiline minRows={3} value={form.guidelines}
+                    onChange={e => setForm(p=>({...p, guidelines:e.target.value}))}
+                    placeholder="Mô tả cách gán nhãn, quy tắc vẽ bounding box..." sx={inputSx} />
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TextField fullWidth type="datetime-local" label="Deadline"
+                      InputLabelProps={{ shrink:true }} value={form.deadline}
+                      onChange={e => setForm(p=>({...p, deadline:e.target.value}))} sx={{ ...inputSx, flex: 2 }} />
+                    <TextField fullWidth type="number" label="Sample Rate (%)"
+                      InputProps={{ inputProps: { min: 1, max: 100 } }}
+                      value={form.sampleRate}
+                      onChange={e => setForm(p=>({...p, sampleRate: e.target.value ? Number(e.target.value) : ''}))}
+                      placeholder="VD: 10" sx={{ ...inputSx, flex: 1 }} />
+                  </Box>
+                  {form.sampleRate < 100 && form.sampleRate > 0 && (
+                    <Typography sx={{ color: '#fbbf24', fontSize: 13, mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CheckCircleIcon sx={{ fontSize: 16 }} />
+                      Annotator làm 100%. Reviewer chỉ kiểm tra ngẫu nhiên {form.sampleRate}% số ảnh.
+                    </Typography>
+                  )}
+                </Stack>
+              </Section>
+
+              {/* Dataset */}
+              <Section icon={<FolderIcon />} title="Chọn Dataset *"
+                subtitle={selectedDatasetId ? `✓ Đã chọn dataset` : 'Chọn 1 bộ ảnh cho project này'}>
+                <DatasetPicker datasets={datasets} selected={selectedDatasetId} onSelect={setSelectedDatasetId} />
+              </Section>
+
+              {/* Labels */}
+              <Section icon={<LabelIcon />} title="Chọn nhãn"
+                subtitle={`${selectedLabelsetIds.length} nhãn được chọn`}>
+                <LabelPicker labels={masterLabels} selected={selectedLabelsetIds} onToggle={toggleLabel} />
+              </Section>
+            </Stack>
+          </Grid>
+
+          {/* ── Right col: people ── */}
+          <Grid item xs={12} lg={7}>
+            <Stack spacing={3}>
+              <Section icon={<PersonIcon />} title="Phân công Annotators *"
+                subtitle={`${selectedAnnotators.length}/${annotators.length} người được chọn`}>
+                <UserList
+                  users={filteredAnnotators}
+                  selected={selectedAnnotators}
+                  onToggle={toggleAnnotator}
+                  search={annoSearch}
+                  onSearch={setAnnoSearch}
+                  placeholder="Tìm annotator..."
+                />
+              </Section>
+
+              <Section icon={<GroupIcon />} title="Phân công Reviewers *"
+                subtitle={`${selectedReviewers.length}/${reviewers.length} người được chọn`}>
+                <UserList
+                  users={filteredReviewers}
+                  selected={selectedReviewers}
+                  onToggle={toggleReviewer}
+                  search={revSearch}
+                  onSearch={setRevSearch}
+                  placeholder="Tìm reviewer..."
+                />
+              </Section>
+
+              {/* Summary */}
+              <Card sx={{ bgcolor:'rgba(59,130,246,0.08)', border:`1px solid rgba(59,130,246,0.3)`, borderRadius:3 }}>
+                <CardContent sx={{ p:2.5 }}>
+                  <Typography sx={{ fontWeight:800, color:TEXT, mb:1.5 }}>📋 Tóm tắt</Typography>
+                  <Stack spacing={0.8}>
+                    {[
+                      { label:'Project name', value: form.name || '—' },
+                      { label:'Dataset', value: datasets.find(d=>coerceId(d)===selectedDatasetId)?.name || '—' },
+                      { label:'Labels', value: selectedLabelsetIds.length ? `${selectedLabelsetIds.length} nhãn` : '—' },
+                      { label:'Annotators', value: selectedAnnotators.length ? `${selectedAnnotators.length} người` : '—' },
+                      { label:'Reviewers', value: selectedReviewers.length ? `${selectedReviewers.length} người` : '—' },
+                      { label:'Deadline', value: form.deadline ? new Date(form.deadline).toLocaleString('vi-VN') : '—' },
+                    ].map(row => (
+                      <Box key={row.label} sx={{ display:'flex', gap:1 }}>
+                        <Typography sx={{ color:MUTED, fontSize:13, minWidth:110 }}>{row.label}:</Typography>
+                        <Typography sx={{ color:TEXT, fontSize:13, fontWeight:600 }}>{row.value}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </Grid>
         </Grid>
+      </Box>
 
-        <Grid item xs={12} md={4}>
-          <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155' }}>
-            <CardContent>
-              <Typography fontWeight={700} sx={{ mb: 1 }}>Choose dataset</Typography>
-              <Select fullWidth value={selectedDatasetId} onChange={(e) => setSelectedDatasetId(e.target.value)} sx={inputSx} displayEmpty>
-                <MenuItem value="">Select dataset</MenuItem>
-                {datasets.map(ds => <MenuItem key={ds.id} value={ds.id}>{ds.name}</MenuItem>)}
-              </Select>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155' }}>
-            <CardContent>
-              <Typography fontWeight={700} sx={{ mb: 1 }}>Annotators</Typography>
-              <TextField fullWidth placeholder="Search annotator..." value={annotatorSearch} onChange={(e) => setAnnotatorSearch(e.target.value)} sx={{ ...inputSx, mb: 2 }} InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: '#94a3b8' }} /> }} />
-              <Stack spacing={1} sx={{ maxHeight: 320, overflowY: 'auto' }}>
-                {filteredAnnotators.map(user => {
-                  const checked = selectedAnnotators.includes(user.id);
-                  return <Card key={user.id} sx={{ bgcolor: '#0f172a', border: '1px solid #334155' }}><CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 }, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Box><Typography fontWeight={600}>{user.fullName}</Typography><Typography variant="body2" sx={{ color: '#94a3b8' }}>{user.email}</Typography></Box><Checkbox checked={checked} onChange={() => setSelectedAnnotators(prev => checked ? prev.filter(id => id !== user.id) : [...prev, user.id])} /></CardContent></Card>;
-                })}
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155' }}>
-            <CardContent>
-              <Typography fontWeight={700} sx={{ mb: 1 }}>Reviewers</Typography>
-              <TextField fullWidth placeholder="Search reviewer..." value={reviewerSearch} onChange={(e) => setReviewerSearch(e.target.value)} sx={{ ...inputSx, mb: 2 }} InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: '#94a3b8' }} /> }} />
-              <Stack spacing={1} sx={{ maxHeight: 320, overflowY: 'auto' }}>
-                {filteredReviewers.map(user => {
-                  const checked = selectedReviewers.includes(user.id);
-                  return <Card key={user.id} sx={{ bgcolor: '#0f172a', border: '1px solid #334155' }}><CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 }, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Box><Typography fontWeight={600}>{user.fullName}</Typography><Typography variant="body2" sx={{ color: '#94a3b8' }}>{user.email}</Typography></Box><Checkbox checked={checked} onChange={() => setSelectedReviewers(prev => checked ? prev.filter(id => id !== user.id) : [...prev, user.id])} /></CardContent></Card>;
-                })}
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
-        <Alert severity={toast.severity} onClose={() => setToast(prev => ({ ...prev, open: false }))}>{toast.message}</Alert>
+      <Snackbar open={toast.open} autoHideDuration={3500} onClose={() => setToast(p=>({...p,open:false}))}
+        anchorOrigin={{ vertical:'bottom', horizontal:'right' }}>
+        <Alert severity={toast.sev} onClose={() => setToast(p=>({...p,open:false}))} sx={{ borderRadius:2 }}>
+          {toast.msg}
+        </Alert>
       </Snackbar>
     </Box>
   );

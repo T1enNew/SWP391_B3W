@@ -98,6 +98,7 @@ const statusLabel = (status) => {
     case 'completed':
       return 'Đã xong';
     case 'submitted':
+    case 'resubmitted':
       return 'Chờ review';
     case 'approved':
       return 'Đã duyệt';
@@ -183,7 +184,7 @@ const ProjectDetail = () => {
 
       const total = effectiveTasks.length;
       const waitingReview = effectiveTasks.filter(
-        (t) => t.status === 'submitted'
+        (t) => ['submitted', 'resubmitted'].includes(t.status)
       ).length;
       const rejected = effectiveTasks.filter(
         (t) => t.status === 'rejected'
@@ -192,7 +193,7 @@ const ProjectDetail = () => {
         (t) => t.status === 'in_progress'
       ).length;
       const done = effectiveTasks.filter((t) =>
-        ['completed', 'submitted', 'approved'].includes(t.status)
+        ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status)
       ).length;
 
       const progress = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -215,7 +216,7 @@ const ProjectDetail = () => {
   ).length;
 
   const totalReviewing = tasks.filter(
-    (t) => String(t.projectId) === String(projectId) && t.status === 'submitted'
+    (t) => String(t.projectId) === String(projectId) && ['submitted', 'resubmitted'].includes(t.status)
   ).length;
 
   const totalRejected = tasks.filter(
@@ -225,7 +226,7 @@ const ProjectDetail = () => {
   const totalDone = tasks.filter(
     (t) =>
       String(t.projectId) === String(projectId) &&
-      ['completed', 'submitted', 'approved'].includes(t.status)
+      ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status)
   ).length;
 
   const overallProgress =
@@ -269,6 +270,7 @@ const ProjectDetail = () => {
         'in_progress',
         'assigned',
         'submitted',
+        'resubmitted',
         'completed',
         'approved',
       ];

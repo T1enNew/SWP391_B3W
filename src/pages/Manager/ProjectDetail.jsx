@@ -102,20 +102,122 @@ const secondaryBtnSx = {
   '&:hover': { bgcolor: '#475569' },
 };
 
-const getFullImageUrl = (path) => {
+const modalPaperSx = {
+  bgcolor: '#111827',
+  color: '#e2e8f0',
+  border: '1px solid #243041',
+  borderRadius: '18px',
+  boxShadow: '0 25px 60px rgba(0,0,0,0.55)',
+};
+
+const getAuthToken = () =>
+  sessionStorage.getItem('token') || localStorage.getItem('token') || '';
+
+const getAuthHeaders = () => ({
+  Authorization: `Bearer ${getAuthToken()}`,
+});
+
+const normalizeProject = (raw) => {
+  const p = raw?.project || raw || {};
+  return {
+    ...p,
+    id: p.id || p._id,
+    name: p.name || 'Untitled project',
+    description: p.description || '',
+    guidelines: p.guidelines || '',
+    deadline: p.deadline || p.due_date || '',
+    status: p.status || 'draft',
+    exportFormat: p.exportFormat || p.export_format || 'JSON',
+    datasetIds: p.dataset_ids || p.datasetIds || (p.dataset_id ? [p.dataset_id] : []),
+    reviewPolicy: p.reviewPolicy || p.review_policy || {},
+  };
+};
+
+const normalizeDataset = (ds) => ({
+  ...ds,
+  id: ds?.id || ds?._id,
+  name: ds?.name || 'Untitled dataset',
+  type: ds?.type || 'image',
+  description: ds?.description || '',
+});
+
+const normalizeTask = (task) => {
+  const dataItem = task?.dataItem || task?.datasetItemId || task?.itemId || task?.data_item || {};
+  const annotator = task?.annotatorId || task?.annotator || {};
+  const reviewers = task?.reviewers || [];
+  return {
+    ...task,
+    id: task?.id || task?._id,
+    status: task?.status || 'assigned',
+    dataItem,
+    annotator,
+    reviewers,
+    datasetId: task?.datasetId || task?.dataset_id || dataItem?.datasetId || null,
+  };
+};
+
+const statusPalette = {
+  draft: { label: 'Draft', color: '#94a3b8', bg: 'rgba(148,163,184,0.16)' },
+  active: { label: 'Active', color: '#22c55e', bg: 'rgba(34,197,94,0.16)' },
+  waiting_rework: { label: 'Waiting rework', color: '#f97316', bg: 'rgba(249,115,22,0.16)' },
+  submitted: { label: 'In review', color: '#f59e0b', bg: 'rgba(245,158,11,0.16)' },
+  approved: { label: 'Approved', color: '#22c55e', bg: 'rgba(34,197,94,0.16)' },
+  rejected: { label: 'Rework', color: '#ef4444', bg: 'rgba(239,68,68,0.16)' },
+  in_progress: { label: 'In progress', color: '#3b82f6', bg: 'rgba(59,130,246,0.16)' },
+  assigned: { label: 'Assigned', color: '#a78bfa', bg: 'rgba(167,139,250,0.16)' },
+};
+
+const typePalette = {
+  image: { color: '#f59e0b', bg: 'rgba(245,158,11,0.16)', icon: ImageIcon },
+  audio: { color: '#f472b6', bg: 'rgba(244,114,182,0.16)', icon: AudioIcon },
+  text: { color: '#34d399', bg: 'rgba(52,211,153,0.16)', icon: TextIcon },
+  other: { color: '#a78bfa', bg: 'rgba(167,139,250,0.16)', icon: AssignmentIcon },
+};
+
+const getStatusMeta = (status) => statusPalette[status] || statusPalette.draft;
+
+const getFullAssetUrl = (dataItem) => {
+  if (!dataItem) return '';
   const baseUrl = API_URL.replace(/\/+$/, '');
-  if (!path) return '';
-  const relativePath = path.replace(/^\/+/, '');
-  return baseUrl + '/' + relativePath;
+  const directUrl =
+    dataItem?.signedUrl ||
+    dataItem?.signed_url ||
+    dataItem?.storageUrl ||
+    dataItem?.storage_url ||
+    dataItem?.url ||
+    dataItem?.imageUrl ||
+    '';
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+
+  const filename = dataItem?.originalName || dataItem?.original_name || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || dataItem?.storagePath || dataItem?.storage_path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+    const parts = relativePath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt) {
+      if (!relativePath.startsWith('uploads/')) {
+        return `${baseUrl}/uploads/datasets/${relativePath}`;
+      }
+      return `${baseUrl}/${relativePath}`;
+    }
+    const safePath = relativePath.startsWith('uploads/') ? relativePath : `uploads/datasets/${relativePath}`;
+    return filename ? `${baseUrl}/${safePath}/${filename}` : `${baseUrl}/${safePath}`;
+  }
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 const getItemMediaInfo = (dataItem = {}) => {
-  const mime = (dataItem?.mimeType || '').toLowerCase();
-  const fileName = dataItem?.originalName || dataItem?.filename || dataItem?.path || 'Unknown item';
-  const rawPath = dataItem?.imageUrl || dataItem?.url || dataItem?.path || dataItem?.filename || '';
-  const fileUrl = rawPath ? getFullImageUrl(rawPath) : '';
+  const mime = String(dataItem?.mimeType || dataItem?.mime_type || '').toLowerCase();
+  const fileName =
+    dataItem?.originalName ||
+    dataItem?.original_name ||
+    dataItem?.filename ||
+    dataItem?.path ||
+    'Unknown item';
 
-  // Ưu tiên nhận diện theo đuôi file để tránh mimeType bị sai từ backend.
   let mediaType = 'other';
   if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) mediaType = 'audio';
   else if (/\.(txt|csv|json|xml)$/i.test(fileName)) mediaType = 'text';
@@ -124,48 +226,126 @@ const getItemMediaInfo = (dataItem = {}) => {
   else if (mime.startsWith('text/')) mediaType = 'text';
   else if (mime.startsWith('image/')) mediaType = 'image';
 
-  return { mediaType, fileName, fileUrl };
+  return {
+    mediaType,
+    fileName,
+    fileUrl: getFullAssetUrl(dataItem),
+  };
 };
 
-const getLabelColor = (labelName) => {
-  const label = labelName?.toLowerCase() || '';
-
-  // Predefined colors for common labels
-  const predefinedColors = {
-    'chó': '#3b82f6',
-    'dog': '#3b82f6',
-    'mèo': '#22c55e',
-    'cat': '#22c55e',
-    'other': '#8b5cf6',
-    'car': '#f59e0b',
-    'xe': '#f59e0b',
-  };
-
-  // Return predefined color if exists
-  if (predefinedColors[label]) {
-    return predefinedColors[label];
-  }
-
-  // Generate color dynamically based on label name hash
-  const colors = [
-    '#3b82f6', // blue
-    '#22c55e', // green
-    '#f59e0b', // amber
-    '#ef4444', // red
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#06b6d4', // cyan
-    '#f97316', // orange
-    '#14b8a6', // teal
-    '#6366f1', // indigo
-  ];
-
-  let hash = 0;
-  for (let i = 0; i < label.length; i++) {
-    hash = label.charCodeAt(i) + ((hash << 5) - hash);
-  }
-
+const getLabelColor = (labelName = '') => {
+  const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+  const hash = String(labelName)
+    .split('')
+    .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   return colors[Math.abs(hash) % colors.length];
+};
+
+const extractAnnotations = (task) => {
+  const source = task?.labels || task?.annotation_data || task?.annotationData || {};
+  const raw =
+    source?.bboxes ||
+    source?.objects ||
+    source?.spans ||
+    source?.segments ||
+    source?.sentences ||
+    source?.label ||
+    [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+
+  return arr
+    .filter(Boolean)
+    .map((item) => ({
+      label: typeof item === 'string' ? item : item.label || item.text || item.name || 'unknown',
+      bbox: item?.bbox || item?.box || (item?.x !== undefined ? [item.x, item.y, item.x + (item.width || 0), item.y + (item.height || 0)] : null),
+      start: item?.start,
+      end: item?.end,
+      text: item?.text || item?.sentence || null,
+      note: item?.note || '',
+    }));
+};
+
+const formatDateTime = (value) => {
+  if (!value) return 'N/A';
+  return new Date(value).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const StatCard = ({ label, value, hint, color = '#e2e8f0' }) => (
+  <Card sx={softCardSx}>
+    <CardContent sx={{ p: 2.2 }}>
+      <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}
+      </Typography>
+      <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, color }}>
+        {value}
+      </Typography>
+      {hint ? (
+        <Typography variant="caption" sx={{ color: '#64748b' }}>
+          {hint}
+        </Typography>
+      ) : null}
+    </CardContent>
+  </Card>
+);
+
+const DatasetChip = ({ dataset }) => {
+  const palette = typePalette[dataset.type] || typePalette.other;
+  return (
+    <Chip
+      label={`${dataset.name} • ${String(dataset.type || 'image').toUpperCase()}`}
+      size="small"
+      sx={{
+        bgcolor: palette.bg,
+        color: palette.color,
+        fontWeight: 700,
+        border: '1px solid rgba(255,255,255,0.05)',
+      }}
+    />
+  );
+};
+
+const renderImageOverlay = (item, showAnnotatorLabels, showAnnotatorLabelMap) => {
+  const visibleAnnotations = (item?.annotatorLabels || []).flatMap((ann) => {
+    const enabled = showAnnotatorLabels ? showAnnotatorLabelMap[ann.name] ?? true : false;
+    if (!enabled) return [];
+    return (ann.annotations || []).filter((x) => x?.bbox);
+  });
+  const formattedAnnotations = visibleAnnotations.map((ann) => {
+    // ann.bbox is expected to be [x1, y1, x2, y2] in percentages (0-100)
+    let bbox = Array.isArray(ann.bbox) ? ann.bbox : [0, 0, 0, 0];
+
+    // If all values are <= 1, they might be in 0-1 range (legacy), convert to percentages
+    if (bbox.length === 4 && bbox.every(val => val <= 1 && val >= 0)) {
+      bbox = bbox.map(v => v * 100);
+    }
+
+    return {
+      label: ann.label,
+      bbox: bbox,
+    };
+  });
+
+  const uniqueLabels = Array.from(new Set(formattedAnnotations.map((a) => a.label)));
+  const labelSetForViewer = uniqueLabels.map((lbl) => ({
+    name: lbl,
+    color: getLabelColor(lbl),
+  }));
+
+  return (
+    <Box sx={{ position: 'relative', width: '100%', minHeight: 420, borderRadius: 3, overflow: 'hidden', bgcolor: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <ImageViewer
+        imageUrl={item.fileUrl}
+        annotations={formattedAnnotations}
+        labelSet={labelSetForViewer}
+      />
+    </Box>
+  );
 };
 
 const ManagerProjectDetail = () => {
@@ -212,94 +392,111 @@ const ManagerProjectDetail = () => {
   const [projectInfoDialogOpen, setProjectInfoDialogOpen] = useState(false);
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const projectRes = await axios.get(`${API_URL}/api/projects/${id}`, { headers: getAuthHeaders() });
+        const pData = projectRes.data?.project || projectRes.data || {};
+        setProject(normalizeProject(pData));
+
+        const datasetId = pData?.dataset?.id || pData?.dataset?._id || pData?.dataset_id || pData?.datasetId || null;
+
+        const [datasetsRes, tasksRes, qualityRes] = await Promise.allSettled([
+          datasetId ? axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() }) : Promise.reject('No dataset ID'),
+          axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() }),
+          axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: getAuthHeaders() }),
+        ]);
+
+        let dsList = [];
+        if (datasetsRes.status === 'fulfilled') {
+          const dsData = datasetsRes.value.data?.dataset || datasetsRes.value.data || {};
+          dsList = (dsData.id || dsData._id) ? [normalizeDataset(dsData)] : [];
+          setDatasets(dsList);
+        }
+
+        if (tasksRes.status === 'fulfilled') {
+          const raw = Array.isArray(tasksRes.value.data)
+            ? tasksRes.value.data
+            : tasksRes.value.data?.data || tasksRes.value.data?.tasks || [];
+
+          let mappedTasks = raw.map(normalizeTask);
+
+          // Try to enrich with assets
+          try {
+            const subtopicIds = dsList.flatMap(ds => {
+              if (Array.isArray(ds.subtopics)) return ds.subtopics.map(st => st?.id || st);
+              return ds.subtopicIds || ds.subtopic_ids || (ds.subtopicId ? [ds.subtopicId] : []) || [];
+            });
+            if (subtopicIds.length > 0) {
+              const assetResponses = await Promise.allSettled(
+                subtopicIds.map(subId => axios.get(`${API_URL}/api/subtopics/${subId}/assets`, { headers: getAuthHeaders() }))
+              );
+              const assetsList = assetResponses
+                .filter(r => r.status === 'fulfilled')
+                .flatMap(r => Array.isArray(r.value.data) ? r.value.data : (r.value.data?.data || []));
+
+              const assetsMap = {};
+              assetsList.forEach(a => {
+                if (a.id) assetsMap[a.id] = a;
+                if (a.filename) assetsMap[a.filename] = a;
+                if (a.original_name) assetsMap[a.original_name] = a;
+              });
+
+              mappedTasks = mappedTasks.map(t => {
+                const di = t.dataItem || {};
+                const key = di.id || di.filename || di.original_name || di.originalName;
+                const matchedAsset = assetsMap[key] || assetsMap[di.filename] || assetsMap[di.originalName] || assetsMap[di.original_name];
+                if (matchedAsset) {
+                  t.dataItem = {
+                    ...di,
+                    ...matchedAsset,
+                    originalName: matchedAsset.original_name || di.originalName,
+                    mimeType: matchedAsset.mime_type || di.mimeType,
+                    storageUrl: matchedAsset.storage_url || di.storageUrl,
+                    signedUrl: matchedAsset.signed_url || di.signedUrl,
+                  };
+                }
+                return t;
+              });
+            }
+          } catch (e) {
+            console.error('Assets fetch failed', e);
+          }
+
+          setTasks(mappedTasks);
+        }
+
+        if (qualityRes.status === 'fulfilled') setQualityStats(qualityRes.value.data || null);
+      } catch (err) {
+        console.error('Project detail fetch failed:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
-    fetchUsers();
-    fetchQualityStats();
   }, [id]);
 
-  useEffect(() => {
-    if (project) {
-      setEditFormData({
-        name: project.name || '',
-        description: project.description || '',
-        guidelines: project.guidelines || '',
-        status: project.status || 'draft',
-        deadline: project.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
-        exportFormat: project.exportFormat || 'JSON',
-      });
-    }
-  }, [project]);
-
-  useEffect(() => {
-    if (tasks.length > 0) {
-      const annotatorIds = [...new Set(tasks.map((t) => t.annotatorId?._id || t.annotatorId).filter(Boolean))];
-      const reviewerIds = [
-        ...new Set(
-          tasks.flatMap((t) =>
-            (t.reviewers || []).map((r) => r.reviewerId?._id || r.reviewerId).filter(Boolean)
-          )
-        ),
-      ];
-      setCurrentAnnotators(annotatorIds);
-      setCurrentReviewers(reviewerIds);
-    } else {
-      setCurrentAnnotators([]);
-      setCurrentReviewers([]);
-    }
-  }, [tasks]);
-
-  // Extract unique labels from APPROVED tasks (tasks approved by reviewer)
-  const approvedLabels = useMemo(() => {
-    const labelSet = new Set();
-    const approvedTasksData = tasks.filter(t => t.status === 'approved');
-
-    console.log('Total tasks:', tasks.length);
-    console.log('Approved tasks:', approvedTasksData.length);
-
-    approvedTasksData.forEach((t, idx) => {
-      console.log(`Task ${idx}:`, t);
-
-      let labels = [];
-
-      // Try different possible structures
-      // Structure 1: t.labels.objects
-      if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-        labels = t.labels.objects;
-      }
-      // Structure 2: t.labels as array
-      else if (Array.isArray(t.labels)) {
-        labels = t.labels;
-      }
-      // Structure 3: t.annotations with approved status
-      else if (t.annotations) {
-        const approvedAnn = t.annotations.find(a => a.status === 'approved');
-        if (approvedAnn?.labels?.objects) {
-          labels = approvedAnn.labels.objects;
-        } else if (Array.isArray(approvedAnn?.labels)) {
-          labels = approvedAnn.labels;
-        }
-      }
-
-      console.log(`Task ${idx} labels:`, labels);
-
-      labels.forEach((obj) => {
-        if (obj.label) {
-          labelSet.add(obj.label);
-        } else if (typeof obj === 'string') {
-          labelSet.add(obj);
-        }
-      });
-    });
-
-    console.log('Approved Labels found:', Array.from(labelSet));
-    return Array.from(labelSet);
-  }, [tasks]);
-
-  // Get approved tasks with their labels
-  const approvedTasks = useMemo(() => {
-    const filtered = tasks.filter((t) => t.status === 'approved');
-    console.log('Filtered approved tasks:', filtered);
-    return filtered;
+  const stats = useMemo(() => {
+    const approved = tasks.filter((t) => t.status === 'approved').length;
+    const inReview = tasks.filter((t) => t.status === 'submitted').length;
+    const rework = tasks.filter((t) => t.status === 'rejected').length;
+    const inProgress = tasks.filter((t) => t.status === 'in_progress' || t.status === 'assigned').length;
+    const total = tasks.length;
+    const progress = total ? Math.round((approved / total) * 100) : 0;
+    const annotatorIds = new Set(tasks.map((t) => t.annotator?.id || t.annotator?.userId || t.annotator?._id).filter(Boolean));
+    const reviewerIds = new Set(
+      tasks.flatMap((t) => (t.reviewers || []).map((rv) => rv?.reviewerId?.id || rv?.reviewerId?._id || rv?.reviewerId).filter(Boolean))
+    );
+    return {
+      total,
+      approved,
+      inReview,
+      rework,
+      inProgress,
+      progress,
+      annotators: annotatorIds.size,
+      reviewers: reviewerIds.size,
+    };
   }, [tasks]);
 
   const approvedItems = useMemo(() => {

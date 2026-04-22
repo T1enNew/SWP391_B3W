@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   Database,
-  FolderOpen,
+  Tag,
   ClipboardList,
   History,
   Users,
@@ -51,9 +51,9 @@ const LayoutTailwind = () => {
         path: '/manager/datasets',
       });
       baseItems.push({
-        text: 'Topics',
-        icon: <FolderOpen size={18} />,
-        path: '/manager/topics',
+        text: 'Labels',
+        icon: <Tag size={18} />,
+        path: '/manager/labels',
       });
     }
 

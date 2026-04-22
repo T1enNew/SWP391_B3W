@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -14,6 +14,7 @@ import CreateProject from './pages/Manager/CreateProject';
 import Datasets from './pages/Manager/Datasets';
 import DatasetItemDetail from './pages/Manager/DatasetItemDetail';
 import TopicManagement from './pages/Manager/TopicManagement';
+import Labels from './pages/Manager/Labels';
 import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorProjectList from './pages/Annotator/ProjectList';
 import AnnotatorProjectDetail from './pages/Annotator/ProjectDetail';
@@ -70,6 +71,7 @@ function App() {
               <Route path='/manager/datasets/:id' element={<DatasetItemDetail />} />
               <Route path='/manager/datasets/:id/items/*' element={<DatasetItemDetail />} />
               <Route path='/manager/topics' element={<TopicManagement />} />
+              <Route path='/manager/labels' element={<Labels />} />
               <Route path='/admin/users' element={<AdminUsers />} />
               <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
               <Route path='/admin/datasets' element={<AdminDatasets />} />

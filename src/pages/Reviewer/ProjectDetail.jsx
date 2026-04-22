@@ -203,7 +203,7 @@ const ReviewerProjectDetail = () => {
       const computedStats = projectTasks.reduce(
         (acc, t) => {
           const status = t.status || '';
-          if (['assigned', 'in_progress', 'submitted', 'pending_review', 'partially_reviewed'].includes(status)) {
+          if (['assigned', 'in_progress', 'submitted', 'resubmitted', 'pending_review', 'partially_reviewed'].includes(status)) {
             acc.pending += 1;
           }
           if (status === 'approved') acc.approved += 1;
@@ -244,7 +244,7 @@ const ReviewerProjectDetail = () => {
         }
         subMap[sid].total += 1;
         const st = t.status || '';
-        if (['assigned', 'in_progress', 'submitted', 'pending_review', 'partially_reviewed'].includes(st)) {
+        if (['assigned', 'in_progress', 'submitted', 'resubmitted', 'pending_review', 'partially_reviewed'].includes(st)) {
           subMap[sid].pending += 1;
         }
         if (st === 'approved') subMap[sid].approved += 1;
