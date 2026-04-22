@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   Alert,
@@ -116,6 +117,7 @@ const ImgThumb = ({ src, name }) => {
 
 /* ─── MAIN COMPONENT ─────────────────────────────────────── */
 export default function Datasets() {
+  const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
   /* list state */
@@ -522,7 +524,12 @@ export default function Datasets() {
                       const src = buildImageUrl(item);
                       return (
                         <Grid item xs={6} sm={4} md={3} lg={2} key={id}>
-                          <Card sx={{ bgcolor: CARD, border:`1px solid ${BORDER}`, borderRadius:2, overflow:'hidden' }}>
+                          <Card 
+                            onClick={() => navigate(`/manager/datasets/${coerceId(selectedDs)}/items/${encodeURIComponent(item.id || item._id || item.path || '')}`, { 
+                              state: { item, datasetName: selectedDs.name } 
+                            })}
+                            sx={{ bgcolor: CARD, border:`1px solid ${BORDER}`, borderRadius:2, overflow:'hidden', cursor: 'pointer', '&:hover': { borderColor: PRIMARY } }}
+                          >
                             <Box sx={{ position:'relative', pt:'75%', bgcolor:'#07101d' }}>
                               <Box sx={{ position:'absolute', inset:0 }}>
                                 <ImgThumb src={src} name={name} />

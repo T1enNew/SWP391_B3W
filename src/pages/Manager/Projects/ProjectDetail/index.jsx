@@ -141,8 +141,18 @@ const ManagerProjectDetail = () => {
     const reviewerIds  = new Set(
       tasks.flatMap((t) => (t.reviewers || []).map((rv) => rv?.reviewerId?.id || rv?.reviewerId?._id || rv?.reviewerId).filter(Boolean))
     );
+
+    // Add project-level assigned users if tasks don't cover them all yet
+    if (project?.reviewer) {
+      const rid = project.reviewer.id || project.reviewer._id || project.reviewer;
+      if (rid) reviewerIds.add(rid.toString());
+    }
+    if (Array.isArray(project?.annotators)) {
+      project.annotators.forEach(id => annotatorIds.add(id.toString()));
+    }
+
     return { total, approved, inReview, rework, inProgress, progress, annotators: annotatorIds.size, reviewers: reviewerIds.size };
-  }, [tasks]);
+  }, [tasks, project]);
 
   const approvedItems = useMemo(() => {
     const map = new Map();
@@ -239,8 +249,18 @@ const ManagerProjectDetail = () => {
         else entry.pending += 1;
       });
     });
+
+    // Ensure project-level reviewer shows up even with 0 tasks
+    if (project?.reviewer) {
+      const rid = (project.reviewer.id || project.reviewer._id || project.reviewer).toString();
+      if (rid && !map.has(rid)) {
+        const name = project.reviewer.fullName || project.reviewer.full_name || project.reviewer.username || 'Reviewer';
+        map.set(rid, { id: rid, name, assigned: 0, approved: 0, rejected: 0, pending: 0 });
+      }
+    }
+
     return Array.from(map.values()).sort((a, b) => b.assigned - a.assigned);
-  }, [tasks]);
+  }, [tasks, project]);
 
   if (loading) {
     return (

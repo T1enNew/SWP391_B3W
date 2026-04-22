@@ -21,6 +21,8 @@ export const normalizeProject = (raw) => {
     exportFormat: p.exportFormat || p.export_format || 'JSON',
     datasetIds: p.dataset_ids || p.datasetIds || (p.dataset_id ? [p.dataset_id] : []),
     reviewPolicy: p.reviewPolicy || p.review_policy || {},
+    reviewer: p.reviewer || p.reviewer_id || null,
+    annotators: p.annotators || p.annotator_ids || [],
   };
 };
 
@@ -35,7 +37,11 @@ export const normalizeDataset = (ds) => ({
 export const normalizeTask = (task) => {
   const dataItem = task?.dataItem || task?.datasetItemId || task?.itemId || task?.data_item || {};
   const annotator = task?.annotatorId || task?.annotator || {};
-  const reviewers = task?.reviewers || [];
+  let reviewers = task?.reviewers || [];
+  // Fallback for single reviewer_id or reviewer object
+  if (reviewers.length === 0 && (task?.reviewerId || task?.reviewer_id || task?.reviewer)) {
+    reviewers = [{ reviewerId: task.reviewerId || task.reviewer_id || task.reviewer, status: task.reviewStatus || 'pending' }];
+  }
   return {
     ...task,
     id: task?.id || task?._id,
