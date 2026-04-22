@@ -10,6 +10,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Grid,
   IconButton,
   LinearProgress,
@@ -18,6 +19,7 @@ import {
   Snackbar,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import {
@@ -25,6 +27,7 @@ import {
   Delete as DeleteIcon,
   Visibility as VisibilityIcon,
   Search as SearchIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -67,6 +70,19 @@ const statusColor = (status) => ({
   archived: '#f59e0b',
 }[status] || '#94a3b8');
 
+const fmtDateTime = (v) => {
+  if (!v) return 'N/A';
+  const d = new Date(v);
+  return isNaN(d) ? 'N/A' : d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+const InfoRow = ({ label, value, color }) => (
+  <Box sx={{ display: 'flex', gap: 1, py: 0.8, borderBottom: '1px solid #1e293b' }}>
+    <Typography sx={{ color: '#64748b', fontSize: 13, minWidth: 110, flexShrink: 0 }}>{label}</Typography>
+    <Typography sx={{ color: color || '#e2e8f0', fontSize: 13, fontWeight: 500, wordBreak: 'break-word' }}>{value ?? 'N/A'}</Typography>
+  </Box>
+);
+
 export default function Projects() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
@@ -77,6 +93,7 @@ export default function Projects() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, project: null });
+  const [infoProject, setInfoProject] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -157,20 +174,43 @@ export default function Projects() {
       <Grid container spacing={2}>
         {filtered.map(project => (
           <Grid item xs={12} md={6} lg={4} key={project.id}>
-            <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' }}>
-              <CardContent>
+            <Card sx={{ bgcolor: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                {/* Header: tên + status chip + info icon */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-                  <Box>
-                    <Typography variant="h6" fontWeight={700}>{project.name}</Typography>
-                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>{project.description || 'Không có mô tả'}</Typography>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="h6" fontWeight={700} sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {project.name}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {project.description || 'Không có mô tả'}
+                    </Typography>
                   </Box>
-                  <Chip label={project.status} size="small" sx={{ bgcolor: `${statusColor(project.status)}22`, color: statusColor(project.status), border: `1px solid ${statusColor(project.status)}` }} />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                    <Chip label={project.status} size="small" sx={{ bgcolor: `${statusColor(project.status)}22`, color: statusColor(project.status), border: `1px solid ${statusColor(project.status)}` }} />
+                    <Tooltip title="Xem thông tin đầy đủ">
+                      <IconButton size="small" onClick={() => setInfoProject(project)}
+                        sx={{ color: '#94a3b8', width: 26, height: 26, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.2)' } }}>
+                        <InfoIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </Box>
-                <Stack spacing={0.8} sx={{ mb: 2 }}>
-                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Dataset: {project.dataset_name || datasets.find(d => d.id === project.dataset_id)?.name || 'N/A'}</Typography>
-                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Tasks: {project.total_tasks}</Typography>
-                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Deadline: {project.deadline ? new Date(project.deadline).toLocaleString('vi-VN') : 'N/A'}</Typography>
+
+                {/* Body info */}
+                <Stack spacing={0.6} sx={{ mb: 2, flex: 1 }}>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>
+                    Dataset: <b>{project.dataset_name || datasets.find(d => d.id === project.dataset_id)?.name || 'N/A'}</b>
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>Tasks: <b>{project.total_tasks}</b></Typography>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1' }}>
+                    Deadline: <b>{fmtDateTime(project.deadline)}</b>
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b', fontSize: 12 }}>
+                    Tạo lúc: {fmtDateTime(project.createdAt)}
+                  </Typography>
                 </Stack>
+
                 <Stack direction="row" spacing={1}>
                   <Button size="small" startIcon={<VisibilityIcon />} variant="outlined" onClick={() => navigate(`/manager/projects/${project.id}`)}>Detail</Button>
                   <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => setDeleteDialog({ open: true, project })}>Delete</Button>
@@ -187,6 +227,43 @@ export default function Projects() {
         <DialogActions>
           <Button onClick={() => setDeleteDialog({ open: false, project: null })}>Cancel</Button>
           <Button color="error" variant="contained" onClick={deleteProject}>Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Info Dialog ── */}
+      <Dialog open={!!infoProject} onClose={() => setInfoProject(null)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 3, color: '#e2e8f0' } }}>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', pb: 2 }}>
+          <Box>
+            <Typography fontWeight={800} fontSize={17}>{infoProject?.name}</Typography>
+            <Chip label={infoProject?.status} size="small" sx={{ mt: 0.5, bgcolor: `${statusColor(infoProject?.status)}22`, color: statusColor(infoProject?.status), border: `1px solid ${statusColor(infoProject?.status)}` }} />
+          </Box>
+          <IconButton onClick={() => setInfoProject(null)} size="small" sx={{ color: '#64748b', '&:hover': { color: '#fff' } }}>✕</IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <InfoRow label="Mô tả" value={infoProject?.description || 'Không có mô tả'} />
+          <InfoRow label="Dataset" value={infoProject?.dataset_name || datasets.find(d => d.id === infoProject?.dataset_id)?.name || 'N/A'} color="#93c5fd" />
+          <InfoRow label="Tổng tasks" value={infoProject?.total_tasks} />
+          <InfoRow label="Deadline" value={fmtDateTime(infoProject?.deadline)} color="#fbbf24" />
+          <InfoRow label="Ngày tạo" value={fmtDateTime(infoProject?.createdAt)} />
+          {infoProject?.updatedAt && <InfoRow label="Cập nhật lần cuối" value={fmtDateTime(infoProject?.updatedAt)} />}
+          {infoProject?.guidelines && <InfoRow label="Guidelines" value={infoProject?.guidelines} />}
+          {infoProject?.reviewer && (
+            <InfoRow label="Reviewer"
+              value={infoProject.reviewer?.fullName || infoProject.reviewer?.username || infoProject.reviewer}
+              color="#a78bfa" />
+          )}
+          {Array.isArray(infoProject?.annotators) && infoProject.annotators.length > 0 && (
+            <InfoRow label="Annotators" value={`${infoProject.annotators.length} người`} />
+          )}
+          <InfoRow label="Project ID" value={infoProject?.id} color="#475569" />
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #1e293b', px: 3, py: 2 }}>
+          <Button onClick={() => navigate(`/manager/projects/${infoProject?.id}`)} variant="contained" startIcon={<VisibilityIcon />}
+            sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Xem chi tiết
+          </Button>
+          <Button onClick={() => setInfoProject(null)} sx={{ color: '#64748b', textTransform: 'none' }}>Đóng</Button>
         </DialogActions>
       </Dialog>
 

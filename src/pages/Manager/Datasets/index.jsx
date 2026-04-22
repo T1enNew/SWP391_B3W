@@ -17,6 +17,7 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as CheckCircleIcon,
   Close as CloseIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
@@ -46,6 +47,19 @@ const fmtDate = (v) => {
   const d = new Date(v);
   return isNaN(d) ? '—' : d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
+
+const fmtDateTime = (v) => {
+  if (!v) return '—';
+  const d = new Date(v);
+  return isNaN(d) ? '—' : d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+const DsInfoRow = ({ label, value, color }) => (
+  <Box sx={{ display: 'flex', gap: 1, py: 0.8, borderBottom: `1px solid ${BORDER}` }}>
+    <Typography sx={{ color: MUTED, fontSize: 13, minWidth: 120, flexShrink: 0 }}>{label}</Typography>
+    <Typography sx={{ color: color || TEXT, fontSize: 13, fontWeight: 500, wordBreak: 'break-word' }}>{value ?? '—'}</Typography>
+  </Box>
+);
 
 const buildImageUrl = (item) => {
   if (!item) return '';
@@ -262,6 +276,9 @@ export default function Datasets() {
   /* delete dataset */
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting]         = useState(false);
+
+  /* info dialog */
+  const [infoDs, setInfoDs] = useState(null);
 
   /* delete item */
   const [deletingItemId, setDeletingItemId] = useState(null);
@@ -523,6 +540,12 @@ export default function Datasets() {
                             )}
                           </Box>
                           <Box sx={{ display: 'flex', gap: 0.3, flexShrink: 0 }}>
+                            <Tooltip title="Thông tin đầy đủ">
+                              <IconButton size="small" onClick={e => { e.stopPropagation(); setInfoDs(ds); }}
+                                sx={{ color: '#94a3b8', width: 28, height: 28, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
+                                <InfoIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Chỉnh sửa dataset">
                               <IconButton size="small" onClick={e => openEdit(e, ds)}
                                 sx={{ color: '#94a3b8', width: 28, height: 28, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
@@ -775,6 +798,31 @@ export default function Datasets() {
             sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, px: 3 }}>
             {deleting ? 'Đang xóa...' : 'Xóa Dataset'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Dataset Info Dialog ── */}
+      <Dialog open={!!infoDs} onClose={() => setInfoDs(null)} maxWidth="xs" fullWidth
+        PaperProps={{ sx: { bgcolor: '#0d1829', border: `1px solid ${BORDER}`, borderRadius: 3, color: TEXT } }}>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${BORDER}`, pb: 2 }}>
+          <Typography fontWeight={800} fontSize={16}>{infoDs?.name}</Typography>
+          <IconButton onClick={() => setInfoDs(null)} size="small" sx={{ color: MUTED, '&:hover': { color: TEXT } }}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <DsInfoRow label="Tên dataset" value={infoDs?.name} color="#93c5fd" />
+          <DsInfoRow label="Mô tả" value={infoDs?.description || 'Không có mô tả'} />
+          <DsInfoRow label="Loại" value={(infoDs?.type || 'image').toUpperCase()} />
+          <DsInfoRow label="Tổng ảnh" value={infoDs?.total_items || infoDs?.totalItems || 0} color={WARNING} />
+          <DsInfoRow label="Ngày tạo" value={fmtDateTime(infoDs?.created_at || infoDs?.createdAt)} color={SUCCESS} />
+          {(infoDs?.updated_at || infoDs?.updatedAt) && (
+            <DsInfoRow label="Cập nhật lần cuối" value={fmtDateTime(infoDs?.updated_at || infoDs?.updatedAt)} />
+          )}
+          <DsInfoRow label="Dataset ID" value={coerceId(infoDs)} color={MUTED} />
+        </DialogContent>
+        <DialogActions sx={{ borderTop: `1px solid ${BORDER}`, px: 3, py: 1.5 }}>
+          <Button onClick={() => setInfoDs(null)} sx={{ color: MUTED, textTransform: 'none' }}>Đóng</Button>
         </DialogActions>
       </Dialog>
 
