@@ -40,16 +40,17 @@ const darkTheme = createTheme({
   components: { MuiButton: { styleOverrides: { root: { textTransform: 'none' } } } },
 });
 
+const ROLE_PATHS = { annotator: '/annotator', reviewer: '/reviewer', admin: '/admin' };
+
 const getRoleRedirect = () => {
   const token = sessionStorage.getItem('token');
   if (!token) return '/login';
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    if (payload?.role === 'annotator') return '/annotator';
-    if (payload?.role === 'reviewer') return '/reviewer';
-    if (payload?.role === 'admin') return '/admin';
-  } catch {}
-  return '/dashboard';
+    const { role } = JSON.parse(atob(token.split('.')[1]));
+    return ROLE_PATHS[role] ?? '/dashboard';
+  } catch {
+    return '/dashboard';
+  }
 };
 
 function App() {

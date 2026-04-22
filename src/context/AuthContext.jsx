@@ -5,11 +5,12 @@ import { API_URL } from '../config/api';
 const AuthContext = createContext();
 const AUTH_TOKEN_KEY = 'token';
 
+const normalizeUser = (u) =>
+  u ? { ...u, role: (u.role || 'manager').toLowerCase() } : u;
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
 
@@ -18,9 +19,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const handleProfileUpdate = (e) => {
-      setUser(e.detail);
-    };
+    const handleProfileUpdate = (e) => setUser(e.detail);
     window.addEventListener('userProfileUpdated', handleProfileUpdate);
     return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
   }, []);
@@ -28,7 +27,6 @@ export const AuthProvider = ({ children }) => {
   // Restore session on mount — always fetch from backend to get authoritative role
   useEffect(() => {
     const tabToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
-
     if (tabToken) {
       axios.defaults.headers.common.Authorization = `Bearer ${tabToken}`;
       fetchUser();
@@ -40,15 +38,9 @@ export const AuthProvider = ({ children }) => {
 
   const fetchUser = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/auth/me`);
-      // Backend may return { user: {...} } or just {...} directly
-      const u = response.data?.user || response.data;
-      if (u) {
-        // Normalize role to match what login() sets — always lowercase, default to 'manager'
-        u.role = (u.role || 'manager').toLowerCase();
-      }
-      setUser(u);
-    } catch (error) {
+      const res = await axios.get(`${API_URL}/api/auth/me`);
+      setUser(normalizeUser(res.data?.user || res.data));
+    } catch {
       sessionStorage.removeItem(AUTH_TOKEN_KEY);
       delete axios.defaults.headers.common.Authorization;
       setUser(null);
@@ -57,66 +49,39 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
-    const response = await axios.post(`${API_URL}/api/auth/login`, {
-      email,
-      password,
-    });
-
-    // Backend returns: { access_token, refresh_token, expires_in, user }
-    const { access_token, refresh_token, user: loggedInUser } = response.data;
-    // Handle both { user: {...} } and {...} response shapes
-    const u = loggedInUser || response.data;
-
-    sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
-    if (refresh_token) {
-      sessionStorage.setItem('refresh_token', refresh_token);
-    }
-    axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-    if (u) u.role = (u.role || 'manager').toLowerCase();
+  const saveSession = (accessToken, refreshToken, userData) => {
+    sessionStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+    if (refreshToken) sessionStorage.setItem('refresh_token', refreshToken);
+    axios.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+    const u = normalizeUser(userData);
     setUser(u);
     setLoading(false);
-
-    return loggedInUser;
-  };
-
-  const register = async (userData) => {
-    const response = await axios.post(`${API_URL}/api/auth/register`, userData);
-    const { access_token, refresh_token, user: registeredUser } = response.data;
-    const u = registeredUser || response.data;
-
-    sessionStorage.setItem(AUTH_TOKEN_KEY, access_token);
-    if (refresh_token) {
-      sessionStorage.setItem('refresh_token', refresh_token);
-    }
-    axios.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-    if (u) u.role = (u.role || 'manager').toLowerCase();
-    setUser(u);
-    setLoading(false);
-
     return u;
   };
 
+  const login = async (email, password) => {
+    const res = await axios.post(`${API_URL}/api/auth/login`, { email, password });
+    const { access_token, refresh_token, user: loggedInUser } = res.data;
+    return saveSession(access_token, refresh_token, loggedInUser || res.data);
+  };
+
+  const register = async (userData) => {
+    const res = await axios.post(`${API_URL}/api/auth/register`, userData);
+    const { access_token, refresh_token, user: registeredUser } = res.data;
+    return saveSession(access_token, refresh_token, registeredUser || res.data);
+  };
+
   const logout = async () => {
-    try {
-      await axios.post(`${API_URL}/api/auth/logout`);
-    } catch {
-      // Ignore logout API errors
-    }
+    try { await axios.post(`${API_URL}/api/auth/logout`); } catch {}
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem('refresh_token');
     delete axios.defaults.headers.common.Authorization;
     setUser(null);
   };
 
-  const value = {
-    user,
-    setUser,
-    login,
-    register,
-    logout,
-    loading,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, setUser, login, register, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };

@@ -16,6 +16,32 @@ import {
   LogOut,
 } from 'lucide-react';
 
+const ROLE_DISPLAY = { manager: 'Manager', annotator: 'Annotator', reviewer: 'Reviewer', admin: 'Administrator' };
+const ROLE_DASHBOARD = { annotator: '/annotator', reviewer: '/reviewer' };
+
+const ROLE_MENU = {
+  manager: [
+    { text: 'Projects',     icon: <FolderKanban size={18} />, path: '/manager/projects' },
+    { text: 'Datasets',     icon: <Database size={18} />,     path: '/manager/datasets' },
+    { text: 'Labels',       icon: <Tag size={18} />,          path: '/manager/labels' },
+  ],
+  annotator: [
+    { text: 'My Tasks',     icon: <ClipboardList size={18} />, path: '/annotator/tasks' },
+  ],
+  reviewer: [
+    { text: 'Review Tasks', icon: <ClipboardList size={18} />, path: '/reviewer/tasks' },
+    { text: 'History',      icon: <History size={18} />,       path: '/reviewer/history' },
+  ],
+  admin: [
+    { text: 'Projects',       icon: <FolderKanban size={18} />, path: '/manager/projects' },
+    { text: 'Datasets',       icon: <Database size={18} />,     path: '/manager/datasets' },
+    { text: 'Labels',         icon: <Tag size={18} />,          path: '/manager/labels' },
+    { text: 'Users',          icon: <Users size={18} />,        path: '/admin/users' },
+    { text: 'Activity Logs',  icon: <FileText size={18} />,     path: '/admin/activity-logs' },
+    { text: 'Datasets',       icon: <Database size={18} />,     path: '/admin/datasets' },
+  ],
+};
+
 const LayoutTailwind = () => {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -24,53 +50,11 @@ const LayoutTailwind = () => {
 
   const getMenuItems = () => {
     if (!user) return [];
-
-    const baseItems = [
-      {
-        text: 'Dashboard',
-        icon: <LayoutDashboard size={18} />,
-        path: user.role === 'annotator'
-          ? '/annotator'
-          : user.role === 'reviewer'
-            ? '/reviewer'
-            : '/dashboard',
-      },
+    const dashPath = ROLE_DASHBOARD[user.role] ?? '/dashboard';
+    return [
+      { text: 'Dashboard', icon: <LayoutDashboard size={18} />, path: dashPath },
+      ...(ROLE_MENU[user.role] ?? []),
     ];
-
-    if (user.role === 'manager' || user.role === 'admin') {
-      baseItems.push({
-        text: 'Projects',
-        icon: <FolderKanban size={18} />,
-        path: '/manager/projects',
-      });
-      baseItems.push({
-        text: 'Datasets',
-        icon: <Database size={18} />,
-        path: '/manager/datasets',
-      });
-      baseItems.push({
-        text: 'Labels',
-        icon: <Tag size={18} />,
-        path: '/manager/labels',
-      });
-    }
-
-    if (user.role === 'annotator') {
-      baseItems.push({ text: 'My Tasks', icon: <ClipboardList size={18} />, path: '/annotator/tasks' });
-    }
-
-    if (user.role === 'reviewer') {
-      baseItems.push({ text: 'Review Tasks', icon: <ClipboardList size={18} />, path: '/reviewer/tasks' });
-      baseItems.push({ text: 'History', icon: <History size={18} />, path: '/reviewer/history' });
-    }
-
-    if (user.role === 'admin') {
-      baseItems.push({ text: 'Users', icon: <Users size={18} />, path: '/admin/users' });
-      baseItems.push({ text: 'Activity Logs', icon: <FileText size={18} />, path: '/admin/activity-logs' });
-      baseItems.push({ text: 'Datasets', icon: <Database size={18} />, path: '/admin/datasets' });
-    }
-
-    return baseItems;
   };
 
   const handleLogout = () => {
@@ -78,15 +62,7 @@ const LayoutTailwind = () => {
     navigate('/login');
   };
 
-  const getRoleDisplay = () => {
-    const roleMap = {
-      manager: 'Manager',
-      annotator: 'Annotator',
-      reviewer: 'Reviewer',
-      admin: 'Administrator',
-    };
-    return roleMap[user?.role] || 'User';
-  };
+  const getRoleDisplay = () => ROLE_DISPLAY[user?.role] ?? 'User';
 
   // Hide sidebar on workspace pages for more screen space
   const isAnnotatorWorkspace = location.pathname.startsWith('/annotator/workspace');
