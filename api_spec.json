@@ -1,0 +1,3181 @@
+
+window.onload = function() {
+  // Build a system
+  var url = window.location.search.match(/url=([^&]+)/);
+  if (url && url.length > 1) {
+    url = decodeURIComponent(url[1]);
+  } else {
+    url = window.location.origin;
+  }
+  var options = {
+{
+    "openapi": "3.0.0",
+    "info": {
+      "title": "Data Labeling Support System API",
+      "version": "2.0.0",
+      "description": "REST API for the Data Labeling Support System. Authenticate via **POST /api/auth/login**, copy the `access_token`, then click **Authorize** and enter `Bearer <token>`."
+    },
+    "servers": [
+      {
+        "url": "https://swp-be-3x8u.onrender.com",
+        "description": "Production (Render)"
+      },
+      {
+        "url": "http://localhost:5000",
+        "description": "Local development"
+      }
+    ],
+    "components": {
+      "securitySchemes": {
+        "bearerAuth": {
+          "type": "http",
+          "scheme": "bearer",
+          "bearerFormat": "JWT"
+        }
+      },
+      "schemas": {
+        "Error": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          }
+        },
+        "Pagination": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer"
+            },
+            "page": {
+              "type": "integer"
+            },
+            "limit": {
+              "type": "integer"
+            }
+          }
+        },
+        "AuthTokens": {
+          "type": "object",
+          "properties": {
+            "access_token": {
+              "type": "string"
+            },
+            "refresh_token": {
+              "type": "string"
+            },
+            "expires_in": {
+              "type": "integer"
+            }
+          }
+        },
+        "UserProfile": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "username": {
+              "type": "string"
+            },
+            "full_name": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "manager",
+                "annotator",
+                "reviewer"
+              ]
+            },
+            "specialty": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "avatar_url": {
+              "type": "string",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "Project": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "guidelines": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "in_review",
+                "waiting_rework",
+                "finalizing",
+                "completed",
+                "archived"
+              ]
+            },
+            "deadline": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "export_format": {
+              "type": "string",
+              "enum": [
+                "JSON",
+                "CSV",
+                "COCO",
+                "YOLO",
+                "VOC"
+              ]
+            },
+            "review_policy": {
+              "type": "object"
+            },
+            "total_tasks": {
+              "type": "integer"
+            },
+            "project_review": {
+              "type": "object",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "manager": {
+              "$ref": "#/components/schemas/UserProfile"
+            }
+          }
+        },
+        "Dataset": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "image",
+                "text",
+                "audio",
+                "video"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "labeling",
+                "review",
+                "completed"
+              ]
+            },
+            "total_items": {
+              "type": "integer"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "manager": {
+              "$ref": "#/components/schemas/UserProfile"
+            }
+          }
+        },
+        "Task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "assigned",
+                "in_progress",
+                "submitted",
+                "resubmitted",
+                "approved",
+                "rejected",
+                "expired"
+              ]
+            },
+            "annotation_data": {
+              "type": "object",
+              "nullable": true
+            },
+            "review_comments": {
+              "type": "string",
+              "nullable": true
+            },
+            "error_category": {
+              "type": "string",
+              "nullable": true
+            },
+            "submitted_at": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "reviewed_at": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "project": {
+              "$ref": "#/components/schemas/Project"
+            },
+            "annotator": {
+              "$ref": "#/components/schemas/UserProfile"
+            },
+            "reviewer": {
+              "$ref": "#/components/schemas/UserProfile"
+            }
+          }
+        },
+        "Label": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "color": {
+              "type": "string",
+              "description": "Hex color, e.g. #FF0000"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "shortcut": {
+              "type": "string",
+              "nullable": true
+            },
+            "sort_order": {
+              "type": "integer"
+            }
+          }
+        },
+        "LabelSet": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "allow_multiple": {
+              "type": "boolean"
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Label"
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": [
+      {
+        "bearerAuth": []
+      }
+    ],
+    "tags": [
+      {
+        "name": "Auth",
+        "description": "Authentication & session management"
+      },
+      {
+        "name": "Users",
+        "description": "User profile management"
+      },
+      {
+        "name": "Projects",
+        "description": "Project lifecycle management"
+      },
+      {
+        "name": "Datasets",
+        "description": "Dataset & file management"
+      },
+      {
+        "name": "Tasks",
+        "description": "Annotation task workflow"
+      },
+      {
+        "name": "Reviews",
+        "description": "Review & approval workflow"
+      },
+      {
+        "name": "Activity Logs",
+        "description": "Audit trail (admin only)"
+      },
+      {
+        "name": "Settings",
+        "description": "System settings (admin only)"
+      },
+      {
+        "name": "AI",
+        "description": "AI-assisted pre-labeling (Google Gemini)"
+      },
+      {
+        "name": "Health",
+        "description": "System health check"
+      },
+      {
+        "name": "Topics",
+        "description": "Taxonomy — top-level topic management"
+      },
+      {
+        "name": "Subtopics",
+        "description": "Taxonomy — subtopics, asset gallery & label sets"
+      }
+    ],
+    "paths": {
+      "/api/activity-logs": {
+        "get": {
+          "summary": "List activity logs with filters (admin only)",
+          "tags": [
+            "Activity Logs"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "action",
+              "schema": {
+                "type": "string"
+              },
+              "description": "e.g. login, task_submit, project_create"
+            },
+            {
+              "in": "query",
+              "name": "user_id",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "resource_type",
+              "schema": {
+                "type": "string"
+              },
+              "description": "e.g. task, project, dataset, system"
+            },
+            {
+              "in": "query",
+              "name": "start_date",
+              "schema": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            {
+              "in": "query",
+              "name": "end_date",
+              "schema": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated activity log entries",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pagination"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "action": {
+                                  "type": "string"
+                                },
+                                "resource_type": {
+                                  "type": "string"
+                                },
+                                "resource_id": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "ip_address": {
+                                  "type": "string"
+                                },
+                                "created_at": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                "user": {
+                                  "$ref": "#/components/schemas/UserProfile"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/activity-logs/stats": {
+        "get": {
+          "summary": "Get action counts for the last 7 days (admin only)",
+          "tags": [
+            "Activity Logs"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Action counts grouped by action type",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "action_counts": {
+                        "type": "object",
+                        "example": {
+                          "login": 42,
+                          "task_submit": 18,
+                          "project_create": 3
+                        }
+                      },
+                      "period": {
+                        "type": "string",
+                        "example": "last_7_days"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/ai/pre-label/{taskId}": {
+        "post": {
+          "summary": "Auto pre-label an image task using Gemini AI",
+          "description": "Uses the task's image and label set to generate AI suggestions.\nPass `apply=true` to save suggestions into `task.annotation_data.ai_suggestion`.\n",
+          "tags": [
+            "AI"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "taskId",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "apply",
+              "schema": {
+                "type": "boolean",
+                "default": false
+              },
+              "description": "If true, save the AI suggestion to the task's annotation_data"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "AI label suggestions",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "model": {
+                        "type": "string",
+                        "example": "gemini-2.0-flash"
+                      },
+                      "suggestions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "format": "float",
+                              "example": 0.95
+                            },
+                            "reasoning": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "applied": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Task is not an image task or has no label set"
+            },
+            "403": {
+              "description": "Task not assigned to you"
+            },
+            "404": {
+              "description": "Task not found"
+            },
+            "500": {
+              "description": "AI provider error"
+            }
+          }
+        }
+      },
+      "/api/ai/analyze-image": {
+        "post": {
+          "summary": "Ad-hoc — analyze any image with a custom set of labels",
+          "description": "Pass an image URL and a list of candidate labels. Useful for quick testing\noutside the task workflow.\n",
+          "tags": [
+            "AI"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "image_url",
+                    "labels"
+                  ],
+                  "properties": {
+                    "image_url": {
+                      "type": "string",
+                      "example": "https://example.com/cat.jpg"
+                    },
+                    "labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "example": "cat"
+                          },
+                          "description": {
+                            "type": "string",
+                            "example": "A domestic feline"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "AI label suggestions"
+            },
+            "400": {
+              "description": "Missing image_url or labels"
+            },
+            "500": {
+              "description": "AI provider error"
+            }
+          }
+        }
+      },
+      "/api/auth/register": {
+        "post": {
+          "summary": "Register a new user",
+          "tags": [
+            "Auth"
+          ],
+          "security": [],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "email",
+                    "password",
+                    "username",
+                    "full_name",
+                    "role"
+                  ],
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "john@example.com"
+                    },
+                    "password": {
+                      "type": "string",
+                      "minLength": 6,
+                      "example": "secret123"
+                    },
+                    "username": {
+                      "type": "string",
+                      "example": "john_doe"
+                    },
+                    "full_name": {
+                      "type": "string",
+                      "example": "John Doe"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "manager",
+                        "annotator",
+                        "reviewer"
+                      ],
+                      "example": "annotator"
+                    },
+                    "specialty": {
+                      "type": "string",
+                      "example": "general"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "User registered successfully",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/AuthTokens"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "message": {
+                            "type": "string"
+                          },
+                          "user": {
+                            "$ref": "#/components/schemas/UserProfile"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Email or username already taken",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/auth/login": {
+        "post": {
+          "summary": "Login and obtain JWT tokens",
+          "tags": [
+            "Auth"
+          ],
+          "security": [],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "email",
+                    "password"
+                  ],
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "format": "email",
+                      "example": "admin@example.com"
+                    },
+                    "password": {
+                      "type": "string",
+                      "example": "secret123"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Login successful — copy access_token and use as Bearer token",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/AuthTokens"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "user": {
+                            "$ref": "#/components/schemas/UserProfile"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Invalid credentials",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Account deactivated",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/auth/refresh": {
+        "post": {
+          "summary": "Refresh access token using refresh_token",
+          "tags": [
+            "Auth"
+          ],
+          "security": [],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "refresh_token"
+                  ],
+                  "properties": {
+                    "refresh_token": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "New tokens issued",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AuthTokens"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Refresh token invalid or expired"
+            }
+          }
+        }
+      },
+      "/api/auth/logout": {
+        "post": {
+          "summary": "Logout (invalidate session)",
+          "tags": [
+            "Auth"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Logged out successfully"
+            }
+          }
+        }
+      },
+      "/api/auth/me": {
+        "get": {
+          "summary": "Get current authenticated user",
+          "tags": [
+            "Auth"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Current user profile",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "user": {
+                        "$ref": "#/components/schemas/UserProfile"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized"
+            }
+          }
+        }
+      },
+      "/api/auth/me/password": {
+        "put": {
+          "summary": "Change current user's password",
+          "tags": [
+            "Auth"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "current_password",
+                    "new_password"
+                  ],
+                  "properties": {
+                    "current_password": {
+                      "type": "string"
+                    },
+                    "new_password": {
+                      "type": "string",
+                      "minLength": 6
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Password updated"
+            },
+            "400": {
+              "description": "Current password incorrect or new password too short"
+            }
+          }
+        }
+      },
+      "/api/datasets": {
+        "get": {
+          "summary": "List datasets (manager / admin / reviewer)",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "project_id",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "type",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "text",
+                  "audio",
+                  "video"
+                ]
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 20
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated dataset list",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pagination"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/Dataset"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "post": {
+          "summary": "Create a new dataset (manager / admin)",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "example": "Traffic Cameras Batch 1"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "text",
+                        "audio",
+                        "video"
+                      ]
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Dataset created",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/datasets/{id}": {
+        "get": {
+          "summary": "Get dataset details with data items",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Dataset with all data_items",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Dataset not found"
+            }
+          }
+        },
+        "delete": {
+          "summary": "Delete a dataset and all its files from storage (manager / admin)",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Dataset deleted"
+            },
+            "403": {
+              "description": "Not your dataset"
+            },
+            "404": {
+              "description": "Dataset not found"
+            }
+          }
+        }
+      },
+      "/api/datasets/{id}/approved-results": {
+        "get": {
+          "summary": "Get all approved tasks (images and labels) for a dataset",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "List of approved tasks"
+            }
+          }
+        }
+      },
+      "/api/datasets/{id}/upload": {
+        "post": {
+          "summary": "Upload files to a dataset (max 50 files, 500MB each; ZIP auto-extracted)",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "binary"
+                      },
+                      "description": "Image (jpg/png/webp/bmp/gif), audio (mp3/wav/ogg), text, CSV, or ZIP"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Files uploaded successfully",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "message": {
+                        "type": "string"
+                      },
+                      "uploaded": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "errors": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "total_items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "No files provided"
+            },
+            "403": {
+              "description": "Not your dataset"
+            },
+            "404": {
+              "description": "Dataset not found"
+            }
+          }
+        }
+      },
+      "/api/datasets/{id}/signed-url/{itemId}": {
+        "get": {
+          "summary": "Get a 1-hour signed URL for a private file",
+          "tags": [
+            "Datasets"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "Dataset ID"
+            },
+            {
+              "in": "path",
+              "name": "itemId",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "Data item ID"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Signed URL (expires in 3600 seconds)",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "signed_url": {
+                        "type": "string"
+                      },
+                      "expires_in": {
+                        "type": "integer",
+                        "example": 3600
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "File not found"
+            }
+          }
+        }
+      },
+      "/api/projects": {
+        "get": {
+          "summary": "List projects (filtered by role)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "status",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "active",
+                  "in_review",
+                  "waiting_rework",
+                  "finalizing",
+                  "completed",
+                  "archived"
+                ]
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 20
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated list of projects",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pagination"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/Project"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "post": {
+          "summary": "Create a new project (manager / admin)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "example": "Vehicle Detection Q1"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "guidelines": {
+                      "type": "string"
+                    },
+                    "deadline": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "export_format": {
+                      "type": "string",
+                      "enum": [
+                        "JSON",
+                        "CSV",
+                        "COCO",
+                        "YOLO",
+                        "VOC"
+                      ],
+                      "default": "JSON"
+                    },
+                    "review_policy": {
+                      "type": "object",
+                      "example": {
+                        "mode": "full",
+                        "sample_rate": 1,
+                        "reviewers_per_item": 1
+                      }
+                    },
+                    "dataset_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true,
+                      "description": "Dataset to auto-distribute tasks from (optional)"
+                    },
+                    "annotator_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "description": "User IDs with role=annotator to assign to this project"
+                    },
+                    "reviewer_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Specific reviewer for the project tasks"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Project created",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/projects/{id}": {
+        "get": {
+          "summary": "Get project details (includes labels and task stats)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Project with project_labels and stats",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Project not found"
+            }
+          }
+        },
+        "put": {
+          "summary": "Update project (manager / admin)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "guidelines": {
+                      "type": "string"
+                    },
+                    "deadline": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "export_format": {
+                      "type": "string",
+                      "enum": [
+                        "JSON",
+                        "CSV",
+                        "COCO",
+                        "YOLO",
+                        "VOC"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "active",
+                        "in_review",
+                        "waiting_rework",
+                        "finalizing",
+                        "completed",
+                        "archived"
+                      ]
+                    },
+                    "review_policy": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Updated project",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Not your project"
+            },
+            "404": {
+              "description": "Project not found"
+            }
+          }
+        },
+        "delete": {
+          "summary": "Delete project (manager / admin)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Project deleted"
+            },
+            "403": {
+              "description": "Not your project"
+            },
+            "404": {
+              "description": "Project not found"
+            }
+          }
+        }
+      },
+      "/api/projects/{id}/quality": {
+        "get": {
+          "summary": "Get project quality / task stats",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Quality metrics (total_tasks, approved_tasks, approval_rate, etc.)"
+            }
+          }
+        }
+      },
+      "/api/projects/{id}/approve": {
+        "post": {
+          "summary": "Approve a project (reviewer / admin) — requires ≥70% approval rate",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "comment": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Project approved"
+            },
+            "400": {
+              "description": "Approval rate below 70%"
+            }
+          }
+        }
+      },
+      "/api/projects/{id}/reject": {
+        "post": {
+          "summary": "Reject a project and return it for rework (reviewer / admin)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "comment"
+                  ],
+                  "properties": {
+                    "comment": {
+                      "type": "string",
+                      "example": "Too many annotation errors in dataset B."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Project rejected and set to waiting_rework"
+            },
+            "400": {
+              "description": "Comment required"
+            }
+          }
+        }
+      },
+      "/api/projects/{id}/export": {
+        "get": {
+          "summary": "Export approved annotations (manager / admin)",
+          "tags": [
+            "Projects"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "format",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "JSON",
+                  "CSV",
+                  "COCO"
+                ],
+                "default": "JSON"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Exported file (JSON / CSV / COCO)"
+            }
+          }
+        }
+      },
+      "/api/reviews/pending": {
+        "get": {
+          "summary": "Get tasks pending this reviewer's vote",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "project_id",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "List of tasks awaiting review (deadline-filtered)"
+            }
+          }
+        }
+      },
+      "/api/reviews/reviewed": {
+        "get": {
+          "summary": "Get tasks already reviewed by the current reviewer",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "project_id",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Reviewed tasks (approved or rejected)"
+            }
+          }
+        }
+      },
+      "/api/reviews/stats": {
+        "get": {
+          "summary": "Get review statistics for the current reviewer",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Status counts and error category breakdown",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "status_counts": {
+                        "type": "object",
+                        "example": {
+                          "submitted": 3,
+                          "approved": 10,
+                          "rejected": 2,
+                          "total": 15
+                        }
+                      },
+                      "error_category_counts": {
+                        "type": "object",
+                        "example": {
+                          "wrong_label": 2,
+                          "missing_annotation": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/reviews/{id}/approve": {
+        "post": {
+          "summary": "Approve a submitted task",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "review_comments": {
+                      "type": "string"
+                    },
+                    "review_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Task approved"
+            },
+            "400": {
+              "description": "Task not in reviewable state or deadline passed"
+            }
+          }
+        }
+      },
+      "/api/reviews/{id}/reject": {
+        "post": {
+          "summary": "Reject a submitted task with a required comment",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "review_comments"
+                  ],
+                  "properties": {
+                    "review_comments": {
+                      "type": "string",
+                      "example": "Bounding boxes are misaligned on objects 3 and 7."
+                    },
+                    "error_category": {
+                      "type": "string",
+                      "example": "wrong_boundary"
+                    },
+                    "review_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "review_issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Task rejected"
+            },
+            "400": {
+              "description": "Task not reviewable or deadline passed"
+            }
+          }
+        }
+      },
+      "/api/reviews/projects/{projectId}/stats": {
+        "get": {
+          "summary": "Get aggregated task stats for a project",
+          "tags": [
+            "Reviews"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "projectId",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Project-level review stats (total, approved, rejected, approval_rate)"
+            }
+          }
+        }
+      },
+      "/api/settings": {
+        "get": {
+          "summary": "Get system settings (admin only)",
+          "tags": [
+            "Settings"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "System settings object",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "storage_config": {
+                        "type": "object"
+                      },
+                      "task_config": {
+                        "type": "object"
+                      },
+                      "review_config": {
+                        "type": "object"
+                      },
+                      "general_config": {
+                        "type": "object"
+                      },
+                      "updated_by": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "put": {
+          "summary": "Update system settings — fields are deep-merged (admin only)",
+          "tags": [
+            "Settings"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "storage_config": {
+                      "type": "object",
+                      "example": {
+                        "max_file_size_mb": 100
+                      }
+                    },
+                    "task_config": {
+                      "type": "object",
+                      "example": {
+                        "auto_expire_days": 7
+                      }
+                    },
+                    "review_config": {
+                      "type": "object",
+                      "example": {
+                        "min_approval_rate": 70
+                      }
+                    },
+                    "general_config": {
+                      "type": "object",
+                      "example": {
+                        "app_name": "DataLabel Pro"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Updated settings"
+            }
+          }
+        }
+      },
+      "/api/tasks/my-tasks": {
+        "get": {
+          "summary": "Get tasks assigned to the current user (annotator or reviewer)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "status",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "assigned",
+                  "in_progress",
+                  "submitted",
+                  "resubmitted",
+                  "approved",
+                  "rejected",
+                  "expired"
+                ]
+              }
+            },
+            {
+              "in": "query",
+              "name": "project_id",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated task list",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pagination"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/Task"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/tasks/project/{projectId}": {
+        "get": {
+          "summary": "List all tasks for a project (manager / admin / reviewer)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "projectId",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "in": "query",
+              "name": "status",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "assigned",
+                  "in_progress",
+                  "submitted",
+                  "resubmitted",
+                  "approved",
+                  "rejected",
+                  "expired"
+                ]
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated task list for the project"
+            }
+          }
+        }
+      },
+      "/api/tasks/{id}": {
+        "get": {
+          "summary": "Get task details",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Task details with reviewer votes",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Task not found"
+            }
+          }
+        }
+      },
+      "/api/tasks/assign": {
+        "post": {
+          "summary": "Auto-split unassigned data items from a dataset evenly across annotators (manager / admin)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "project_id",
+                    "dataset_id",
+                    "annotator_ids"
+                  ],
+                  "properties": {
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "dataset_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "annotator_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "reviewer_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Optional explicit reviewer assignment"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Tasks auto-split and assigned"
+            },
+            "400": {
+              "description": "No annotators provided or invalid annotator"
+            },
+            "404": {
+              "description": "Project not found"
+            }
+          }
+        }
+      },
+      "/api/tasks/{id}/start": {
+        "put": {
+          "summary": "Start a task — transition assigned → in_progress (annotator)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Task status updated to in_progress"
+            },
+            "400": {
+              "description": "Invalid status transition"
+            },
+            "403": {
+              "description": "Task not assigned to you"
+            }
+          }
+        }
+      },
+      "/api/tasks/{id}/save": {
+        "put": {
+          "summary": "Save annotation progress (draft, no status change) (annotator)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "annotation_data"
+                  ],
+                  "properties": {
+                    "annotation_data": {
+                      "type": "object",
+                      "description": "Annotation payload. `bboxes` will be automatically grouped by label and stored in `grouped` field before saving.\n",
+                      "example": {
+                        "labels": [
+                          "cat"
+                        ],
+                        "bboxes": [
+                          {
+                            "label": "cat",
+                            "x": 10,
+                            "y": 20,
+                            "width": 50,
+                            "height": 30
+                          },
+                          {
+                            "label": "dog",
+                            "x": 100,
+                            "y": 120,
+                            "width": 60,
+                            "height": 40
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Progress saved"
+            },
+            "400": {
+              "description": "Task status does not allow saving"
+            }
+          }
+        }
+      },
+      "/api/tasks/{id}/submit": {
+        "post": {
+          "summary": "Submit task for review — in_progress → submitted (or rejected → resubmitted) (annotator)",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "annotation_data": {
+                      "type": "object",
+                      "description": "Optional final annotation (overrides saved draft)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Task submitted for review"
+            },
+            "400": {
+              "description": "No annotation data or invalid transition"
+            }
+          }
+        }
+      },
+      "/api/tasks/{id}/ai-assist": {
+        "post": {
+          "summary": "Trigger AI to generate draft bounding boxes for an image (annotator button)",
+          "description": "Human-in-the-loop flow:\n1. Annotator clicks \"AI Assist\" button on the labeling UI\n2. FE calls this endpoint\n3. Backend fetches the task image from Supabase Storage\n4. Sends image to AI model (Gemini / Mock) for bbox detection\n5. Returns grouped bboxes — FE renders them as draggable draft boxes\n6. Annotator adjusts → calls PUT /:id/save to persist final result\n\nNote: this endpoint does NOT save anything to DB.\nIt only returns suggestions for the annotator to review.\n",
+          "tags": [
+            "Tasks"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "image_width": {
+                      "type": "integer",
+                      "default": 1000,
+                      "description": "Canvas width in pixels (for coordinate scaling)"
+                    },
+                    "image_height": {
+                      "type": "integer",
+                      "default": 1000,
+                      "description": "Canvas height in pixels (for coordinate scaling)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "AI draft bboxes grouped by label — ready for FE renderer",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "mock",
+                          "gemini"
+                        ],
+                        "example": "gemini"
+                      },
+                      "bboxes": {
+                        "type": "array",
+                        "description": "Flat list of predicted boxes",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "x": {
+                              "type": "integer"
+                            },
+                            "y": {
+                              "type": "integer"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "format": "float"
+                            }
+                          }
+                        }
+                      },
+                      "grouped": {
+                        "type": "object",
+                        "description": "Same bboxes grouped by label for FE rendering",
+                        "example": {
+                          "cat": [
+                            {
+                              "x": 10,
+                              "y": 20,
+                              "width": 50,
+                              "height": 30,
+                              "confidence": 0.92
+                            }
+                          ],
+                          "dog": [
+                            {
+                              "x": 100,
+                              "y": 120,
+                              "width": 60,
+                              "height": 40,
+                              "confidence": 0.85
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Task is not an image or has no label set"
+            },
+            "403": {
+              "description": "Task not assigned to you"
+            },
+            "404": {
+              "description": "Task not found"
+            }
+          }
+        }
+      },
+      "/api/users": {
+        "get": {
+          "summary": "List users (managers see only annotators/reviewers)",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "role",
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "admin",
+                  "manager",
+                  "annotator",
+                  "reviewer"
+                ]
+              }
+            },
+            {
+              "in": "query",
+              "name": "is_active",
+              "schema": {
+                "type": "boolean"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "schema": {
+                "type": "integer",
+                "default": 1
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "schema": {
+                "type": "integer",
+                "default": 50
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Paginated list of users",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pagination"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/UserProfile"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/users/me": {
+        "get": {
+          "summary": "Get current user's profile",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Current user profile",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "user": {
+                        "$ref": "#/components/schemas/UserProfile"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "put": {
+          "summary": "Update own profile (full_name, specialty, avatar_url)",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "full_name": {
+                      "type": "string"
+                    },
+                    "specialty": {
+                      "type": "string"
+                    },
+                    "avatar_url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Updated profile",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/users/{id}": {
+        "get": {
+          "summary": "Get user by ID",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "User profile",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "User not found"
+            }
+          }
+        },
+        "put": {
+          "summary": "Admin — update any user (role, is_active, etc.)",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "full_name": {
+                      "type": "string"
+                    },
+                    "specialty": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "manager",
+                        "annotator",
+                        "reviewer"
+                      ]
+                    },
+                    "is_active": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Updated user",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "User not found"
+            }
+          }
+        },
+        "delete": {
+          "summary": "Admin — delete a user account",
+          "tags": [
+            "Users"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "User deleted"
+            },
+            "400": {
+              "description": "Cannot delete own account"
+            }
+          }
+        }
+      },
+      "/api/admin/system-health": {
+        "get": {
+          "summary": "System health check",
+          "tags": [
+            "Health"
+          ],
+          "security": [],
+          "responses": {
+            "200": {
+              "description": "System status",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "server": {
+                        "type": "object"
+                      },
+                      "database": {
+                        "type": "object"
+                      },
+                      "storage": {
+                        "type": "object"
+                      },
+                      "memory": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "customOptions": {
+    "persistAuthorization": true,
+    "filter": true
+  }
+}
+  url = options.swaggerUrl || url
+  var urls = options.swaggerUrls
+  var customOptions = options.customOptions
+  var spec1 = options.swaggerDoc
+  var swaggerOptions = {
+    spec: spec1,
+    url: url,
+    urls: urls,
+    dom_id: '#swagger-ui',
+    deepLinking: true,
+    presets: [
+      SwaggerUIBundle.presets.apis,
+      SwaggerUIStandalonePreset
+    ],
+    plugins: [
+      SwaggerUIBundle.plugins.DownloadUrl
+    ],
+    layout: "StandaloneLayout"
+  }
+  for (var attrname in customOptions) {
+    swaggerOptions[attrname] = customOptions[attrname];
+  }
+  var ui = SwaggerUIBundle(swaggerOptions)
+
+  if (customOptions.oauth) {
+    ui.initOAuth(customOptions.oauth)
+  }
+
+  if (customOptions.preauthorizeApiKey) {
+    const key = customOptions.preauthorizeApiKey.authDefinitionKey;
+    const value = customOptions.preauthorizeApiKey.apiKeyValue;
+    if (!!key && !!value) {
+      const pid = setInterval(() => {
+        const authorized = ui.preauthorizeApiKey(key, value);
+        if(!!authorized) clearInterval(pid);
+      }, 500)
+
+    }
+  }
+
+  if (customOptions.authAction) {
+    ui.authActions.authorize(customOptions.authAction)
+  }
+
+  window.ui = ui
+}
