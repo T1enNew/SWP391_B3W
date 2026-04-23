@@ -9,6 +9,7 @@ import {
   Label as LabelIcon, Search as SearchIcon, Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { Tooltip } from '@mui/material';
+import { getLabels, createLabel, updateLabel, deleteLabel } from '../../../services/LabelService';
 
 /* ─── THEME ── */
 const BG='#080f1e', PANEL='#0f1a2e', CARD='#131f35', BORDER='#1e2d47';
@@ -21,19 +22,6 @@ const PRESET_COLORS = [
   '#64748b','#e2e8f0','#14b8a6','#84cc16',
 ];
 
-const STORAGE_KEY = 'master_labels_v1';
-
-/* ─── persistence helpers ── */
-const loadFromStorage = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-};
-const saveToStorage = (labels) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(labels)); } catch {}
-};
-const genId = () => `lbl_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
 
 const inputSx = {
   '& .MuiOutlinedInput-root': {
@@ -95,7 +83,7 @@ const LabelCard = ({ label, onEdit, onDelete }) => (
 );
 
 /* ─── Form Dialog ── */
-const LabelFormDialog = ({ open, initial, onClose, onSave }) => {
+const LabelFormDialog = ({ open, initial, onClose, onSave, saving }) => {
   const [form, setForm] = useState({ name:'', color:'#3b82f6', description:'', shortcut:'' });
   useEffect(()=>{
     if(open) setForm({ name:initial?.name||'', color:initial?.color||'#3b82f6', description:initial?.description||'', shortcut:initial?.shortcut||'' });
@@ -145,10 +133,10 @@ const LabelFormDialog = ({ open, initial, onClose, onSave }) => {
       </DialogContent>
       <DialogActions sx={{ borderTop:`1px solid ${BORDER}`, px:3, py:2, gap:1 }}>
         <Button onClick={onClose} sx={{ color:MUTED, textTransform:'none' }}>Hủy</Button>
-        <Button variant="contained" onClick={()=>onSave(form)} disabled={!form.name.trim()}
-          startIcon={initial?<EditIcon />:<AddIcon />}
+        <Button variant="contained" onClick={()=>onSave(form)} disabled={!form.name.trim() || saving}
+          startIcon={saving ? <CircularProgress size={16} sx={{ color:'#fff' }} /> : initial ? <EditIcon /> : <AddIcon />}
           sx={{ bgcolor:PRIMARY, textTransform:'none', fontWeight:700, borderRadius:2, px:3, '&:hover':{ bgcolor:'#2563eb' } }}>
-          {initial ? 'Cập nhật' : 'Tạo nhãn'}
+          {saving ? 'Đang lưu...' : initial ? 'Cập nhật' : 'Tạo nhãn'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -158,6 +146,8 @@ const LabelFormDialog = ({ open, initial, onClose, onSave }) => {
 /* ─── MAIN ── */
 export default function Labels() {
   const [labels, setLabels]         = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [saving, setSaving]         = useState(false);
   const [search, setSearch]         = useState('');
   const [toast, setToast]           = useState({ open:false, msg:'', sev:'success' });
   const [formOpen, setFormOpen]     = useState(false);
@@ -166,31 +156,50 @@ export default function Labels() {
 
   const showToast = (msg, sev='success') => setToast({ open:true, msg, sev });
 
-  /* init from localStorage */
-  useEffect(() => { setLabels(loadFromStorage()); }, []);
-
-  const persist = (newLabels) => { setLabels(newLabels); saveToStorage(newLabels); };
-
-  const handleSave = (form) => {
-    if (!form.name.trim()) return;
-    let updated;
-    if (editTarget) {
-      updated = labels.map(l => l.id === editTarget.id ? { ...l, ...form } : l);
-      showToast('Cập nhật nhãn thành công');
-    } else {
-      updated = [...labels, { id:genId(), name:form.name.trim(), color:form.color, description:form.description, shortcut:form.shortcut }];
-      showToast('Tạo nhãn thành công');
-    }
-    persist(updated);
-    setFormOpen(false);
-    setEditTarget(null);
+  const fetchLabels = async () => {
+    setLoading(true);
+    try {
+      const data = await getLabels();
+      setLabels(Array.isArray(data) ? data : (data?.labels || data?.data || []));
+    } catch (e) {
+      showToast(e.message || 'Không tải được danh sách nhãn', 'error');
+    } finally { setLoading(false); }
   };
 
-  const handleDelete = () => {
+  useEffect(() => { fetchLabels(); }, []);
+
+  const handleSave = async (form) => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const payload = { name: form.name.trim(), color: form.color, description: form.description, shortcut: form.shortcut };
+      if (editTarget) {
+        const updated = await updateLabel(editTarget.id, payload);
+        setLabels(prev => prev.map(l => l.id === editTarget.id ? { ...l, ...(updated?.label || updated) } : l));
+        showToast('Cập nhật nhãn thành công');
+      } else {
+        const created = await createLabel(payload);
+        setLabels(prev => [...prev, created?.label || created]);
+        showToast('Tạo nhãn thành công');
+      }
+      setFormOpen(false);
+      setEditTarget(null);
+    } catch (e) {
+      showToast(e.message || 'Thao tác thất bại', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    persist(labels.filter(l => l.id !== deleteTarget.id));
-    showToast('Đã xóa nhãn');
-    setDeleteTarget(null);
+    setSaving(true);
+    try {
+      await deleteLabel(deleteTarget.id);
+      setLabels(prev => prev.filter(l => l.id !== deleteTarget.id));
+      showToast('Đã xóa nhãn');
+      setDeleteTarget(null);
+    } catch (e) {
+      showToast(e.message || 'Xóa thất bại', 'error');
+    } finally { setSaving(false); }
   };
 
   const filtered = useMemo(() => {
@@ -211,7 +220,7 @@ export default function Labels() {
           </Box>
           <Stack direction="row" spacing={1.5}>
             <Tooltip title="Làm mới">
-              <IconButton onClick={()=>setLabels(loadFromStorage())}
+              <IconButton onClick={fetchLabels} disabled={loading}
                 sx={{ color:MUTED, '&:hover':{ color:TEXT, bgcolor:'rgba(255,255,255,0.06)' } }}>
                 <RefreshIcon />
               </IconButton>
@@ -237,7 +246,11 @@ export default function Labels() {
         </Box>
 
         {/* Grid */}
-        {filtered.length === 0 && !search ? (
+        {loading ? (
+          <Box sx={{ display:'flex', justifyContent:'center', py:12 }}>
+            <CircularProgress sx={{ color:PRIMARY }} />
+          </Box>
+        ) : filtered.length === 0 && !search ? (
           <Box sx={{ display:'flex', flexDirection:'column', alignItems:'center', py:12, gap:2 }}>
             <Box sx={{ width:80, height:80, borderRadius:'50%',
               background:'linear-gradient(135deg,rgba(59,130,246,0.2),rgba(139,92,246,0.2))',
@@ -277,7 +290,7 @@ export default function Labels() {
       </Box>
 
       <LabelFormDialog open={formOpen} initial={editTarget}
-        onClose={()=>{ setFormOpen(false); setEditTarget(null); }} onSave={handleSave} />
+        onClose={()=>{ setFormOpen(false); setEditTarget(null); }} onSave={handleSave} saving={saving} />
 
       {/* Delete confirm */}
       <Dialog open={!!deleteTarget} onClose={()=>setDeleteTarget(null)}

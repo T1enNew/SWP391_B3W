@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:swp-be-3x8u.onrender.com)"
+    ]
+  }
+}

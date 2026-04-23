@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import { getLabels } from '../../../services/LabelService';
 
 /* ─── THEME ── */
 const BG='#080f1e', PANEL='#0f1a2e', CARD='#131f35', BORDER='#1e2d47';
@@ -156,9 +157,6 @@ const LabelPicker = ({ labels, selected, onToggle }) => (
 );
 
 /* ─── MAIN ─────────────────────────────────────────────── */
-const MASTER_TOPIC_NAME = '__master_labels__';
-const MASTER_SUBTOPIC_NAME = '__labels__';
-
 export default function CreateProject() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -181,23 +179,14 @@ export default function CreateProject() {
 
   const showToast = (msg, sev='success') => setToast({ open:true, msg, sev });
 
-  /* ── load master labels from localStorage (same key as Labels.jsx) ── */
-  const loadMasterLabels = () => {
-    try {
-      const raw = localStorage.getItem('master_labels_v1');
-      setMasterLabels(raw ? JSON.parse(raw) : []);
-    } catch {
-      setMasterLabels([]);
-    }
-  };
-
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [dsRes, userRes] = await Promise.allSettled([
+        const [dsRes, userRes, labelsRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers:getAuthHeaders() }),
           axios.get(`${API_URL}/api/users`, { headers:getAuthHeaders() }),
+          getLabels(),
         ]);
         if (dsRes.status === 'fulfilled') setDatasets(getArray(dsRes.value.data));
         if (userRes.status === 'fulfilled') {
@@ -205,7 +194,10 @@ export default function CreateProject() {
           setAnnotators(users.filter(u => u.role === 'annotator' && u.is_active !== false));
           setReviewers(users.filter(u => u.role === 'reviewer' && u.is_active !== false));
         }
-        loadMasterLabels();
+        if (labelsRes.status === 'fulfilled') {
+          const data = labelsRes.value;
+          setMasterLabels(Array.isArray(data) ? data : (data?.labels || data?.data || []));
+        }
       } catch (e) {
         setError(e?.response?.data?.message || e.message || 'Không tải được dữ liệu');
       } finally { setLoading(false); }
