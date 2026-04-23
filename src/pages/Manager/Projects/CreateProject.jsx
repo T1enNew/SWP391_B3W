@@ -249,6 +249,7 @@ export default function CreateProject() {
         dataset_id: selectedDatasetId,
         annotator_ids: selectedAnnotators,
         reviewer_id: selectedReviewer,
+        label_ids: selectedLabelsetIds,
       };
       const res = await axios.post(`${API_URL}/api/projects`, payload, { headers:getAuthHeaders() });
       const project = res.data?.project || res.data;

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { normalizeTask } from '../../utils/taskAdapter';
 import ImageAnnotator from '../../components/ImageAnnotator';
 import AudioAnnotator from '../../components/AudioAnnotator';
 import {
@@ -204,14 +205,37 @@ const AnnotatorTask = () => {
       setShowLabelDropdown(false);
 
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
-      setTask(response.data);
-      const initialLabels = response.data.labels || {};
+      const taskData = normalizeTask(response.data);
+
+      // Fallback: nếu task không có availableLabels, fetch từ project
+      if (!taskData.availableLabels?.length) {
+        const projectId = taskData.projectId?.id || taskData.project?.id || (typeof taskData.projectId === 'string' ? taskData.projectId : null);
+        if (projectId) {
+          try {
+            const projRes = await axios.get(`${API_URL}/api/projects/${projectId}`);
+            const pData = projRes.data?.project || projRes.data || {};
+            const rawLabels = pData.labels || pData.label_ids || pData.labelsets || pData.labelIds || [];
+            if (Array.isArray(rawLabels) && rawLabels.length > 0) {
+              taskData.availableLabels = rawLabels.map((l) => ({
+                id: l._id || l.id || l,
+                name: l.name || String(l),
+                color: l.color || '#3b82f6',
+                description: l.description || '',
+                shortcut: l.shortcut || '',
+              }));
+            }
+          } catch {}
+        }
+      }
+
+      setTask(taskData);
+      const initialLabels = taskData.labels || {};
       setLabels(initialLabels);
-      const kind = getTaskKind(response.data);
+      const kind = getTaskKind(taskData);
 
       if (kind === 'text') {
         try {
-          const textRes = await axios.get(buildFileUrl(response.data.dataItem), {
+          const textRes = await axios.get(buildFileUrl(taskData.dataItem), {
             responseType: 'text',
           });
           setTextContent(textRes.data || '');
@@ -236,9 +260,9 @@ const AnnotatorTask = () => {
         setSelectedLabel(initialLabels?.label || '');
       }
 
-      if (response.data.dataset_id) {
+      if (taskData.dataset_id || taskData.datasetId) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { dataset_id: response.data.dataset_id },
+          params: { dataset_id: taskData.dataset_id || taskData.datasetId?.id || taskData.datasetId },
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);
@@ -261,7 +285,7 @@ const AnnotatorTask = () => {
         }));
         setAnnotations(loadedAnnotations);
 
-        const projectData = response.data?.projectId;
+        const projectData = taskData.projectId || taskData.project;
         if (projectData?.questions && projectData.questions.length > 0) {
           const totalRequired = projectData.questions.length;
           const completed = loadedAnnotations.filter((a) => a.answer).length;
