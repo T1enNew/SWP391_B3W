@@ -18,6 +18,10 @@ import {
   CheckCircle as CheckCircleIcon,
   Close as CloseIcon,
   InfoOutlined as InfoIcon,
+  FileDownload as DownloadIcon,
+  TaskAlt as TaskAltIcon,
+  HourglassTop as PendingIcon,
+  Pending as ReviewIcon,
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
@@ -281,11 +285,14 @@ export default function Datasets() {
   const [detailItem, setDetailItem]           = useState(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
+  /* pre-loaded status map for all datasets {dsId → {isComplete, inProgress, tasks}} */
+  const [dsStatusMap, setDsStatusMap] = useState({});
+
   const tasksByItemId = useMemo(() => {
     const byId  = new Map();
     const byName = new Map();
     linkedTasks.forEach(t => {
-      const di = t.dataItem;
+      const di = t.dataItem || t.data_item;
       // dataItem can be a plain string ID or an object
       const itemId = typeof di === 'string' ? di : (di?._id || di?.id || '');
       if (itemId) {
@@ -324,11 +331,70 @@ export default function Datasets() {
     return false;
   }, [dsItems, linkedTasks]);
 
+  const dsStats = useMemo(() => {
+    const approved  = linkedTasks.filter(t => t.status === 'approved').length;
+    const reviewing = linkedTasks.filter(t => t.status === 'submitted').length;
+    const rework    = linkedTasks.filter(t => t.status === 'rejected').length;
+    const annotating = linkedTasks.filter(t => !['approved','submitted','rejected'].includes(t.status)).length;
+    return { approved, reviewing, rework, annotating };
+  }, [linkedTasks]);
+
+  const handleExport = () => {
+    if (!selectedDs || !isComplete) return;
+    const seenKeys = new Set();
+    const items = dsItems.map(item => {
+      const keys = [coerceId(item), item?.originalName, item?.original_name, item?.filename].filter(Boolean);
+      const entry = keys.reduce((f, k) => f || approvedItemsMap.get(k), null);
+      const fname = item?.originalName || item?.original_name || item?.filename || coerceId(item);
+      return {
+        id: coerceId(item),
+        filename: fname,
+        url: buildImageUrl(item),
+        status: 'approved',
+        annotations: (entry?.annotatorLabels || []).map(ann => ({
+          annotator: ann.name,
+          labels: ann.labels,
+          bboxes: (ann.annotations || [])
+            .filter(a => a.bbox)
+            .map(a => ({ label: a.label, bbox: a.bbox })),
+          spans: (ann.annotations || [])
+            .filter(a => a.start !== undefined)
+            .map(a => ({ label: a.label, start: a.start, end: a.end })),
+        })),
+      };
+    });
+    const payload = {
+      dataset: {
+        id: coerceId(selectedDs),
+        name: selectedDs.name,
+        description: selectedDs.description || '',
+        type: selectedDs.type || 'image',
+        totalItems: dsItems.length,
+        exportedAt: new Date().toISOString(),
+      },
+      summary: {
+        total: dsItems.length,
+        approved: dsStats.approved,
+        reviewing: dsStats.reviewing,
+        rework: dsStats.rework,
+        annotating: dsStats.annotating,
+      },
+      items,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedDs.name.replace(/\s+/g, '_')}_export.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Build approvedItemsMap keyed by filename (most reliable cross-entity key)
   const approvedItemsMap = useMemo(() => {
     const map = new Map(); // key: filename → approvedItem
     linkedTasks.filter(t => t.status === 'approved').forEach(task => {
-      const di = task.dataItem || {};
+      const di = task.dataItem || task.data_item || {};
       const annotatorObj = task.annotatorId || task.annotator || {};
       const name = typeof annotatorObj === 'string'
         ? annotatorObj
@@ -388,19 +454,61 @@ export default function Datasets() {
     return map;
   }, [linkedTasks]);
 
+  /* ── pre-load task counts for all datasets so cards show status without clicking ── */
+  const buildDsStatusMap = useCallback(async (dsList) => {
+    if (!dsList?.length) return;
+    try {
+      const pjRes = await axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers: getAuthHeaders() });
+      const pjList = Array.isArray(pjRes.data) ? pjRes.data : pjRes.data?.data || pjRes.data?.projects || [];
+
+      const taskResults = await Promise.allSettled(
+        pjList.map(p => axios.get(`${API_URL}/api/tasks/project/${coerceId(p)}`, { headers: getAuthHeaders() }))
+      );
+
+      const tasksByDs = {};
+      taskResults.forEach((r, idx) => {
+        if (r.status !== 'fulfilled') return;
+        const tasks = Array.isArray(r.value.data) ? r.value.data : r.value.data?.data || r.value.data?.tasks || [];
+        const proj = pjList[idx];
+        const dsId = String(
+          proj.dataset?.id || proj.dataset?._id
+          || (typeof proj.dataset === 'string' ? proj.dataset : null)
+          || proj.dataset_id || proj.datasetId || ''
+        );
+        if (!dsId || dsId === 'null' || dsId === 'undefined') return;
+        if (!tasksByDs[dsId]) tasksByDs[dsId] = [];
+        tasksByDs[dsId].push(...tasks);
+      });
+
+      const newMap = {};
+      dsList.forEach(ds => {
+        const dsId = String(coerceId(ds));
+        const tasks = tasksByDs[dsId] || [];
+        const total = ds.total_items || ds.totalItems || 0;
+        const approved = tasks.filter(t => t.status === 'approved').length;
+        const isComplete = total > 0 && approved >= total;
+        const inProgress = !isComplete && tasks.length > 0;
+        newMap[dsId] = { isComplete, inProgress, approved, total, tasks };
+      });
+      setDsStatusMap(newMap);
+    } catch { /* silent */ }
+  }, []);
+
   /* ── loaders ── */
   const fetchDatasets = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const res = await axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() });
-      setDatasets(getArray(res.data));
+      const list = getArray(res.data);
+      setDatasets(list);
+      buildDsStatusMap(list); // fire & forget — populates dsStatusMap for all cards
     } catch (e) {
       setError(e?.response?.data?.message || e.message || 'Không tải được danh sách dataset');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildDsStatusMap]);
 
   const fetchDatasetItems = useCallback(async (ds) => {
     if (!ds) return;
@@ -426,7 +534,9 @@ export default function Datasets() {
       const pjList = Array.isArray(pjRes.data) ? pjRes.data : pjRes.data?.data || pjRes.data?.projects || [];
       const dsId = coerceId(ds);
       const linked = pjList.filter(p => {
-        const did = p.dataset?.id || p.dataset?._id || p.dataset_id || p.datasetId;
+        const did = p.dataset?.id || p.dataset?._id
+          || (typeof p.dataset === 'string' ? p.dataset : null)
+          || p.dataset_id || p.datasetId;
         return String(did) === String(dsId);
       });
       const taskResults = await Promise.allSettled(
@@ -448,9 +558,14 @@ export default function Datasets() {
   useEffect(() => {
     if (selectedDs) {
       fetchDatasetItems(selectedDs);
-      fetchLinkedTasks(selectedDs);
+      const preloaded = dsStatusMap[String(coerceId(selectedDs))]?.tasks;
+      if (preloaded?.length) {
+        setLinkedTasks(preloaded);
+      } else {
+        fetchLinkedTasks(selectedDs);
+      }
     }
-  }, [selectedDs, fetchDatasetItems, fetchLinkedTasks]);
+  }, [selectedDs, fetchDatasetItems, fetchLinkedTasks, dsStatusMap]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -567,20 +682,59 @@ export default function Datasets() {
   /* ── item click: dialog if complete, navigate otherwise ── */
   const handleItemClick = (item) => {
     if (isComplete) {
-      // Look up by all possible keys: _id, id, originalName, filename
-      const keys = [
-        coerceId(item),
-        item?.originalName, item?.original_name, item?.filename,
-      ].filter(Boolean);
-      const approvedItem = keys.reduce((found, k) => found || approvedItemsMap.get(k), null);
-      const detailData = approvedItem || {
-        fileName: item?.originalName || item?.original_name || item?.filename || '',
-        fileUrl: buildImageUrl(item),
-        itemId: coerceId(item),
+      const itemId = coerceId(item);
+      const itemFilename = item?.originalName || item?.original_name || item?.filename || '';
+
+      // Find all approved tasks that reference this dataset item (flexible matching)
+      const matchingTasks = linkedTasks.filter(t => {
+        if (t.status !== 'approved') return false;
+        const di = t.dataItem || t.data_item;
+        if (!di) return false;
+        const diId = typeof di === 'string' ? di : (di?._id || di?.id || '');
+        if (itemId && diId && String(diId) === String(itemId)) return true;
+        const diName = typeof di === 'object' ? (di?.originalName || di?.original_name || di?.filename || '') : '';
+        if (itemFilename && diName) {
+          if (diName === itemFilename) return true;
+          const diBase = diName.replace(/^\d+_/, '');
+          const itemBase = itemFilename.replace(/^\d+_/, '');
+          if (diBase === itemFilename || itemFilename === diBase || diBase === itemBase) return true;
+        }
+        return false;
+      });
+
+      // Group by annotator, deduplicate
+      const annotatorMap = new Map();
+      matchingTasks.forEach(task => {
+        const di = task.dataItem || task.data_item || {};
+        const annotatorObj = task.annotatorId || task.annotator || {};
+        const name = typeof annotatorObj === 'string'
+          ? annotatorObj
+          : (annotatorObj?.fullName || annotatorObj?.full_name || annotatorObj?.name || annotatorObj?.username || 'Annotator');
+        const L = task.labels || task.annotation_data || task.annotationData || {};
+        const raw = L?.bboxes || L?.objects || L?.spans || L?.segments || (Array.isArray(L) ? L : []);
+        const annotations = (Array.isArray(raw) ? raw : [raw]).map(x => ({
+          label: typeof x === 'string' ? x : (x?.label || x?.text || x?.name || 'unknown'),
+          bbox: x?.bbox || x?.box || (x?.x !== undefined ? [x.x, x.y, x.x + (x.width || 0), x.y + (x.height || 0)] : null),
+          start: x?.start, end: x?.end,
+        })).filter(a => a.label && a.label !== 'unknown');
+        const directLabels = Array.isArray(L?.labels) ? L.labels : (L?.label ? [L.label] : []);
+        const labels = [...new Set([...annotations.map(a => a.label), ...directLabels])];
+        if (!annotatorMap.has(name)) {
+          annotatorMap.set(name, { name, labels, annotations, isPrimary: false });
+        }
+      });
+
+      const diObj = typeof (matchingTasks[0]?.dataItem || matchingTasks[0]?.data_item) === 'object'
+        ? (matchingTasks[0]?.dataItem || matchingTasks[0]?.data_item || {}) : {};
+      const fileUrl = buildImageUrl(Object.keys(diObj).length ? diObj : item);
+
+      setDetailItem({
+        fileName: itemFilename,
+        fileUrl,
+        itemId,
         mediaType: 'image',
-        annotatorLabels: [],
-      };
-      setDetailItem(detailData);
+        annotatorLabels: [...annotatorMap.values()],
+      });
       setDetailDialogOpen(true);
     } else {
       navigate(
@@ -657,52 +811,76 @@ export default function Datasets() {
                 {filtered.map(ds => {
                   const isSelected = coerceId(selectedDs) === coerceId(ds);
                   const total = ds.total_items || ds.totalItems || 0;
+                  const mapEntry = dsStatusMap[String(coerceId(ds))];
+                  const dsComplete = isSelected ? isComplete : (mapEntry?.isComplete ?? false);
+                  const dsInProgress = isSelected
+                    ? (!isComplete && dsItems.length > 0)
+                    : (!dsComplete && (mapEntry?.inProgress ?? (total > 0 && !mapEntry)));
                   return (
                     <Card key={coerceId(ds)} onClick={() => setSelectedDs(ds)} sx={{
-                      bgcolor: isSelected ? 'rgba(59,130,246,0.15)' : CARD,
-                      border: `1px solid ${isSelected ? PRIMARY : BORDER}`,
-                      borderRadius: 2, cursor: 'pointer', transition: 'all 0.15s',
-                      '&:hover': { borderColor: isSelected ? PRIMARY : '#2d4a6e', bgcolor: isSelected ? 'rgba(59,130,246,0.18)' : '#172133' },
+                      bgcolor: isSelected ? 'rgba(59,130,246,0.12)' : CARD,
+                      border: `1px solid ${dsComplete ? 'rgba(34,197,94,0.5)' : isSelected ? PRIMARY : BORDER}`,
+                      borderRadius: 2.5, cursor: 'pointer', transition: 'all 0.15s',
+                      '&:hover': { borderColor: dsComplete ? SUCCESS : isSelected ? PRIMARY : '#2d4a6e', bgcolor: isSelected ? 'rgba(59,130,246,0.18)' : '#172133' },
                     }}>
-                      <CardContent sx={{ p: 1.8, '&:last-child': { pb: 1.8 } }}>
+                      <CardContent sx={{ p: '12px 14px', '&:last-child': { pb: '12px' } }}>
+                        {/* Top row: name + status dot + actions */}
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Typography sx={{ color: TEXT, fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                              bgcolor: dsComplete ? SUCCESS : dsInProgress ? WARNING : '#475569',
+                              boxShadow: dsComplete ? `0 0 6px ${SUCCESS}` : 'none',
+                            }} />
+                            <Typography sx={{ color: '#ffffff', fontWeight: 800, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: 0.1 }}>
                               {ds.name || 'Untitled'}
                             </Typography>
-                            {ds.description && (
-                              <Typography sx={{ color: MUTED, fontSize: 12, mt: 0.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {ds.description}
-                              </Typography>
-                            )}
                           </Box>
                           <Box sx={{ display: 'flex', gap: 0.3, flexShrink: 0 }}>
-                            <Tooltip title="Thông tin đầy đủ">
+                            <Tooltip title="Thông tin">
                               <IconButton size="small" onClick={e => { e.stopPropagation(); setInfoDs(ds); }}
-                                sx={{ color: '#94a3b8', width: 28, height: 28, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
-                                <InfoIcon sx={{ fontSize: 16 }} />
+                                sx={{ color: '#475569', width: 24, height: 24, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
+                                <InfoIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="Chỉnh sửa dataset">
+                            <Tooltip title="Chỉnh sửa">
                               <IconButton size="small" onClick={e => openEdit(e, ds)}
-                                sx={{ color: '#94a3b8', width: 28, height: 28, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
-                                <EditIcon sx={{ fontSize: 16 }} />
+                                sx={{ color: '#475569', width: 24, height: 24, '&:hover': { color: '#fff', bgcolor: 'rgba(59,130,246,0.25)' } }}>
+                                <EditIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="Xóa dataset">
+                            <Tooltip title="Xóa">
                               <IconButton size="small" onClick={e => { e.stopPropagation(); setDeleteTarget(ds); }}
-                                sx={{ color: '#94a3b8', width: 28, height: 28, '&:hover': { color: '#fff', bgcolor: 'rgba(239,68,68,0.25)' } }}>
-                                <DeleteIcon sx={{ fontSize: 16 }} />
+                                sx={{ color: '#475569', width: 24, height: 24, '&:hover': { color: '#fff', bgcolor: 'rgba(239,68,68,0.25)' } }}>
+                                <DeleteIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
                           </Box>
                         </Box>
-                        <Stack direction="row" spacing={0.8} sx={{ mt: 1.2, flexWrap: 'wrap', gap: 0.6 }}>
+
+                        {ds.description && (
+                          <Typography sx={{ color: MUTED, fontSize: 11, mt: 0.4, pl: '16px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ds.description}
+                          </Typography>
+                        )}
+
+                        {/* Status badge + meta */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mt: 1, pl: '16px', flexWrap: 'wrap' }}>
+                          {dsComplete && (
+                            <Chip size="small" icon={<CheckCircleIcon sx={{ fontSize: '11px !important', color: `${SUCCESS} !important` }} />}
+                              label="Hoàn thành"
+                              sx={{ bgcolor: 'rgba(34,197,94,0.12)', color: SUCCESS, fontSize: 10, fontWeight: 700, height: 20, border: `1px solid rgba(34,197,94,0.3)` }} />
+                          )}
+                          {dsInProgress && (
+                            <Chip size="small" label="Đang xử lý"
+                              sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: WARNING, fontSize: 10, fontWeight: 700, height: 20, border: `1px solid rgba(245,158,11,0.3)` }} />
+                          )}
                           <Chip size="small" label={`${total} ảnh`}
-                            sx={{ bgcolor: 'rgba(59,130,246,0.14)', color: '#93c5fd', fontSize: 11, fontWeight: 700, height: 22 }} />
-                          <Chip size="small" label={fmtDate(ds.created_at || ds.createdAt)}
-                            sx={{ bgcolor: 'rgba(148,163,184,0.1)', color: MUTED, fontSize: 11, height: 22 }} />
-                        </Stack>
+                            sx={{ bgcolor: 'rgba(59,130,246,0.1)', color: '#93c5fd', fontSize: 10, fontWeight: 700, height: 20 }} />
+                          <Typography sx={{ color: '#334155', fontSize: 10 }}>
+                            {fmtDate(ds.created_at || ds.createdAt)}
+                          </Typography>
+                        </Box>
                       </CardContent>
                     </Card>
                   );
@@ -723,50 +901,86 @@ export default function Datasets() {
           ) : (
             <>
               {/* right header */}
-              <Box sx={{ px: 3.5, py: 2.5, borderBottom: `1px solid ${BORDER}`, bgcolor: PANEL }}>
+              <Box sx={{
+                px: 3, py: 2, borderBottom: `1px solid ${BORDER}`,
+                bgcolor: isComplete ? 'rgba(34,197,94,0.04)' : PANEL,
+                borderTop: isComplete ? `2px solid rgba(34,197,94,0.35)` : 'none',
+              }}>
+                {/* Row 1: name + status + actions */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                  <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                      <Typography sx={{ color: TEXT, fontWeight: 800, fontSize: 22 }}>{selectedDs.name}</Typography>
-                      {isComplete ? (
-                        <Chip
-                          icon={<CheckCircleIcon sx={{ fontSize: '14px !important', color: `${SUCCESS} !important` }} />}
-                          label="Hoàn thành"
-                          size="small"
-                          sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: SUCCESS, fontWeight: 700, border: `1px solid rgba(34,197,94,0.3)` }}
-                        />
-                      ) : dsItems.length > 0 && (
-                        <Chip label="Đang xử lý" size="small"
-                          sx={{ bgcolor: 'rgba(245,158,11,0.14)', color: WARNING, fontWeight: 700, border: `1px solid rgba(245,158,11,0.3)` }} />
-                      )}
-                    </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', minWidth: 0 }}>
+                    <Typography sx={{ color: TEXT, fontWeight: 800, fontSize: 20 }}>{selectedDs.name}</Typography>
+                    {isComplete ? (
+                      <Chip
+                        icon={<CheckCircleIcon sx={{ fontSize: '13px !important', color: `${SUCCESS} !important` }} />}
+                        label="Hoàn thành"
+                        size="small"
+                        sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: SUCCESS, fontWeight: 700, border: `1px solid rgba(34,197,94,0.35)`, fontSize: 12 }}
+                      />
+                    ) : dsItems.length > 0 ? (
+                      <Chip label="Đang xử lý" size="small"
+                        sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: WARNING, fontWeight: 700, border: `1px solid rgba(245,158,11,0.3)`, fontSize: 12 }} />
+                    ) : null}
                     {selectedDs.description && (
-                      <Typography sx={{ color: MUTED, fontSize: 13, mt: 0.3 }}>{selectedDs.description}</Typography>
-                    )}
-                    {isComplete && (
-                      <Typography sx={{ color: MUTED, fontSize: 12, mt: 0.4 }}>
-                        Tất cả ảnh đã được duyệt • Click vào ảnh để xem annotator & labels
-                      </Typography>
+                      <Typography sx={{ color: MUTED, fontSize: 13 }}>{selectedDs.description}</Typography>
                     )}
                   </Box>
-                  <Stack direction="row" spacing={1.5} alignItems="center">
-                    <Chip
-                      icon={<CheckCircleIcon sx={{ fontSize: '14px !important' }} />}
-                      label={`${dsItems.length} ảnh`}
-                      sx={{ bgcolor: 'rgba(34,197,94,0.15)', color: SUCCESS, fontWeight: 700, border: `1px solid rgba(34,197,94,0.3)` }}
-                    />
-                    <Button variant="contained"
-                      startIcon={uploading ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <UploadIcon />}
+
+                  <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+                    {isComplete && (
+                      <Tooltip title="Xuất toàn bộ dữ liệu đã duyệt dưới dạng JSON">
+                        <Button
+                          variant="contained"
+                          startIcon={<DownloadIcon />}
+                          onClick={handleExport}
+                          sx={{
+                            bgcolor: SUCCESS, fontWeight: 700, textTransform: 'none', borderRadius: 2, px: 2.5,
+                            '&:hover': { bgcolor: '#16a34a' },
+                            boxShadow: `0 0 12px rgba(34,197,94,0.35)`,
+                          }}
+                        >
+                          Export JSON
+                        </Button>
+                      </Tooltip>
+                    )}
+                    <Button variant="outlined"
+                      startIcon={uploading ? <CircularProgress size={14} sx={{ color: PRIMARY }} /> : <UploadIcon />}
                       disabled={uploading} onClick={() => fileInputRef.current?.click()}
-                      sx={{ bgcolor: PRIMARY, borderRadius: 2, fontWeight: 700, textTransform: 'none', px: 2.5, '&:hover': { bgcolor: '#2563eb' } }}>
-                      {uploading ? `Đang upload ${uploadProgress}%` : 'Upload ảnh'}
+                      sx={{ borderColor: BORDER, color: TEXT, borderRadius: 2, fontWeight: 600, textTransform: 'none', px: 2, '&:hover': { borderColor: PRIMARY, color: PRIMARY } }}>
+                      {uploading ? `${uploadProgress}%` : 'Upload ảnh'}
                     </Button>
                     <input ref={fileInputRef} type="file" multiple accept="image/*,.zip" hidden onChange={e => handleUpload(e.target.files)} />
                   </Stack>
                 </Box>
+
+                {/* Row 2: Stats */}
+                {dsItems.length > 0 && (
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+                    {[
+                      { icon: <TaskAltIcon sx={{ fontSize: 13 }} />, label: 'Approved', value: isComplete ? dsItems.length : dsStats.approved, color: SUCCESS, bg: 'rgba(34,197,94,0.1)' },
+                      { icon: <ReviewIcon sx={{ fontSize: 13 }} />, label: 'Reviewing', value: dsStats.reviewing, color: WARNING, bg: 'rgba(245,158,11,0.1)' },
+                      { icon: <PendingIcon sx={{ fontSize: 13 }} />, label: 'Annotating', value: dsStats.annotating, color: PRIMARY, bg: 'rgba(59,130,246,0.1)' },
+                      { icon: null, label: 'Rework', value: dsStats.rework, color: DANGER, bg: 'rgba(239,68,68,0.1)' },
+                      { icon: null, label: 'Tổng ảnh', value: dsItems.length, color: MUTED, bg: 'rgba(100,116,139,0.1)' },
+                    ].map(s => (
+                      <Box key={s.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 1.5, py: 0.6, borderRadius: 1.5, bgcolor: s.bg, border: `1px solid ${s.color}22` }}>
+                        {s.icon && <Box sx={{ color: s.color, display: 'flex' }}>{s.icon}</Box>}
+                        <Typography sx={{ fontSize: 11, color: MUTED }}>{s.label}:</Typography>
+                        <Typography sx={{ fontSize: 12, fontWeight: 800, color: s.color }}>{s.value}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                {isComplete && (
+                  <Typography sx={{ color: '#4ade80', fontSize: 11, mt: 1, opacity: 0.8 }}>
+                    ✓ Tất cả ảnh đã được duyệt • Click vào ảnh để xem annotator & labels • Dùng "Export JSON" để tải xuống dữ liệu
+                  </Typography>
+                )}
+
                 {uploading && (
                   <LinearProgress variant="determinate" value={uploadProgress}
-                    sx={{ mt: 1.5, height: 4, borderRadius: 4, bgcolor: 'rgba(59,130,246,0.15)', '& .MuiLinearProgress-bar': { bgcolor: PRIMARY } }} />
+                    sx={{ mt: 1.5, height: 3, borderRadius: 4, bgcolor: 'rgba(59,130,246,0.15)', '& .MuiLinearProgress-bar': { bgcolor: PRIMARY } }} />
                 )}
               </Box>
 
