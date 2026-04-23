@@ -21,6 +21,9 @@ import {
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import ImageViewer from '../../../components/ImageViewer';
+import { getLabelColor } from '../Projects/ProjectDetail/utils';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
 /* ─── THEME TOKENS ─────────────────────────────────────── */
 const BG      = '#080f1e';
@@ -117,130 +120,120 @@ const ImgThumb = ({ src, name }) => {
 
 /* ─── ITEM DETAIL DIALOG ─────────────────────────────────── */
 const ItemDetailDialog = ({ open, onClose, item }) => {
-  const [annotatorToggles, setAnnotatorToggles] = useState({});
+  const [showLabels, setShowLabels] = useState(true);
+  const [visibleMap, setVisibleMap] = useState({});
 
-  const annotators = useMemo(() => {
-    if (!item) return [];
-    const annotations = item.annotations || [];
-    const approvedAnns = annotations.filter(a => a.status === 'approved');
-    const source = approvedAnns.length > 0 ? approvedAnns : annotations;
-    return source.map((ann, idx) => {
-      const name = ann.annotator || ann.annotatorId?.fullName || ann.annotatorId?.username || `Annotator ${idx + 1}`;
-      const id = String(ann.annotatorId?.id || ann.annotatorId?._id || ann.annotatorId || `ann-${idx}`);
-      const labels = [
-        ...(ann.labels?.objects || []).map(o => o.label || ''),
-        ...(ann.labels?.spans || []).map(s => s.label || ''),
-        ...(ann.labels?.segments || []).map(s => s.label || ''),
-      ].filter(Boolean);
-      return { id, name, labels: [...new Set(labels)], color: getAnnotatorColor(name) };
-    });
-  }, [item]);
+  const annotatorLabels = item?.annotatorLabels || [];
 
   useEffect(() => {
     const init = {};
-    annotators.forEach(a => { init[a.id] = true; });
-    setAnnotatorToggles(init);
-  }, [annotators]);
+    annotatorLabels.forEach(a => { init[a.name] = true; });
+    setVisibleMap(init);
+  }, [item]);
 
-  const visibleLabels = useMemo(() => {
-    const set = new Set();
-    annotators.forEach(a => { if (annotatorToggles[a.id]) a.labels.forEach(l => set.add(l)); });
-    return [...set];
-  }, [annotators, annotatorToggles]);
+  const visibleAnnotations = annotatorLabels.flatMap(ann => {
+    if (!showLabels || !visibleMap[ann.name]) return [];
+    return (ann.annotations || []).filter(x => x?.bbox);
+  });
 
-  const imageUrl = useMemo(() => buildImageUrl(item), [item]);
-  const fileName = item?.originalName || item?.original_name || item?.filename || '';
+  const formattedAnnotations = visibleAnnotations.map(ann => {
+    let bbox = Array.isArray(ann.bbox) ? ann.bbox : [0, 0, 0, 0];
+    if (bbox.length === 4 && bbox.every(v => v <= 1 && v >= 0)) bbox = bbox.map(v => v * 100);
+    return { label: ann.label, bbox };
+  });
+
+  const uniqueLabels = [...new Set(formattedAnnotations.map(a => a.label))];
+  const labelSetForViewer = uniqueLabels.map(lbl => ({ name: lbl, color: getLabelColor(lbl) }));
 
   if (!item) return null;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth
-      PaperProps={{ sx: { bgcolor: '#0d1829', border: `1px solid ${BORDER}`, borderRadius: 3, color: TEXT } }}>
-      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${BORDER}`, pb: 2 }}>
-        <Box>
-          <Typography fontWeight={800} sx={{ color: TEXT, fontSize: 16 }}>{fileName || 'Chi tiết item'}</Typography>
-          <Chip label="✓ Đã được duyệt" size="small" sx={{ mt: 0.5, bgcolor: 'rgba(34,197,94,0.15)', color: SUCCESS, fontWeight: 700, border: '1px solid rgba(34,197,94,0.3)' }} />
-        </Box>
-        <IconButton onClick={onClose} sx={{ color: MUTED, '&:hover': { color: TEXT } }}><CloseIcon /></IconButton>
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth
+      PaperProps={{ sx: { bgcolor: '#111827', border: '1px solid #243041', borderRadius: 3, color: TEXT } }}>
+      <DialogTitle sx={{ borderBottom: '1px solid #243041', fontWeight: 800, fontSize: 16 }}>
+        Approved item detail
       </DialogTitle>
 
-      <DialogContent sx={{ p: 0 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1fr' }, minHeight: 380 }}>
-          {/* Image preview */}
-          <Box sx={{ bgcolor: '#07101d', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, minHeight: 320 }}>
-            {imageUrl ? (
-              <Box component="img" src={imageUrl} alt={fileName}
-                sx={{ maxWidth: '100%', maxHeight: 420, objectFit: 'contain', borderRadius: 2 }} />
-            ) : (
-              <Box sx={{ textAlign: 'center', color: MUTED }}>
-                <ImageIcon sx={{ fontSize: 64, mb: 1 }} />
-                <Typography fontSize={13}>Không có preview</Typography>
-              </Box>
-            )}
-          </Box>
+      <DialogContent sx={{ pt: 3 }}>
+        <Grid container spacing={3}>
+          {/* Image with bbox overlay */}
+          <Grid item xs={12} md={7}>
+            <Box sx={{ position: 'relative', width: '100%', minHeight: 420, borderRadius: 3, overflow: 'hidden', bgcolor: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ImageViewer imageUrl={item.fileUrl} annotations={formattedAnnotations} labelSet={labelSetForViewer} />
+            </Box>
+          </Grid>
 
-          {/* Sidebar */}
-          <Box sx={{ p: 3, borderLeft: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', gap: 2.5, overflowY: 'auto' }}>
-
-            {annotators.length > 0 ? (
+          {/* Info sidebar */}
+          <Grid item xs={12} md={5}>
+            <Stack spacing={2}>
               <Box>
-                <Typography variant="caption" sx={{ color: MUTED, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', mb: 1.5, display: 'block' }}>
-                  Annotators ({annotators.length})
-                </Typography>
-                <Stack spacing={1}>
-                  {annotators.map(a => (
-                    <Box key={a.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 1, borderRadius: 1.5, bgcolor: annotatorToggles[a.id] ? 'rgba(255,255,255,0.05)' : 'transparent', border: `1px solid ${annotatorToggles[a.id] ? BORDER : 'transparent'}`, transition: 'all 0.15s' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: a.color, flexShrink: 0 }} />
-                        <Typography sx={{ fontSize: 13, color: annotatorToggles[a.id] ? TEXT : MUTED, fontWeight: 600, transition: 'color 0.15s' }}>{a.name}</Typography>
-                        {a.labels.length > 0 && (
-                          <Typography sx={{ fontSize: 11, color: MUTED }}>({a.labels.length} labels)</Typography>
+                <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>File</Typography>
+                <Typography fontWeight={700}>{item.fileName || item.originalName || item.filename || '—'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Item ID</Typography>
+                <Typography sx={{ fontSize: 12, wordBreak: 'break-all' }}>{item.itemId || item._id || item.id || '—'}</Typography>
+              </Box>
+
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Approved annotators</Typography>
+                  <FormControlLabel
+                    control={<Switch checked={showLabels} onChange={e => setShowLabels(e.target.checked)} size="small" />}
+                    label="Show labels"
+                    sx={{ color: '#94a3b8', mr: 0, '& .MuiFormControlLabel-label': { fontSize: 12 } }}
+                  />
+                </Box>
+                <Stack spacing={1.2}>
+                  {annotatorLabels.length === 0 ? (
+                    <Typography sx={{ color: MUTED, fontSize: 13 }}>Không có annotation được duyệt</Typography>
+                  ) : annotatorLabels.map((ann, idx) => (
+                    <Box key={`${ann.name}-${idx}`} sx={{ p: 1.2, borderRadius: 2, bgcolor: '#1f2937', border: '1px solid #334155' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Chip
+                          label={ann.isPrimary ? `${ann.name} • PRIMARY` : ann.name}
+                          sx={{
+                            bgcolor: ann.isPrimary ? 'rgba(245,158,11,0.22)' : 'rgba(34,197,94,0.18)',
+                            color: ann.isPrimary ? '#fbbf24' : '#22c55e',
+                            fontWeight: 700, fontSize: 12,
+                          }}
+                        />
+                        {showLabels && (
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={visibleMap[ann.name] ?? true}
+                                onChange={e => setVisibleMap(prev => ({ ...prev, [ann.name]: e.target.checked }))}
+                                size="small"
+                              />
+                            }
+                            label="Visible"
+                            sx={{ color: '#94a3b8', mr: 0, '& .MuiFormControlLabel-label': { fontSize: 12 } }}
+                          />
                         )}
                       </Box>
-                      <Switch
-                        size="small"
-                        checked={!!annotatorToggles[a.id]}
-                        onChange={() => setAnnotatorToggles(prev => ({ ...prev, [a.id]: !prev[a.id] }))}
-                        sx={{
-                          '& .MuiSwitch-thumb': { bgcolor: annotatorToggles[a.id] ? a.color : '#475569' },
-                          '& .MuiSwitch-track': { bgcolor: annotatorToggles[a.id] ? `${a.color}55` : '#334155' },
-                        }}
-                      />
+                      <Box sx={{ display: 'flex', gap: 0.7, flexWrap: 'wrap', mt: 1 }}>
+                        {(ann.labels || []).length === 0 ? (
+                          <Typography variant="caption" sx={{ color: '#94a3b8' }}>No label</Typography>
+                        ) : ann.labels.map((label, li) => (
+                          <Chip key={li} label={label} size="small"
+                            sx={{ bgcolor: getLabelColor(label), color: '#fff', fontWeight: 700 }} />
+                        ))}
+                      </Box>
                     </Box>
                   ))}
                 </Stack>
               </Box>
-            ) : (
-              <Box sx={{ textAlign: 'center', py: 3, color: MUTED }}>
-                <Typography fontSize={13}>Chưa có annotation nào được duyệt</Typography>
-              </Box>
-            )}
-
-            {visibleLabels.length > 0 && (
-              <>
-                <Divider sx={{ borderColor: BORDER }} />
-                <Box>
-                  <Typography variant="caption" sx={{ color: MUTED, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', mb: 1.5, display: 'block' }}>
-                    Labels hiển thị ({visibleLabels.length})
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap' }}>
-                    {visibleLabels.map(label => (
-                      <Chip key={label} label={label} size="small"
-                        sx={{ bgcolor: 'rgba(59,130,246,0.14)', color: '#93c5fd', fontWeight: 700, border: '1px solid rgba(59,130,246,0.3)', fontSize: 11 }} />
-                    ))}
-                  </Box>
-                </Box>
-              </>
-            )}
-
-            {visibleLabels.length === 0 && annotators.length > 0 && (
-              <Typography sx={{ fontSize: 12, color: MUTED, textAlign: 'center', py: 1 }}>
-                Bật annotator để xem labels
-              </Typography>
-            )}
-          </Box>
-        </Box>
+            </Stack>
+          </Grid>
+        </Grid>
       </DialogContent>
+
+      <DialogActions sx={{ borderTop: '1px solid #243041', px: 3, py: 1.5 }}>
+        <Button onClick={onClose} variant="outlined" sx={{ color: '#94a3b8', borderColor: '#334155', textTransform: 'none', '&:hover': { borderColor: '#64748b' } }}>
+          Close
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 };
@@ -289,24 +282,111 @@ export default function Datasets() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
   const tasksByItemId = useMemo(() => {
-    const map = new Map();
+    const byId  = new Map();
+    const byName = new Map();
     linkedTasks.forEach(t => {
-      const itemId = coerceId(t.dataItem);
-      if (!itemId) return;
-      if (!map.has(itemId)) map.set(itemId, []);
-      map.get(itemId).push(t);
+      const di = t.dataItem;
+      // dataItem can be a plain string ID or an object
+      const itemId = typeof di === 'string' ? di : (di?._id || di?.id || '');
+      if (itemId) {
+        if (!byId.has(itemId))  byId.set(itemId, []);
+        byId.get(itemId).push(t);
+      }
+      const fname = typeof di === 'object'
+        ? (di?.originalName || di?.original_name || di?.filename || '')
+        : '';
+      if (fname) {
+        if (!byName.has(fname)) byName.set(fname, []);
+        byName.get(fname).push(t);
+      }
     });
-    return map;
+    return { byId, byName };
   }, [linkedTasks]);
+
+  const getTasksForItem = useCallback((item) => {
+    const id    = coerceId(item);
+    const fname = item?.originalName || item?.original_name || item?.filename || '';
+    const byId  = (id    ? (tasksByItemId.byId?.get(id)     || []) : []);
+    const byN   = (fname ? (tasksByItemId.byName?.get(fname) || []) : []);
+    const seen  = new Set();
+    return [...byId, ...byN].filter(t => {
+      const k = t.id || t._id || '';
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+  }, [tasksByItemId]);
 
   const isComplete = useMemo(() => {
     if (dsItems.length === 0) return false;
-    return dsItems.every(item => {
-      if (item.status === 'approved') return true;
-      const tasks = tasksByItemId.get(coerceId(item)) || [];
-      return tasks.some(t => t.status === 'approved');
+    if (dsItems.every(i => i.status === 'approved')) return true;
+    const approvedTaskCount = linkedTasks.filter(t => t.status === 'approved').length;
+    if (linkedTasks.length > 0 && approvedTaskCount >= dsItems.length) return true;
+    return false;
+  }, [dsItems, linkedTasks]);
+
+  // Build approvedItemsMap keyed by filename (most reliable cross-entity key)
+  const approvedItemsMap = useMemo(() => {
+    const map = new Map(); // key: filename → approvedItem
+    linkedTasks.filter(t => t.status === 'approved').forEach(task => {
+      const di = task.dataItem || {};
+      const annotatorObj = task.annotatorId || task.annotator || {};
+      const name = typeof annotatorObj === 'string'
+        ? annotatorObj
+        : (annotatorObj?.fullName || annotatorObj?.full_name || annotatorObj?.username || 'Annotator');
+
+      // Keys to index by
+      const keys = [
+        typeof di === 'string' ? di : null,
+        di?._id, di?.id,
+        di?.originalName, di?.original_name, di?.filename,
+      ].filter(Boolean);
+
+      const L = task.labels || task.annotation_data || task.annotationData || {};
+      const raw = L?.bboxes || L?.objects || L?.spans || L?.segments || (Array.isArray(L) ? L : []);
+      const annotations = (Array.isArray(raw) ? raw : [raw]).map(x => ({
+        label: typeof x === 'string' ? x : (x?.label || x?.text || x?.name || 'unknown'),
+        bbox: x?.bbox || x?.box || (x?.x !== undefined ? [x.x, x.y, x.x + (x.width || 0), x.y + (x.height || 0)] : null),
+        start: x?.start,
+        end: x?.end,
+      })).filter(a => a.label && a.label !== 'unknown');
+      const labels = [...new Set(annotations.map(a => a.label))];
+
+      const primaryKey = keys[0];
+      if (!primaryKey) return;
+
+      if (!map.has(primaryKey)) {
+        map.set(primaryKey, {
+          fileName: di?.originalName || di?.original_name || di?.filename || primaryKey,
+          fileUrl: (() => {
+            if (!di || typeof di === 'string') return '';
+            const base = API_URL.replace(/\/+$/, '');
+            const direct = di.signed_url || di.signedUrl || di.storage_url || di.storageUrl || di.url || '';
+            if (direct && /^https?:\/\//i.test(direct)) return direct;
+            const rawPath = (di.path || di.storagePath || di.storage_path || direct || '').replace(/\\/g, '/').replace(/^\/+/, '');
+            if (rawPath) {
+              const idx = rawPath.indexOf('uploads/');
+              const rel = idx !== -1 ? rawPath.substring(idx) : rawPath;
+              if (/\.\w{1,10}$/i.test(rel.split('/').pop())) return `${base}/${rel.startsWith('uploads/') ? rel : `uploads/datasets/${rel}`}`;
+            }
+            const fname = di.originalName || di.original_name || di.filename || '';
+            return fname ? `${base}/uploads/datasets/${fname}` : '';
+          })(),
+          itemId: di?._id || di?.id || primaryKey,
+          mediaType: 'image',
+          annotatorLabels: [{ name, labels, annotations, isPrimary: false }],
+          _keys: keys,
+        });
+      } else {
+        const entry = map.get(primaryKey);
+        if (!entry.annotatorLabels.find(a => a.name === name)) {
+          entry.annotatorLabels.push({ name, labels, annotations, isPrimary: false });
+        }
+      }
+      // Add alias keys pointing to same entry
+      keys.slice(1).forEach(k => { if (!map.has(k)) map.set(k, map.get(primaryKey)); });
     });
-  }, [dsItems, tasksByItemId]);
+    return map;
+  }, [linkedTasks]);
 
   /* ── loaders ── */
   const fetchDatasets = useCallback(async () => {
@@ -487,16 +567,20 @@ export default function Datasets() {
   /* ── item click: dialog if complete, navigate otherwise ── */
   const handleItemClick = (item) => {
     if (isComplete) {
-      const approvedTasks = (tasksByItemId.get(coerceId(item)) || []).filter(t => t.status === 'approved');
-      const enrichedAnnotations = approvedTasks.map(t => ({
-        status: t.status,
-        annotatorId: t.annotatorId || t.annotator,
-        labels: t.labels || t.annotation_data || t.annotationData || {},
-      }));
-      const enrichedItem = enrichedAnnotations.length > 0
-        ? { ...item, status: 'approved', annotations: enrichedAnnotations }
-        : item;
-      setDetailItem(enrichedItem);
+      // Look up by all possible keys: _id, id, originalName, filename
+      const keys = [
+        coerceId(item),
+        item?.originalName, item?.original_name, item?.filename,
+      ].filter(Boolean);
+      const approvedItem = keys.reduce((found, k) => found || approvedItemsMap.get(k), null);
+      const detailData = approvedItem || {
+        fileName: item?.originalName || item?.original_name || item?.filename || '',
+        fileUrl: buildImageUrl(item),
+        itemId: coerceId(item),
+        mediaType: 'image',
+        annotatorLabels: [],
+      };
+      setDetailItem(detailData);
       setDetailDialogOpen(true);
     } else {
       navigate(
@@ -725,7 +809,9 @@ export default function Datasets() {
                       const name = item.originalName || item.original_name || item.filename || `item-${idx + 1}`;
                       const src = buildImageUrl(item);
                       const isDeletingThis = deletingItemId === (coerceId(item) || item.path);
-                      const approved = item.status === 'approved' || (tasksByItemId.get(coerceId(item)) || []).some(t => t.status === 'approved');
+                      const approved = item.status === 'approved'
+                        || getTasksForItem(item).some(t => t.status === 'approved')
+                        || isComplete;
                       return (
                         <Grid item xs={6} sm={4} md={3} lg={2} key={id}>
                           <Card
