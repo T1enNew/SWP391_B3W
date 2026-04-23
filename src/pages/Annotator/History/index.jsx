@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
-import { normalizeTask } from '../../utils/taskAdapter';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
+import { normalizeTask } from '../../../utils/taskAdapter';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 

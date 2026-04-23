@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
+import { API_URL } from '../../../../config/api';
+import { getArray } from '../../../../utils/api';
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('token');

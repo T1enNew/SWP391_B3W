@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
-import { normalizeProject } from '../../utils/taskAdapter';
-import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
+import { normalizeProject } from '../../../utils/taskAdapter';
+import { useAuth } from '../../../context/AuthContext';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 

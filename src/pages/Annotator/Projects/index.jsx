@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { getArray } from '../../utils/api';
-import { normalizeProject } from '../../utils/taskAdapter';
+import { API_URL } from '../../../config/api';
+import { getArray } from '../../../utils/api';
+import { normalizeProject } from '../../../utils/taskAdapter';
 
 const fmtDate = (d) => {
   if (!d) return '';

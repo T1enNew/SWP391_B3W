@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../config/api';
-import { normalizeTask } from '../../utils/taskAdapter';
-import ImageAnnotator from '../../components/ImageAnnotator';
-import AudioAnnotator from '../../components/AudioAnnotator';
+import { API_URL } from '../../../config/api';
+import { normalizeTask } from '../../../utils/taskAdapter';
+import ImageAnnotator from '../../../components/ImageAnnotator';
+import AudioAnnotator from '../../../components/AudioAnnotator';
 import {
   Dialog,
   DialogTitle,
