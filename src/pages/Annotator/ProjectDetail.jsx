@@ -71,6 +71,8 @@ const ProjectDetail = () => {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [taskPage, setTaskPage] = useState(1);
+  const TASKS_PER_PAGE = 5;
 
   useEffect(() => { loadData(); }, [projectId]);
 
@@ -86,7 +88,14 @@ const ProjectDetail = () => {
         }),
       ]);
       setProject(normalizeProject(projectRes.data));
-      setTasks(getArray(tasksRes.data).map(normalizeTask));
+      const savedOverrides = JSON.parse(localStorage.getItem(`taskStatus_${projectId}`) || '{}');
+      const normalized = getArray(tasksRes.data).map(normalizeTask);
+      const BACKEND_PRIORITY = ['submitted', 'resubmitted', 'approved', 'rejected'];
+      setTasks(normalized.map((t) => ({
+        ...t,
+        // Backend terminal states always win; otherwise use localStorage override
+        status: BACKEND_PRIORITY.includes(t.status) ? t.status : (savedOverrides[t.id] ?? t.status),
+      })));
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được chi tiết project');
     } finally {
@@ -270,31 +279,87 @@ const ProjectDetail = () => {
         </div>
 
         {/* Task List */}
-        {tasks.length > 0 && (
-          <div className="rounded-2xl border border-gray-700/60 bg-gray-800/80 p-6">
-            <h2 className="text-base font-bold text-gray-100 mb-4">Danh sách task ({tasks.length})</h2>
-            <div className="space-y-2">
-              {tasks.map((task, idx) => {
-                const cfg = statusConfig(task.status);
-                const filename = task.dataItem?.filename || task.dataItem?.originalName || `Task ${idx + 1}`;
-                return (
-                  <div
-                    key={task.id || idx}
-                    className="flex items-center justify-between rounded-xl bg-gray-900/50 px-4 py-3 border border-gray-700/40 hover:border-gray-600/60 transition-all"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xs text-gray-600 font-mono w-6 shrink-0">{idx + 1}</span>
-                      <p className="text-sm text-gray-300 truncate">{filename}</p>
+        {tasks.length > 0 && (() => {
+          const totalPages = Math.ceil(tasks.length / TASKS_PER_PAGE);
+          const pagedTasks = tasks.slice((taskPage - 1) * TASKS_PER_PAGE, taskPage * TASKS_PER_PAGE);
+          return (
+            <div className="rounded-2xl border border-gray-700/60 bg-gray-800/80 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-gray-100">Danh sách task ({tasks.length})</h2>
+                {totalPages > 1 && (
+                  <span className="text-xs text-gray-500">Trang {taskPage}/{totalPages}</span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {pagedTasks.map((task, i) => {
+                  const idx = (taskPage - 1) * TASKS_PER_PAGE + i;
+                  const cfg = statusConfig(task.status);
+                  const filename = task.dataItem?.filename || task.dataItem?.originalName || `Task ${idx + 1}`;
+                  return (
+                    <div
+                      key={task.id || idx}
+                      className="flex items-center justify-between rounded-xl bg-gray-900/50 px-4 py-3 border border-gray-700/40 hover:border-gray-600/60 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs text-gray-600 font-mono w-6 shrink-0">{idx + 1}</span>
+                        <p className="text-sm text-gray-300 truncate">{filename}</p>
+                      </div>
+                      <span className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cfg.color}`}>
+                        {cfg.label}
+                      </span>
                     </div>
-                    <span className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cfg.color}`}>
-                      {cfg.label}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-4 pt-4 border-t border-gray-700/40">
+                  <button
+                    onClick={() => setTaskPage(1)}
+                    disabled={taskPage === 1}
+                    className="rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >«</button>
+                  <button
+                    onClick={() => setTaskPage((p) => Math.max(1, p - 1))}
+                    disabled={taskPage === 1}
+                    className="rounded-lg px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >‹</button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - taskPage) <= 1)
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      p === '...' ? (
+                        <span key={`ellipsis-${i}`} className="px-1 text-xs text-gray-600">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => setTaskPage(p)}
+                          className={`rounded-lg min-w-[28px] px-2 py-1.5 text-xs font-medium transition-all ${
+                            p === taskPage
+                              ? 'bg-blue-600 text-white'
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                          }`}
+                        >{p}</button>
+                      )
+                    )}
+                  <button
+                    onClick={() => setTaskPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={taskPage === totalPages}
+                    className="rounded-lg px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >›</button>
+                  <button
+                    onClick={() => setTaskPage(totalPages)}
+                    disabled={taskPage === totalPages}
+                    className="rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >»</button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Submit Project Section */}
         <div className={`rounded-2xl border p-6 ${alreadySubmitted ? 'border-yellow-500/30 bg-yellow-500/5' : canSubmitProject ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-gray-700/60 bg-gray-800/80'}`}>

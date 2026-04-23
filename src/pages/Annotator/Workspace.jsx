@@ -78,14 +78,14 @@ const buildFileUrl = (dataItem) => {
 
 // Status configuration
 const TASK_STATUS = {
-  assigned: { label: 'Chua lam', color: 'bg-gray-600', textColor: 'text-gray-300', dotColor: 'bg-gray-400' },
-  in_progress: { label: 'Dang lam', color: 'bg-blue-600', textColor: 'text-blue-300', dotColor: 'bg-blue-400' },
-  completed: { label: 'Hoan thanh', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
-  submitted: { label: 'Da nop', color: 'bg-orange-600', textColor: 'text-orange-300', dotColor: 'bg-orange-400' },
-  resubmitted: { label: 'Da nop lai', color: 'bg-orange-700', textColor: 'text-orange-200', dotColor: 'bg-orange-500' },
-  approved: { label: 'Da duyet', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
-  rejected: { label: 'Bi tra lai', color: 'bg-rose-600', textColor: 'text-rose-300', dotColor: 'bg-rose-400' },
-  revised: { label: 'Dang sua', color: 'bg-amber-600', textColor: 'text-amber-300', dotColor: 'bg-amber-400' },
+  assigned: { label: 'Chưa làm', color: 'bg-gray-600', textColor: 'text-gray-300', dotColor: 'bg-gray-400' },
+  in_progress: { label: 'Đang làm', color: 'bg-blue-600', textColor: 'text-blue-300', dotColor: 'bg-blue-400' },
+  completed: { label: 'Đã xong', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
+  submitted: { label: 'Đã nộp', color: 'bg-orange-600', textColor: 'text-orange-300', dotColor: 'bg-orange-400' },
+  resubmitted: { label: 'Đã nộp lại', color: 'bg-orange-700', textColor: 'text-orange-200', dotColor: 'bg-orange-500' },
+  approved: { label: 'Đã duyệt', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
+  rejected: { label: 'Bị trả lại', color: 'bg-rose-600', textColor: 'text-rose-300', dotColor: 'bg-rose-400' },
+  revised: { label: 'Đang sửa', color: 'bg-amber-600', textColor: 'text-amber-300', dotColor: 'bg-amber-400' },
 };
 
 // ===== LEFT PANEL: Task List =====
@@ -155,11 +155,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, projectName }) => {
                   {kind === 'other' && 'File'}
                 </p>
               </div>
-              {task.status === 'completed' ? (
-                <span className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-600 text-emerald-100">✓ Xong</span>
-              ) : (
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.color} ${cfg.textColor}`}>{cfg.label}</span>
-              )}
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.color} ${cfg.textColor}`}>{cfg.label}</span>
             </div>
           );
         })}
@@ -172,17 +168,18 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, projectName }) => {
 };
 
 // ===== RIGHT PANEL: Info & Actions =====
-const InfoPanel = ({ task, onComplete, onReset, saving, savingMessage, isLastTask, allDone, onSubmitProject }) => {
+const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotations, textSpans, audioLabels }) => {
   const [rightTab, setRightTab] = useState('info');
   const labels = task?.availableLabels || [];
   const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
   const feedback = task?.reviewComments || task?.rejectionReason || '';
+  const kind = getTaskKind(task);
 
   return (
     <div className="h-full flex flex-col bg-gray-900 border-l border-gray-700">
       <div className="flex border-b border-gray-700 shrink-0">
-        {[{ key: 'info', label: 'Thong tin' }, { key: 'labels', label: 'Nhan' }, { key: 'guide', label: 'Huong dan' }].map((tab) => (
+        {[{ key: 'info', label: 'Thông tin' }, { key: 'labels', label: 'Nhãn' }, { key: 'coords', label: 'Tọa độ' }, { key: 'guide', label: 'Hướng dẫn' }].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setRightTab(tab.key)}
@@ -195,6 +192,78 @@ const InfoPanel = ({ task, onComplete, onReset, saving, savingMessage, isLastTas
         ))}
       </div>
       <div className="flex-1 overflow-y-auto">
+        {rightTab === 'coords' && (
+          <div className="p-4 space-y-3">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tọa độ Gán nhãn</h4>
+            {kind === 'image' && (
+              annotations.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">Chưa có vùng nào được khoanh.</p>
+              ) : (
+                <div className="space-y-2">
+                  {annotations.map((ann, i) => (
+                    <div key={ann.id || i} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: task?.availableLabels?.find(l => l.name === ann.label)?.color || '#3b82f6' }} />
+                        <span className="text-xs font-semibold text-gray-200">{ann.label || 'Không có nhãn'}</span>
+                        <span className="ml-auto text-xs text-gray-500">#{i + 1}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-gray-400 font-mono">
+                        <span>x1: {ann.bbox?.[0]?.toFixed(2)}%</span>
+                        <span>y1: {ann.bbox?.[1]?.toFixed(2)}%</span>
+                        <span>x2: {ann.bbox?.[2]?.toFixed(2)}%</span>
+                        <span>y2: {ann.bbox?.[3]?.toFixed(2)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+            {kind === 'text' && (
+              textSpans.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">Chưa có vùng văn bản nào được chọn.</p>
+              ) : (
+                <div className="space-y-2">
+                  {textSpans.map((span, i) => (
+                    <div key={span.id || i} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs font-semibold text-gray-200">{span.label || 'Không có nhãn'}</span>
+                        <span className="ml-auto text-xs text-gray-500">#{i + 1}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-gray-400 font-mono">
+                        <span>Bắt đầu: {span.start}</span>
+                        <span>Kết thúc: {span.end}</span>
+                      </div>
+                      {span.text && <p className="text-xs text-gray-500 mt-1 truncate">"{span.text}"</p>}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+            {kind === 'audio' && (
+              !(audioLabels?.segments?.length) ? (
+                <p className="text-sm text-gray-500 italic">Chưa có đoạn âm thanh nào được chọn.</p>
+              ) : (
+                <div className="space-y-2">
+                  {audioLabels.segments.map((seg, i) => (
+                    <div key={seg.id || i} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs font-semibold text-gray-200">{seg.label || 'Không có nhãn'}</span>
+                        <span className="ml-auto text-xs text-gray-500">#{i + 1}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-gray-400 font-mono">
+                        <span>Bắt đầu: {typeof seg.start === 'number' ? seg.start.toFixed(2) : seg.start}s</span>
+                        <span>Kết thúc: {typeof seg.end === 'number' ? seg.end.toFixed(2) : seg.end}s</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+            {kind !== 'image' && kind !== 'text' && kind !== 'audio' && (
+              <p className="text-sm text-gray-500 italic">Không hỗ trợ hiển thị tọa độ cho loại file này.</p>
+            )}
+          </div>
+        )}
         {rightTab === 'info' && (
           <div className="p-4 space-y-4">
             {task?.projectId?.name && (
@@ -298,36 +367,11 @@ const InfoPanel = ({ task, onComplete, onReset, saving, savingMessage, isLastTas
         )}
       </div>
       <div className="border-t border-gray-700 p-4 space-y-2 shrink-0 bg-gray-900/80">
-        {allDone && (
-          <button onClick={onSubmitProject} disabled={saving}
-            className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2 mb-1">
-            {saving ? <span className="w-4 h-4 border-2 border-emerald-400 border-t-white rounded-full animate-spin" /> : (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
-            Nộp cho Reviewer
-          </button>
-        )}
         {!isReadOnly && (
-          <>
-            <button onClick={onComplete} disabled={saving}
-              className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <span className="w-4 h-4 border-2 border-blue-400 border-t-white rounded-full animate-spin" /> : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  {isLastTask
-                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  }
-                </svg>
-              )}
-              {isLastTask ? 'Lưu & Hoàn thành' : 'Lưu & Tiếp theo'}
-            </button>
-            <button onClick={onReset} disabled={saving}
-              className="w-full rounded-lg border border-gray-600 hover:border-gray-500 text-gray-400 hover:text-gray-300 px-4 py-2 text-xs font-medium transition-all disabled:opacity-30">
-              Reset nhãn
-            </button>
-          </>
+          <button onClick={onReset} disabled={saving}
+            className="w-full rounded-lg border border-gray-600 hover:border-gray-500 text-gray-400 hover:text-gray-300 px-4 py-2 text-xs font-medium transition-all disabled:opacity-30">
+            Reset nhãn
+          </button>
         )}
         {['submitted', 'resubmitted'].includes(task?.status) && (
           <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-center">
@@ -584,6 +628,9 @@ const Workspace = () => {
   const [projectInfo, setProjectInfo] = useState({ name: '', id: '' });
   const [textContent, setTextContent] = useState('');
   const [projectLabels, setProjectLabels] = useState([]);
+  // Local status overrides: takes priority over backend status for display
+  // Resets on page reload (intended - backend is source of truth on reload)
+  const [statusOverrides, setStatusOverrides] = useState({});
 
   // Mount lifecycle
   useEffect(() => {
@@ -756,6 +803,29 @@ const textRes = await axios.get(
     if (currentTaskId) loadTaskDetail(currentTaskId);
   }, [currentTaskId, loadTaskDetail]);
 
+  // Persist statusOverrides to localStorage so ProjectDetail can read them
+  useEffect(() => {
+    if (!projectId || Object.keys(statusOverrides).length === 0) return;
+    const key = `taskStatus_${projectId}`;
+    const existing = JSON.parse(localStorage.getItem(key) || '{}');
+    localStorage.setItem(key, JSON.stringify({ ...existing, ...statusOverrides }));
+  }, [statusOverrides, projectId]);
+
+  // When a task finishes loading: set in_progress override + call start API
+  // Only runs when task.id changes (i.e., different task loaded), not on every re-render
+  useEffect(() => {
+    if (!task?.id) return;
+    const TERMINAL = ['completed', 'submitted', 'resubmitted', 'approved'];
+    setStatusOverrides((prev) => {
+      if (TERMINAL.includes(prev[task.id]) || TERMINAL.includes(task.status)) return prev;
+      return { ...prev, [task.id]: 'in_progress' };
+    });
+    // Call start API for backend if needed (fire and forget)
+    if (['assigned', 'rejected'].includes(task.status)) {
+      axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() }).catch(() => {});
+    }
+  }, [task?.id]); // only re-run when task ID changes, not on statusOverrides update
+
   // Poll for status updates when submitted
   useEffect(() => {
     if (!task || !['submitted', 'resubmitted'].includes(task?.status)) return;
@@ -768,6 +838,15 @@ const textRes = await axios.get(
   // Handlers
   const handleAnnotationsChange = useCallback((newAnnotations) => { setAnnotations(newAnnotations); }, []);
   const handleLabelsChange = useCallback((newLabels) => { setLabels(newLabels); }, []);
+
+  const hasCurrentAnnotations = useCallback(() => {
+    if (!task) return false;
+    const kind = getTaskKind(task);
+    if (kind === 'image') return annotations.length > 0;
+    if (kind === 'text') return textSpans.length > 0 || !!annotationNote?.trim();
+    if (kind === 'audio') return !!(labels.segments?.length);
+    return false;
+  }, [task, annotations, textSpans, annotationNote, labels]);
 
 const handleSave = useCallback(async () => {
   if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
@@ -812,50 +891,6 @@ const handleSave = useCallback(async () => {
   }
 }, [task, annotations, labels, textSpans, annotationNote]);
 
-const handleSaveAndNext = useCallback(async () => {
-  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
-
-  const kind = getTaskKind(task);
-  if (kind === 'image' && annotations.length === 0) {
-    alert('Vui lòng thêm ít nhất một nhãn trước khi tiếp tục.');
-    return;
-  }
-  if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) {
-    alert('Vui lòng ghi nhãn ít nhất một phần hoặc thêm ghi chú.');
-    return;
-  }
-  if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) {
-    alert('Vui lòng ghi nhãn ít nhất một đoạn.');
-    return;
-  }
-
-  setSaving(true);
-  try {
-    if (task.status === 'assigned' || task.status === 'rejected') {
-      await axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() });
-    }
-    await handleSave();
-
-    setTasks((prev) =>
-      prev.map((t) => t.id === task.id ? { ...t, status: 'completed' } : t)
-    );
-    setTask((prev) => prev ? { ...prev, status: 'completed' } : prev);
-
-    const currentIdx = tasks.findIndex((t) => t.id === task.id);
-    if (currentIdx < tasks.length - 1) {
-      const nextId = tasks[currentIdx + 1].id;
-      setCurrentTaskId(nextId);
-      navigate(`/annotator/workspace/${projectId}?taskId=${nextId}`, { replace: true });
-    }
-    // Nếu là task cuối thì ở lại, nút "Nộp cho Reviewer" sẽ hiện ra
-  } catch (err) {
-    alert('Lỗi: ' + (err.response?.data?.message || err.message));
-  } finally {
-    setSaving(false);
-  }
-}, [task, annotations, labels, textSpans, annotationNote, handleSave, tasks, navigate, projectId]);
-
-
   const handleReset = useCallback(() => {
     if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     const kind = getTaskKind(task);
@@ -865,10 +900,22 @@ const handleSaveAndNext = useCallback(async () => {
     handleSave();
   }, [task, handleSave]);
 
-  const handleTaskSelect = useCallback((taskId) => {
+  const handleTaskSelect = useCallback(async (taskId) => {
+    if (taskId === currentTaskId) return;
+    // Handle leaving current task
+    if (task && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) {
+      if (hasCurrentAnnotations()) {
+        // Has annotations → save + mark completed
+        try { await handleSave(); } catch {}
+        setStatusOverrides((prev) => ({ ...prev, [task.id]: 'completed' }));
+      } else {
+        // No annotations → revert to "Chưa làm"
+        setStatusOverrides((prev) => ({ ...prev, [task.id]: 'assigned' }));
+      }
+    }
     setCurrentTaskId(taskId);
     navigate(`/annotator/workspace/${projectId}?taskId=${taskId}`, { replace: true });
-  }, [projectId, navigate]);
+  }, [currentTaskId, task, hasCurrentAnnotations, handleSave, projectId, navigate]);
 
   const handleNavigateTask = useCallback((direction) => {
     const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
@@ -877,7 +924,7 @@ const handleSaveAndNext = useCallback(async () => {
   }, [tasks, currentTaskId, handleTaskSelect]);
 
   const handleSubmitProject = useCallback(async () => {
-    const toSubmit = tasks.filter((t) => t.status === 'completed');
+    const toSubmit = tasks.filter((t) => (statusOverrides[t.id] ?? t.status) === 'completed');
     if (!toSubmit.length) return;
     setSaving(true);
     try {
@@ -890,7 +937,7 @@ const handleSaveAndNext = useCallback(async () => {
     } finally {
       setSaving(false);
     }
-  }, [tasks, projectId, navigate]);
+  }, [tasks, statusOverrides, projectId, navigate]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -904,26 +951,29 @@ const handleSaveAndNext = useCallback(async () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [loading, handleNavigateTask]);
 
-  const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
-  const isLastTask = currentIdx === tasks.length - 1;
-  const labeledCount = tasks.filter((t) => ['in_progress', 'submitted', 'resubmitted', 'approved', 'completed'].includes(t.status)).length;
-  const allTasksDone = tasks.length > 0 && tasks.every((t) => ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status));
-  const hasPendingSubmit = tasks.some((t) => t.status === 'completed');
+  // Apply local status overrides for display (takes priority over backend status)
+  const effectiveTasks = tasks.map((t) => ({ ...t, status: statusOverrides[t.id] ?? t.status }));
+  const effectiveTask = task ? { ...task, status: statusOverrides[task.id] ?? task.status } : null;
+
+  const currentIdx = effectiveTasks.findIndex((t) => t.id === currentTaskId);
+  const labeledCount = effectiveTasks.filter((t) => ['in_progress', 'submitted', 'resubmitted', 'approved', 'completed'].includes(t.status)).length;
+  const allTasksDone = effectiveTasks.length > 0 && effectiveTasks.every((t) => ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status));
+  const hasPendingSubmit = effectiveTasks.some((t) => t.status === 'completed');
   const showSubmitButton = allTasksDone && hasPendingSubmit;
-  const pct = tasks.length > 0 ? Math.round(((currentIdx + 1) / tasks.length) * 100) : 0;
-  const taskWithContent = task ? { ...task, _textContent: textContent } : null;
+  const pct = effectiveTasks.length > 0 ? Math.round(((currentIdx + 1) / effectiveTasks.length) * 100) : 0;
+  const taskWithContent = effectiveTask ? { ...effectiveTask, _textContent: textContent } : null;
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
       <div className="w-72 shrink-0">
-        <TaskListPanel tasks={tasks} currentTaskId={currentTaskId} onSelect={handleTaskSelect} projectName={projectInfo.name} />
+        <TaskListPanel tasks={effectiveTasks} currentTaskId={currentTaskId} onSelect={handleTaskSelect} projectName={projectInfo.name} />
       </div>
       <div className="flex-1 flex flex-col min-w-0">
         <div className="shrink-0 border-b border-gray-700 bg-gray-900/80 px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-gray-200 truncate">{projectInfo.name} — Item {currentIdx + 1}/{tasks.length}</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Đã gán nhãn: {labeledCount}/{tasks.length} items</p>
+              <h2 className="text-sm font-bold text-gray-200 truncate">{projectInfo.name} — Item {currentIdx + 1}/{effectiveTasks.length}</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Đã gán nhãn: {labeledCount}/{effectiveTasks.length} items</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => handleNavigateTask('prev')} disabled={currentIdx <= 0}
@@ -946,20 +996,20 @@ const handleSaveAndNext = useCallback(async () => {
               </div>
             </div>
           </div>
-          {task && (
+          {effectiveTask && (
             <div className="mt-2 flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TASK_STATUS[task.status]?.color || 'bg-gray-600'} ${TASK_STATUS[task.status]?.textColor || 'text-gray-300'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${TASK_STATUS[task.status]?.dotColor || 'bg-gray-400'}`} />
-                {TASK_STATUS[task.status]?.label || task.status}
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TASK_STATUS[effectiveTask.status]?.color || 'bg-gray-600'} ${TASK_STATUS[effectiveTask.status]?.textColor || 'text-gray-300'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${TASK_STATUS[effectiveTask.status]?.dotColor || 'bg-gray-400'}`} />
+                {TASK_STATUS[effectiveTask.status]?.label || effectiveTask.status}
               </span>
-              {task?.status === 'rejected' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/30">Co phan hoi tu reviewer</span>
+              {effectiveTask.status === 'rejected' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/30">Có phản hồi từ reviewer</span>
               )}
-              {task?.status === 'approved' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/30">Da duyet</span>
+              {effectiveTask.status === 'approved' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/30">Đã duyệt</span>
               )}
-              {['submitted', 'resubmitted'].includes(task?.status) && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-medium text-yellow-400 border border-yellow-500/30">Dang cho review</span>
+              {['submitted', 'resubmitted'].includes(effectiveTask.status) && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-medium text-yellow-400 border border-yellow-500/30">Đang chờ review</span>
               )}
             </div>
           )}
@@ -969,10 +1019,11 @@ const handleSaveAndNext = useCallback(async () => {
           annotationNote={annotationNote} setAnnotationNote={setAnnotationNote} />
       </div>
       <div className="w-80 shrink-0">
-        <InfoPanel task={task}
-          onComplete={handleSaveAndNext} onReset={handleReset}
-          saving={saving} savingMessage={savingMessage} isLastTask={isLastTask}
-          allDone={showSubmitButton} onSubmitProject={handleSubmitProject} />
+        <InfoPanel task={effectiveTask}
+          onReset={handleReset}
+          saving={saving}
+          allDone={showSubmitButton} onSubmitProject={handleSubmitProject}
+          annotations={annotations} textSpans={textSpans} audioLabels={labels} />
       </div>
     </div>
   );
