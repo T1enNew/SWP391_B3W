@@ -672,6 +672,23 @@ const Workspace = () => {
       const taskData = normalizeTask(res.data);
       if (!isMountedRef.current) return;
 
+      // Fetch signed URL to replace storageUrl (Supabase public URLs may return 400)
+      const di = taskData.dataItem;
+      const datasetId = taskData.datasetId?.id || taskData.dataset?.id ||
+        (typeof taskData.datasetId === 'string' ? taskData.datasetId : null);
+      const dataItemId = di?.id || di?._id;
+      if (di && datasetId && dataItemId) {
+        try {
+          const signedRes = await axios.get(
+            `${API_URL}/api/datasets/${datasetId}/signed-url/${dataItemId}`,
+            { headers: getAuthHeaders() }
+          );
+          const url = signedRes.data?.signedUrl || signedRes.data?.signed_url ||
+            signedRes.data?.url || signedRes.data?.data?.signedUrl || '';
+          if (url) taskData.dataItem = { ...di, signedUrl: url };
+        } catch {}
+      }
+
       setTask({
         ...taskData,
         availableLabels: taskData.availableLabels?.length

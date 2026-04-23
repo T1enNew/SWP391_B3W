@@ -272,6 +272,7 @@ export default function Datasets() {
   const [itemsLoading, setItemsLoading]   = useState(false);
   const [uploading, setUploading]         = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [linkedTasks, setLinkedTasks]     = useState([]);
 
   /* delete dataset */
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -287,10 +288,25 @@ export default function Datasets() {
   const [detailItem, setDetailItem]           = useState(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
-  const isComplete = useMemo(
-    () => dsItems.length > 0 && dsItems.every(i => i.status === 'approved'),
-    [dsItems]
-  );
+  const tasksByItemId = useMemo(() => {
+    const map = new Map();
+    linkedTasks.forEach(t => {
+      const itemId = coerceId(t.dataItem);
+      if (!itemId) return;
+      if (!map.has(itemId)) map.set(itemId, []);
+      map.get(itemId).push(t);
+    });
+    return map;
+  }, [linkedTasks]);
+
+  const isComplete = useMemo(() => {
+    if (dsItems.length === 0) return false;
+    return dsItems.every(item => {
+      if (item.status === 'approved') return true;
+      const tasks = tasksByItemId.get(coerceId(item)) || [];
+      return tasks.some(t => t.status === 'approved');
+    });
+  }, [dsItems, tasksByItemId]);
 
   /* ── loaders ── */
   const fetchDatasets = useCallback(async () => {
@@ -322,11 +338,39 @@ export default function Datasets() {
     }
   }, []);
 
+  const fetchLinkedTasks = useCallback(async (ds) => {
+    if (!ds) return;
+    setLinkedTasks([]);
+    try {
+      const pjRes = await axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers: getAuthHeaders() });
+      const pjList = Array.isArray(pjRes.data) ? pjRes.data : pjRes.data?.data || pjRes.data?.projects || [];
+      const dsId = coerceId(ds);
+      const linked = pjList.filter(p => {
+        const did = p.dataset?.id || p.dataset?._id || p.dataset_id || p.datasetId;
+        return String(did) === String(dsId);
+      });
+      const taskResults = await Promise.allSettled(
+        linked.map(p => axios.get(`${API_URL}/api/tasks/project/${coerceId(p)}`, { headers: getAuthHeaders() }))
+      );
+      const allTasks = taskResults.flatMap(r => {
+        if (r.status !== 'fulfilled') return [];
+        const d = r.value.data;
+        return Array.isArray(d) ? d : d?.data || d?.tasks || [];
+      });
+      setLinkedTasks(allTasks);
+    } catch {
+      setLinkedTasks([]);
+    }
+  }, []);
+
   useEffect(() => { fetchDatasets(); }, [fetchDatasets]);
 
   useEffect(() => {
-    if (selectedDs) fetchDatasetItems(selectedDs);
-  }, [selectedDs, fetchDatasetItems]);
+    if (selectedDs) {
+      fetchDatasetItems(selectedDs);
+      fetchLinkedTasks(selectedDs);
+    }
+  }, [selectedDs, fetchDatasetItems, fetchLinkedTasks]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -412,7 +456,7 @@ export default function Datasets() {
     try {
       await axios.delete(`${API_URL}/api/datasets/${coerceId(deleteTarget)}`, { headers: getAuthHeaders() });
       setDeleteTarget(null);
-      if (coerceId(selectedDs) === coerceId(deleteTarget)) { setSelectedDs(null); setDsItems([]); }
+      if (coerceId(selectedDs) === coerceId(deleteTarget)) { setSelectedDs(null); setDsItems([]); setLinkedTasks([]); }
       await fetchDatasets();
       showToast('Xóa dataset thành công');
     } catch (e) {
@@ -443,7 +487,16 @@ export default function Datasets() {
   /* ── item click: dialog if complete, navigate otherwise ── */
   const handleItemClick = (item) => {
     if (isComplete) {
-      setDetailItem(item);
+      const approvedTasks = (tasksByItemId.get(coerceId(item)) || []).filter(t => t.status === 'approved');
+      const enrichedAnnotations = approvedTasks.map(t => ({
+        status: t.status,
+        annotatorId: t.annotatorId || t.annotator,
+        labels: t.labels || t.annotation_data || t.annotationData || {},
+      }));
+      const enrichedItem = enrichedAnnotations.length > 0
+        ? { ...item, status: 'approved', annotations: enrichedAnnotations }
+        : item;
+      setDetailItem(enrichedItem);
       setDetailDialogOpen(true);
     } else {
       navigate(
@@ -672,7 +725,7 @@ export default function Datasets() {
                       const name = item.originalName || item.original_name || item.filename || `item-${idx + 1}`;
                       const src = buildImageUrl(item);
                       const isDeletingThis = deletingItemId === (coerceId(item) || item.path);
-                      const approved = item.status === 'approved';
+                      const approved = item.status === 'approved' || (tasksByItemId.get(coerceId(item)) || []).some(t => t.status === 'approved');
                       return (
                         <Grid item xs={6} sm={4} md={3} lg={2} key={id}>
                           <Card

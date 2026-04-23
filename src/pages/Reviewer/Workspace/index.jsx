@@ -92,11 +92,16 @@ const ReviewerWorkspace = () => {
       const itemKey    = di.filename || di.original_name || task.id;
       const color      = stringToColor(task.annotator?.id || task.annotatorId?.id || task.id);
       const reviewStatus = getAnnotatorStatus(task);
+      const datasetId  = task.datasetId?.id || task.dataset?.id ||
+        (typeof task.datasetId === 'string' ? task.datasetId : null);
+      const dataItemId = di.id || di._id || null;
 
       const item = {
         itemId:    itemKey,
         filename:  di.originalName || di.original_name || di.filename || itemKey,
         imageUrl:  buildFileUrl(di),
+        datasetId,
+        dataItemId,
         kind:      getTaskKind(task),
         status:    task.status === 'approved' ? 'fully_reviewed' : (task.status === 'rejected' ? 'waiting_rework' : 'pending_review'),
         projectName:     task.project?.name || task.projectId?.name || '',
@@ -203,6 +208,58 @@ const ReviewerWorkspace = () => {
     finally       { setSaving(false); }
   };
 
+  const handleQuickApprove = async (item, submission) => {
+    if (!submission?.task) return;
+    setSaving(true);
+    try {
+      await axios.post(
+        `${API_URL}/api/reviews/${submission.submissionId}/approve`,
+        { review_comments: '' },
+        { headers: { Authorization: `Bearer ${getAuthToken()}` } }
+      );
+      const applyUpdate = (i) => {
+        if (i.itemId !== item.itemId) return i;
+        const subs = i.submissions.map(s =>
+          s.submissionId === submission.submissionId ? { ...s, status: 'approved' } : s
+        );
+        const updated = { ...i, submissions: subs };
+        updateItemStatus(updated);
+        return updated;
+      };
+      setItems(prev => prev.map(applyUpdate));
+      if (currentItem?.itemId === item.itemId) setCurrentItem(prev => applyUpdate(prev));
+      setSavingMsg('Approved!');
+      setTimeout(() => setSavingMsg(''), 2000);
+    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    finally { setSaving(false); }
+  };
+
+  const handleQuickReject = async (item, submission) => {
+    if (!submission?.task) return;
+    setSaving(true);
+    try {
+      await axios.post(
+        `${API_URL}/api/reviews/${submission.submissionId}/reject`,
+        { review_comments: 'Rejected', error_category: 'other' },
+        { headers: { Authorization: `Bearer ${getAuthToken()}` } }
+      );
+      const applyUpdate = (i) => {
+        if (i.itemId !== item.itemId) return i;
+        const subs = i.submissions.map(s =>
+          s.submissionId === submission.submissionId ? { ...s, status: 'rejected' } : s
+        );
+        const updated = { ...i, submissions: subs };
+        updateItemStatus(updated);
+        return updated;
+      };
+      setItems(prev => prev.map(applyUpdate));
+      if (currentItem?.itemId === item.itemId) setCurrentItem(prev => applyUpdate(prev));
+      setSavingMsg('Rejected!');
+      setTimeout(() => setSavingMsg(''), 2000);
+    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    finally { setSaving(false); }
+  };
+
   const handleNextAnnotator = () => {
     if (!currentItem) return;
     const pending = currentItem.submissions.filter(s => s.status === 'pending');
@@ -242,7 +299,13 @@ const ReviewerWorkspace = () => {
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
       <div className="w-60 shrink-0">
-        <ReviewQueueFlatPanel items={items} currentItemId={currentItemId} onSelect={handleItemSelect} />
+        <ReviewQueueFlatPanel
+          items={items}
+          currentItemId={currentItemId}
+          onSelect={handleItemSelect}
+          onQuickApprove={handleQuickApprove}
+          onQuickReject={handleQuickReject}
+        />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -289,6 +352,8 @@ const ReviewerWorkspace = () => {
               availableLabels={currentItem.availableLabels}
               visibleAnnotators={visibleAnnotators}
               activeAnnotatorId={activeAnnotatorId}
+              datasetId={currentItem.datasetId}
+              dataItemId={currentItem.dataItemId}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-800">
@@ -366,10 +431,16 @@ function buildItemList(taskList, projectId) {
     const reviewStatus  = getAnnotatorStatus(task);
 
     if (!itemMap.has(itemKey)) {
+      const datasetId = task.datasetId?.id || task.dataset?.id ||
+        (typeof task.datasetId === 'string' ? task.datasetId : null);
+      const dataItemId = di.id || di._id || null;
+
       itemMap.set(itemKey, {
         itemId:          itemKey,
         filename:        di.originalName || di.original_name || di.filename || itemKey,
         imageUrl:        buildFileUrl(di),
+        datasetId,
+        dataItemId,
         kind:            getTaskKind(task),
         status:          'pending_review',
         projectName:     task.project?.name || task.projectId?.name || '',

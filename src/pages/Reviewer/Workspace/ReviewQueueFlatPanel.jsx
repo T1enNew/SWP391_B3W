@@ -1,7 +1,7 @@
 import React from 'react';
 import { ITEM_STATUS } from '../../../constants/reviewer';
 
-const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect }) => (
+const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect, onQuickApprove, onQuickReject }) => (
   <div className="h-full flex flex-col bg-gray-900 border-r border-gray-700">
     <div className="p-3 border-b border-gray-700 shrink-0">
       <h3 className="text-sm font-bold text-gray-200">Review Queue</h3>
@@ -35,20 +35,45 @@ const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect }) => (
               </p>
               <p className="text-[10px] text-gray-500">{item.submissions?.length || 0} subs</p>
             </div>
-            <div className="flex -space-x-1">
-              {(item.submissions || []).slice(0, 4).map((sub) => (
-                <span
-                  key={sub.submissionId}
-                  className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 text-white border border-gray-900"
-                  style={{ backgroundColor: sub.color || '#3b82f6' }}
-                >
-                  {(sub.annotatorName || '?')[0].toUpperCase()}
-                </span>
-              ))}
+            <div className="flex items-center gap-1">
+              {(item.submissions || []).slice(0, 4).map((sub) => {
+                const isApproved = sub.status === 'approved';
+                const isRejected = sub.status === 'rejected';
+                return (
+                  <div key={sub.submissionId} className="flex items-center gap-0.5">
+                    <button
+                      title="Reject"
+                      onClick={e => { e.stopPropagation(); onQuickReject?.(item, sub); }}
+                      disabled={isRejected || isApproved}
+                      className={`w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold transition-all border ${
+                        isRejected
+                          ? 'bg-red-600/30 border-red-500/60 text-red-400 cursor-default'
+                          : isApproved
+                          ? 'bg-gray-800/40 border-gray-700/40 text-gray-600 cursor-default'
+                          : 'bg-red-600/10 border-red-500/40 text-red-400 hover:bg-red-600/30 hover:border-red-500 cursor-pointer'
+                      }`}
+                    >
+                      ✕
+                    </button>
+                    <button
+                      title="Approve"
+                      onClick={e => { e.stopPropagation(); onQuickApprove?.(item, sub); }}
+                      disabled={isApproved || isRejected}
+                      className={`w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold transition-all border ${
+                        isApproved
+                          ? 'bg-green-600/30 border-green-500/60 text-green-400 cursor-default'
+                          : isRejected
+                          ? 'bg-gray-800/40 border-gray-700/40 text-gray-600 cursor-default'
+                          : 'bg-green-600/10 border-green-500/40 text-green-400 hover:bg-green-600/30 hover:border-green-500 cursor-pointer'
+                      }`}
+                    >
+                      ✓
+                    </button>
+                  </div>
+                );
+              })}
               {(item.submissions?.length || 0) > 4 && (
-                <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-gray-700 text-gray-400 border border-gray-900">
-                  +{item.submissions.length - 4}
-                </span>
+                <span className="text-[9px] text-gray-500 ml-0.5">+{item.submissions.length - 4}</span>
               )}
             </div>
           </div>

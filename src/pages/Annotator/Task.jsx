@@ -207,6 +207,22 @@ const AnnotatorTask = () => {
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       const taskData = normalizeTask(response.data);
 
+      // Fetch signed URL to replace storageUrl (Supabase public URLs may return 400)
+      const di = taskData.dataItem;
+      const datasetId = taskData.datasetId?.id || taskData.dataset?.id ||
+        (typeof taskData.datasetId === 'string' ? taskData.datasetId : null);
+      const dataItemId = di?.id || di?._id;
+      if (di && datasetId && dataItemId) {
+        try {
+          const signedRes = await axios.get(
+            `${API_URL}/api/datasets/${datasetId}/signed-url/${dataItemId}`
+          );
+          const url = signedRes.data?.signedUrl || signedRes.data?.signed_url ||
+            signedRes.data?.url || signedRes.data?.data?.signedUrl || '';
+          if (url) taskData.dataItem = { ...di, signedUrl: url };
+        } catch {}
+      }
+
       // Fallback: nếu task không có availableLabels, fetch từ project
       if (!taskData.availableLabels?.length) {
         const projectId = taskData.projectId?.id || taskData.project?.id || (typeof taskData.projectId === 'string' ? taskData.projectId : null);

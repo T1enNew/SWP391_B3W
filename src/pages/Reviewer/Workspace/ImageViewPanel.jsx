@@ -1,21 +1,43 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { API_URL } from '../../../config/api';
 
-const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableLabels }) => {
+const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableLabels, datasetId, dataItemId }) => {
   const imgRef = useRef(null);
   const [imgNat, setImgNat] = useState({ w: 0, h: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState('');
 
   useEffect(() => {
     setIsLoaded(false);
     setHasError(false);
     setImgNat({ w: 0, h: 0 });
+    setResolvedUrl(item?.imageUrl || '');
   }, [item?.imageUrl]);
 
   const handleLoad = (e) => {
     setImgNat({ w: e.target.naturalWidth, h: e.target.naturalHeight });
     setIsLoaded(true);
   };
+
+  const handleError = useCallback(async () => {
+    if (datasetId && dataItemId) {
+      try {
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const res = await fetch(
+          `${API_URL}/api/datasets/${datasetId}/signed-url/${dataItemId}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const url = data?.signedUrl || data?.signed_url || data?.url || data?.data?.signedUrl || '';
+          if (url) { setResolvedUrl(url); return; }
+        }
+      } catch {}
+    }
+    setHasError(true);
+    setIsLoaded(false);
+  }, [datasetId, dataItemId]);
 
   const getLabelColor = (labelName) => {
     if (!availableLabels || !labelName) return '#888888';
@@ -33,7 +55,7 @@ const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableL
     };
   };
 
-  if (!item?.imageUrl) {
+  if (!resolvedUrl && !item?.imageUrl) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-800">
         <p className="text-gray-500 text-xs">Khong co URL anh</p>
@@ -57,13 +79,13 @@ const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableL
 
         <img
           ref={imgRef}
-          key={item.imageUrl}
-          src={item.imageUrl}
+          key={resolvedUrl}
+          src={resolvedUrl}
           alt={item.filename || 'Review item'}
           className="max-w-full rounded-lg border border-gray-700 block"
           style={{ maxHeight: '75vh', width: 'auto', height: 'auto', display: 'block' }}
           onLoad={handleLoad}
-          onError={() => { setHasError(true); setIsLoaded(false); }}
+          onError={handleError}
         />
 
         {isLoaded && imgNat.w > 0 && imgRef.current && (
