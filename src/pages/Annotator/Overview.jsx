@@ -115,14 +115,14 @@ const AnnotatorOverview = () => {
 
   // Global stats
   const total      = tasks.length;
-  const inProgress = tasks.filter(t => ['assigned', 'in_progress'].includes(t.status)).length;
+  const inProgress = tasks.filter(t => ['in_progress', 'revised'].includes(t.status)).length;
   const submitted  = tasks.filter(t => ['submitted', 'resubmitted'].includes(t.status)).length;
   const approved   = tasks.filter(t => t.status === 'approved').length;
   const rejected   = tasks.filter(t => t.status === 'rejected').length;
 
-  // "Cần xử lý" queue: rejected trước, rồi in_progress, rồi assigned
+  // "Cần xử lý": rejected & revised ưu tiên cao, rồi in_progress
   const actionTasks = useMemo(() => {
-    const priority = ['rejected', 'in_progress', 'assigned'];
+    const priority = ['rejected', 'revised', 'in_progress'];
     return tasks
       .filter(t => priority.includes(t.status))
       .sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status));
@@ -141,7 +141,11 @@ const AnnotatorOverview = () => {
       const pPct       = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;
       const pOverdue   = p.deadline && new Date(p.deadline) < new Date();
       return { ...p, pTotal, pDone, pApproved, pRejected, pSubmitted, pPct, pOverdue };
-    }).filter(p => p.pTotal > 0).sort((a, b) => b.pRejected - a.pRejected || b.pTotal - a.pTotal);
+    }).filter(p => p.pTotal > 0).sort((a, b) => {
+      const da = a.deadline ? new Date(a.deadline).getTime() : 0;
+      const db = b.deadline ? new Date(b.deadline).getTime() : 0;
+      return db - da;
+    });
   }, [projects, tasks]);
 
   if (loading) return (
@@ -207,7 +211,7 @@ const AnnotatorOverview = () => {
           <StatCard
             label="Cần xử lý"
             value={inProgress + rejected}
-            sub="Đang làm + bị trả lại"
+            sub="Đang làm + sửa + bị trả lại"
             icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>}
             colorClass="bg-amber-500/15 text-amber-400"
             bgClass="bg-amber-500/5"
@@ -241,7 +245,7 @@ const AnnotatorOverview = () => {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/60">
               <div>
                 <h2 className="text-sm font-bold text-gray-200">Task cần xử lý</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Bị trả lại và đang làm dở</p>
+                <p className="text-xs text-gray-500 mt-0.5">Bị trả lại, đang sửa và đang làm dở</p>
               </div>
               {actionTasks.length > 0 && (
                 <button onClick={() => navigate('/annotator/tasks')}
@@ -286,9 +290,11 @@ const AnnotatorOverview = () => {
                             <p className="text-xs text-gray-500 truncate mt-0.5">{projName}</p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {isRejected
+                            {task.status === 'rejected'
                               ? <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-400">↩ Trả lại</span>
-                              : <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400">▶ Đang làm</span>
+                              : task.status === 'revised'
+                                ? <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">✎ Đang sửa</span>
+                                : <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400">▶ Đang làm</span>
                             }
                             <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

@@ -168,23 +168,68 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, projectName }) => {
 };
 
 // ===== RIGHT PANEL: Info & Actions =====
-const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotations, textSpans, audioLabels }) => {
+const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotations, textSpans, audioLabels, onApplyAiSuggestions }) => {
   const [rightTab, setRightTab] = useState('info');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState(null);
+  const [aiError, setAiError] = useState('');
+  const [aiApplied, setAiApplied] = useState(false);
   const labels = task?.availableLabels || [];
   const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
   const feedback = task?.reviewComments || task?.rejectionReason || '';
   const kind = getTaskKind(task);
 
+  const handleAiPreLabel = async (apply = false) => {
+    if (!task?.id) return;
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/ai/pre-label/${task.id}?apply=${apply}`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      setAiSuggestions(res.data);
+      if (apply) {
+        setAiApplied(true);
+        if (onApplyAiSuggestions && res.data?.suggestions) {
+          onApplyAiSuggestions(res.data.suggestions);
+        }
+      }
+    } catch (err) {
+      setAiError(err?.response?.data?.message || 'AI gặp lỗi, vui lòng thử lại.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Reset AI state when task changes
+  React.useEffect(() => {
+    setAiSuggestions(null);
+    setAiError('');
+    setAiApplied(false);
+  }, [task?.id]);
+
   return (
     <div className="h-full flex flex-col bg-gray-900 border-l border-gray-700">
       <div className="flex border-b border-gray-700 shrink-0">
-        {[{ key: 'info', label: 'Thông tin' }, { key: 'labels', label: 'Nhãn' }, { key: 'coords', label: 'Tọa độ' }, { key: 'guide', label: 'Hướng dẫn' }].map((tab) => (
+        {[
+          { key: 'info', label: 'Thông tin' },
+          { key: 'labels', label: 'Nhãn' },
+          { key: 'coords', label: 'Tọa độ' },
+          { key: 'guide', label: 'Hướng dẫn' },
+          ...(kind === 'image' ? [{ key: 'ai', label: '✨ AI' }] : []),
+        ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setRightTab(tab.key)}
-            className={`flex-1 px-4 py-3 text-xs font-semibold transition-all border-b-2 ${
-              rightTab === tab.key ? 'text-blue-400 border-blue-500 bg-blue-500/5' : 'text-gray-500 border-transparent hover:text-gray-300 hover:bg-gray-800/40'
+            className={`flex-1 px-2 py-3 text-xs font-semibold transition-all border-b-2 ${
+              rightTab === tab.key
+                ? tab.key === 'ai'
+                  ? 'text-purple-400 border-purple-500 bg-purple-500/5'
+                  : 'text-blue-400 border-blue-500 bg-blue-500/5'
+                : 'text-gray-500 border-transparent hover:text-gray-300 hover:bg-gray-800/40'
             }`}
           >
             {tab.label}
@@ -362,6 +407,103 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+        {rightTab === 'ai' && kind === 'image' && (
+          <div className="p-4 space-y-4">
+            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3">
+              <p className="text-xs text-purple-300 font-semibold mb-0.5">AI Gợi ý nhãn (Google Gemini)</p>
+              <p className="text-xs text-purple-400/70">AI phân tích ảnh và gợi ý nhãn phù hợp từ bộ nhãn của task.</p>
+            </div>
+            {isReadOnly ? (
+              <p className="text-xs text-gray-500 italic">Task đã nộp, không thể dùng AI gợi ý.</p>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleAiPreLabel(false)}
+                  disabled={aiLoading}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                >
+                  {aiLoading ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                      </svg>
+                      Đang phân tích...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      Hỏi AI gợi ý nhãn
+                    </>
+                  )}
+                </button>
+                {aiError && (
+                  <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-3">
+                    <p className="text-xs text-rose-400">{aiError}</p>
+                  </div>
+                )}
+                {aiSuggestions && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Kết quả gợi ý</p>
+                      <span className="text-xs text-purple-400/70">{aiSuggestions.model || 'Gemini'}</span>
+                    </div>
+                    {aiSuggestions.suggestions?.length === 0 && (
+                      <p className="text-sm text-gray-500 italic">AI không tìm thấy nhãn phù hợp.</p>
+                    )}
+                    <div className="space-y-2">
+                      {aiSuggestions.suggestions?.map((s, i) => {
+                        const labelInfo = labels.find(l => l.name === s.name);
+                        const pct = Math.round((s.confidence || 0) * 100);
+                        return (
+                          <div key={i} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-3">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              {labelInfo && (
+                                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: labelInfo.color || '#a855f7' }} />
+                              )}
+                              <span className="text-sm font-semibold text-gray-200 flex-1">{s.name}</span>
+                              <span className={`text-xs font-bold ${pct >= 80 ? 'text-emerald-400' : pct >= 50 ? 'text-yellow-400' : 'text-gray-500'}`}>{pct}%</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-gray-700 overflow-hidden mb-2">
+                              <div
+                                className={`h-full rounded-full transition-all ${pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-gray-500'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            {s.reasoning && (
+                              <p className="text-xs text-gray-500 leading-relaxed">{s.reasoning}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!aiApplied && aiSuggestions.suggestions?.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (onApplyAiSuggestions) onApplyAiSuggestions(aiSuggestions.suggestions);
+                          setAiApplied(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-xs font-semibold text-white transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Áp dụng nhãn lên ảnh
+                      </button>
+                    )}
+                    {aiApplied && (
+                      <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2.5 text-center">
+                        <p className="text-xs text-emerald-400 font-medium">Đã lưu gợi ý AI vào task</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1023,7 +1165,28 @@ const handleSave = useCallback(async () => {
           onReset={handleReset}
           saving={saving}
           allDone={showSubmitButton} onSubmitProject={handleSubmitProject}
-          annotations={annotations} textSpans={textSpans} audioLabels={labels} />
+          annotations={annotations} textSpans={textSpans} audioLabels={labels}
+          onApplyAiSuggestions={(suggestions) => {
+            if (!suggestions?.length) return;
+            // Convert each AI suggestion into a bbox annotation spread across image
+            const count = suggestions.length;
+            const newAnns = suggestions.map((s, i) => {
+              // Distribute boxes: if multiple, split image horizontally
+              const colW = 90 / count;
+              const x1 = 5 + i * colW;
+              const x2 = x1 + colW - 2;
+              return {
+                id: Date.now() + i,
+                label: s.name,
+                bbox: [x1, 5, x2, 95],
+                confidence: s.confidence || 1.0,
+                type: 'bbox',
+                answer: null,
+              };
+            });
+            setAnnotations(newAnns);
+          }}
+        />
       </div>
     </div>
   );
