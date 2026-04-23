@@ -10,21 +10,16 @@ const fmtDate = (d) => {
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-// Backend field name: approved (reviewer approved) + submitted (waiting review) + rejected (need rework)
 const getProjStats = (project) => {
   if (!project) return { total: 0, done: 0, waiting: 0, rejected: 0, pct: 0 };
 
-  const subs = project.subtopics || [];
-  let total = 0, done = 0, waiting = 0, rejected = 0;
-
-  subs.forEach((sub) => {
-    total += sub.total || 0;
-    done += sub.approved || 0;       // Da duyet boi reviewer
-    waiting += (sub.submitted || 0) + (sub.resubmitted || 0);   // Dang cho review (submitted / resubmitted)
-    rejected += sub.rejected || 0;    // Bi tra lai
-  });
-
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const tasks = project._tasks || [];
+  const total = tasks.length;
+  const done = tasks.filter(t => t.status === 'approved').length;
+  const waiting = tasks.filter(t => ['submitted', 'resubmitted'].includes(t.status)).length;
+  const rejected = tasks.filter(t => t.status === 'rejected').length;
+  const worked = tasks.filter(t => ['submitted', 'resubmitted', 'approved', 'rejected', 'completed'].includes(t.status)).length;
+  const pct = total ? Math.round((worked / total) * 100) : 0;
   return { total, done, waiting, rejected, pct };
 };
 
@@ -85,35 +80,23 @@ const ProjectCard = ({ project, onOpen }) => {
         <StatusBadge project={project} />
       </div>
 
-      {/* Topic */}
-      {project.topicName && (
-        <div className="mb-3">
-          <span className="inline-flex items-center rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-medium text-purple-400 border border-purple-500/20">
-            {project.topicName}
-          </span>
-        </div>
-      )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="rounded-lg bg-gray-900/60 p-2.5">
-          <p className="text-xs text-gray-500">Tong so item</p>
+          <p className="text-xs text-gray-500">Tong item</p>
           <p className="mt-0.5 text-lg font-bold text-gray-200">{total}</p>
         </div>
-        <div className="rounded-lg bg-gray-900/60 p-2.5">
-          <p className="text-xs text-gray-500">Subtopics</p>
-          <p className="mt-0.5 text-lg font-bold text-gray-200">{(project.subtopics || []).length}</p>
-        </div>
         <div className="rounded-lg bg-emerald-500/5 p-2.5 border border-emerald-500/10">
-          <p className="text-xs text-emerald-500/70">Da hoan thanh</p>
+          <p className="text-xs text-emerald-500/70">Da duyet</p>
           <p className="mt-0.5 text-lg font-bold text-emerald-400">{done}</p>
         </div>
         <div className="rounded-lg bg-yellow-500/5 p-2.5 border border-yellow-500/10">
-          <p className="text-xs text-yellow-500/70">Dang cho review</p>
+          <p className="text-xs text-yellow-500/70">Cho review</p>
           <p className="mt-0.5 text-lg font-bold text-yellow-400">{waiting}</p>
         </div>
         {rejected > 0 && (
-          <div className="col-span-2 rounded-lg bg-amber-500/5 p-2.5 border border-amber-500/10">
+          <div className="col-span-3 rounded-lg bg-amber-500/5 p-2.5 border border-amber-500/10">
             <p className="text-xs text-amber-500/70">Bi tra ve (lam lai)</p>
             <p className="mt-0.5 text-lg font-bold text-amber-400">{rejected} item</p>
           </div>
@@ -170,8 +153,28 @@ const AnnotatorProjectList = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/projects`);
-      setProjects(getArray(res.data).map(normalizeProject));
+      const token = sessionStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [projRes, tasksRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects`, { headers }),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers }),
+      ]);
+      const rawProjects = getArray(projRes.data).map(normalizeProject);
+      const allTasks = getArray(tasksRes.data);
+      const projectsWithTasks = rawProjects.map(p => {
+        const pid = p.id || p.projectId;
+        const pTasks = allTasks.filter(t => {
+          const tid =
+            t.projectId?.id ||
+            t.project?.id ||
+            (typeof t.projectId === 'string' ? t.projectId : null) ||
+            t.project_id?.id ||
+            (typeof t.project_id === 'string' ? t.project_id : null);
+          return String(tid) === String(pid);
+        });
+        return { ...p, _tasks: pTasks };
+      });
+      setProjects(projectsWithTasks);
     } catch (err) {
       setError(err.response?.data?.message || 'Khong tai duoc danh sach project');
     } finally {
@@ -191,8 +194,7 @@ const AnnotatorProjectList = () => {
       const q = searchQuery.toLowerCase();
       const matchName = (p.projectName || p.name || '').toLowerCase().includes(q);
       const matchDataset = (p.datasetName || p.dataset?.name || '').toLowerCase().includes(q);
-      const matchTopic = (p.topicName || '').toLowerCase().includes(q);
-      if (!matchName && !matchDataset && !matchTopic) return false;
+      if (!matchName && !matchDataset) return false;
     }
 
     if (filter === 'all') return true;
@@ -205,8 +207,7 @@ const AnnotatorProjectList = () => {
     if (filter === 'overdue') return overdue;
     if (filter === 'has_rejected') return rejected > 0;
     if (filter === 'waiting_review') {
-      const subs = p.subtopics || [];
-      return subs.some((s) => (s.submitted || 0) > 0 || (s.resubmitted || 0) > 0);
+      return getProjStats(p).waiting > 0;
     }
     return true;
   });
@@ -217,7 +218,7 @@ const AnnotatorProjectList = () => {
     completed: projects.filter((p) => { const { total, done } = getProjStats(p); return done === total && total > 0; }).length,
     overdue: projects.filter((p) => p.deadline && new Date(p.deadline) < new Date()).length,
     has_rejected: projects.filter((p) => getProjStats(p).rejected > 0).length,
-    waiting_review: projects.filter((p) => (p.subtopics || []).some((s) => (s.submitted || 0) > 0 || (s.resubmitted || 0) > 0)).length,
+    waiting_review: projects.filter((p) => getProjStats(p).waiting > 0).length,
   };
 
   const filterTabs = [

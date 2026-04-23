@@ -126,7 +126,7 @@ const AnnotatorHistory = () => {
                   <div
                     key={task.id}
                     className="rounded-xl border border-gray-700 bg-gray-800 p-4 cursor-pointer hover:border-gray-600 transition-all"
-                    onClick={() => task.status === 'revised' && navigate(`/annotator/workspace/${task.subtopicId?.id || task.subtopicId}`)}
+                    onClick={() => task.status === 'revised' && navigate(`/annotator/workspace/${task.projectId?.id || task.projectId}`)}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0 flex-1">
@@ -134,7 +134,7 @@ const AnnotatorHistory = () => {
                           {task.dataItem?.filename || task.dataItem?.originalName || 'Unknown file'}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {task.projectId?.name || 'Project'} &bull; {task.subtopicId?.name || 'Subtopic'}
+                          {task.projectId?.name || 'Project'}
                         </p>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">

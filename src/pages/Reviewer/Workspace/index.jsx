@@ -42,19 +42,32 @@ const ReviewerWorkspace = () => {
     setCurrentItemId(null);
     setCurrentItem(null);
     try {
+      const headers = { Authorization: `Bearer ${getAuthToken()}` };
       const params = { limit: 1000 };
-      if (projectId) params.project_id = projectId;
 
-      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-        headers: { Authorization: `Bearer ${getAuthToken()}` },
-        params,
-      });
-      let taskList = Array.isArray(res.data)
-        ? res.data
-        : res.data?.data || res.data?.tasks || [];
+      const [pendingRes, reviewedRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/api/reviews/pending`, { headers, params }),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { headers, params }),
+      ]);
 
-      taskList = taskList.map(normalizeTask);
+      const extractList = (res) => {
+        if (res.status !== 'fulfilled') return [];
+        const d = res.value.data;
+        return Array.isArray(d) ? d : Array.isArray(d?.reviews) ? d.reviews : Array.isArray(d?.data) ? d.data : [];
+      };
 
+      const pending  = extractList(pendingRes);
+      const reviewed = extractList(reviewedRes);
+      const combined = [...pending, ...reviewed];
+
+      const filtered = projectId
+        ? combined.filter(t => {
+            const pid = t.project?.id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
+            return String(pid) === String(projectId);
+          })
+        : combined;
+
+      const taskList = filtered.map(normalizeTask);
       const itemList = buildItemList(taskList, projectId);
       setItems(itemList);
       if (itemList.length > 0) selectItem(itemList[0]);

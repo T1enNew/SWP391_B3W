@@ -19,8 +19,6 @@ export const normalizeDataItem = (item) => {
     storagePath: item.storagePath || item.storage_path || '',
     storageUrl: item.storageUrl || item.storage_url || '',
     signedUrl: item.signedUrl || item.signed_url || item.storage_url || '',
-    subtopicId: item.subtopicId || item.subtopic_id || item.subtopic?.id || null,
-    subtopic: item.subtopic || null,
   };
 };
 
@@ -30,7 +28,6 @@ export const normalizeTask = (task) => {
   const project = task.projectId || task.project || null;
   const dataset = task.datasetId || task.dataset || null;
   const labelSet = task.labelsetId || task.labelSet || task.label_set || null;
-  const subtopic = task.subtopicId || dataItem?.subtopic || null;
 
   return {
     ...task,
@@ -43,7 +40,6 @@ export const normalizeTask = (task) => {
     labelsetId: labelSet,
     labelSet,
     label_set: labelSet,
-    subtopicId: subtopic,
     availableLabels: (labelSet?.labels || task.availableLabels || []).map(normalizeLabel),
     labels: task.labels || task.annotation_data || {},
   };
@@ -52,20 +48,12 @@ export const normalizeTask = (task) => {
 export const normalizeProject = (project) => {
   if (!project) return null;
   const dataset = project.datasetId || project.dataset || null;
-  const datasetSubtopics = dataset?.subtopics || [];
-  const topSubtopics = project.subtopics || datasetSubtopics || [];
   return {
     ...project,
+    id: project.id || project._id,
     projectName: project.projectName || project.name || '',
     datasetName: project.datasetName || dataset?.name || '',
-    topicName: project.topicName || dataset?.topic?.name || '',
     datasetId: dataset,
     dataset,
-    subtopics: topSubtopics.map((sub) => ({
-      ...sub,
-      subtopicId: sub.subtopicId || sub.id,
-      subtopicName: sub.subtopicName || sub.name || '',
-      guideline: sub.guideline || '',
-    })),
   };
 };

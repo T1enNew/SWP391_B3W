@@ -31,29 +31,49 @@ const ReviewerProjectDetail = () => {
     setLoading(true);
     setError('');
     try {
-      const [projRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects/${projectId}`, {
-          headers: { Authorization: `Bearer ${getAuthToken()}` },
-        }),
-        axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`, {
-          headers: { Authorization: `Bearer ${getAuthToken()}` },
-        }).catch(() => ({ data: null })),
+      const headers = { Authorization: `Bearer ${getAuthToken()}` };
+
+      const [projRes, statsRes, pendingRes, reviewedRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects/${projectId}`, { headers }),
+        axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`, { headers }).catch(() => ({ data: null })),
+        axios.get(`${API_URL}/api/reviews/pending`, { headers, params: { limit: 1000 } }).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { headers, params: { limit: 1000 } }).catch(() => ({ data: [] })),
       ]);
 
       const projData = projRes.data?.project || projRes.data;
       setProject(projData);
 
-      if (statsRes.data) {
-        const s = statsRes.data;
+      const s = statsRes.data;
+      if (s && (s.total ?? 0) > 0) {
         setStats({
-          total:        s.total        ?? 0,
-          approved:     s.approved     ?? 0,
-          rejected:     s.rejected     ?? 0,
-          pending:      s.pending      ?? (s.total ?? 0) - (s.approved ?? 0) - (s.rejected ?? 0),
+          total:         s.total        ?? 0,
+          approved:      s.approved     ?? 0,
+          rejected:      s.rejected     ?? 0,
+          pending:       s.pending      ?? (s.total ?? 0) - (s.approved ?? 0) - (s.rejected ?? 0),
           approval_rate: s.approval_rate ?? 0,
         });
       } else {
-        setStats({ total: 0, approved: 0, rejected: 0, pending: 0, approval_rate: 0 });
+        // Fallback: tính từ pending/reviewed lists
+        const extractList = (res) => {
+          const d = res.data;
+          const list = Array.isArray(d) ? d : Array.isArray(d?.reviews) ? d.reviews : Array.isArray(d?.data) ? d.data : [];
+          return list.filter(t => {
+            const pid = t.project?.id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
+            return String(pid) === String(projectId);
+          });
+        };
+        const pending  = extractList(pendingRes);
+        const reviewed = extractList(reviewedRes);
+        const approved = reviewed.filter(t => t.status === 'approved').length;
+        const rejected = reviewed.filter(t => t.status === 'rejected').length;
+        const total    = pending.length + reviewed.length;
+        setStats({
+          total,
+          approved,
+          rejected,
+          pending: pending.length,
+          approval_rate: total > 0 ? Math.round((approved / total) * 100) : 0,
+        });
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Không tải được thông tin project');

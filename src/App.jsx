@@ -81,7 +81,7 @@ function App() {
               <Route path='/annotator' element={<AnnotatorOverview />} />
               <Route path='/annotator/tasks' element={<AnnotatorProjectList />} />
               <Route path='/annotator/projects/:projectId' element={<AnnotatorProjectDetail />} />
-              <Route path='/annotator/workspace/:subtopicId' element={<Workspace />} />
+              <Route path='/annotator/workspace/:projectId' element={<Workspace />} />
               <Route path='/annotator/history' element={<AnnotatorHistory />} />
             </Route>
 

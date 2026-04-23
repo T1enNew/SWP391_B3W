@@ -80,7 +80,7 @@ const buildFileUrl = (dataItem) => {
 const TASK_STATUS = {
   assigned: { label: 'Chua lam', color: 'bg-gray-600', textColor: 'text-gray-300', dotColor: 'bg-gray-400' },
   in_progress: { label: 'Dang lam', color: 'bg-blue-600', textColor: 'text-blue-300', dotColor: 'bg-blue-400' },
-  completed: { label: 'Hoan thanh', color: 'bg-yellow-600', textColor: 'text-yellow-300', dotColor: 'bg-yellow-400' },
+  completed: { label: 'Hoan thanh', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
   submitted: { label: 'Da nop', color: 'bg-orange-600', textColor: 'text-orange-300', dotColor: 'bg-orange-400' },
   resubmitted: { label: 'Da nop lai', color: 'bg-orange-700', textColor: 'text-orange-200', dotColor: 'bg-orange-500' },
   approved: { label: 'Da duyet', color: 'bg-emerald-600', textColor: 'text-emerald-300', dotColor: 'bg-emerald-400' },
@@ -89,7 +89,7 @@ const TASK_STATUS = {
 };
 
 // ===== LEFT PANEL: Task List =====
-const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
+const TaskListPanel = ({ tasks, currentTaskId, onSelect, projectName }) => {
   const statusCounts = tasks.reduce((acc, t) => {
     const s = t.status || 'assigned';
     acc[s] = (acc[s] || 0) + 1;
@@ -110,7 +110,7 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
     <div className="h-full flex flex-col bg-gray-900 border-r border-gray-700">
       <div className="p-4 border-b border-gray-700 shrink-0">
         <h3 className="text-sm font-bold text-gray-200 mb-1">Danh sach Item</h3>
-        <p className="text-xs text-gray-500 truncate">{subtopicName}</p>
+        <p className="text-xs text-gray-500 truncate">{projectName}</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {Object.entries(statusCounts).map(([status, count]) => {
             const cfg = getStatusConfig(status);
@@ -137,7 +137,15 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
                 isActive ? 'bg-blue-600/15 border-blue-500' : 'border-transparent hover:bg-gray-800/60 hover:border-gray-600'
               }`}
             >
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dotColor} ${task.status === 'rejected' ? 'animate-pulse' : ''}`} />
+              {task.status === 'completed' ? (
+                <span className="w-5 h-5 rounded-full shrink-0 bg-emerald-600 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              ) : (
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dotColor} ${task.status === 'rejected' ? 'animate-pulse' : ''}`} />
+              )}
               <div className="min-w-0 flex-1">
                 <p className={`text-sm font-medium truncate ${isActive ? 'text-blue-300' : 'text-gray-300 group-hover:text-gray-100'}`}>{filename}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -147,12 +155,16 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
                   {kind === 'other' && 'File'}
                 </p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.color} ${cfg.textColor}`}>{cfg.label}</span>
+              {task.status === 'completed' ? (
+                <span className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-600 text-emerald-100">✓ Xong</span>
+              ) : (
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cfg.color} ${cfg.textColor}`}>{cfg.label}</span>
+              )}
             </div>
           );
         })}
         {sortedTasks.length === 0 && (
-          <div className="p-6 text-center text-gray-500 text-sm">Khong co item nao trong subtopic nay</div>
+          <div className="p-6 text-center text-gray-500 text-sm">Khong co item nao trong project nay</div>
         )}
       </div>
     </div>
@@ -160,13 +172,12 @@ const TaskListPanel = ({ tasks, currentTaskId, onSelect, subtopicName }) => {
 };
 
 // ===== RIGHT PANEL: Info & Actions =====
-const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit, onReset, saving, savingMessage }) => {
+const InfoPanel = ({ task, onComplete, onReset, saving, savingMessage, isLastTask, allDone, onSubmitProject }) => {
   const [rightTab, setRightTab] = useState('info');
   const labels = task?.availableLabels || [];
   const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
   const feedback = task?.reviewComments || task?.rejectionReason || '';
-  const subtopicGuideline = task?.subtopicId?.guideline || guideline || '';
 
   return (
     <div className="h-full flex flex-col bg-gray-900 border-l border-gray-700">
@@ -186,12 +197,6 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
       <div className="flex-1 overflow-y-auto">
         {rightTab === 'info' && (
           <div className="p-4 space-y-4">
-            {subtopicName && (
-              <div>
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subtopic</h4>
-                <p className="text-sm font-semibold text-gray-200">{subtopicName}</p>
-              </div>
-            )}
             {task?.projectId?.name && (
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Project</h4>
@@ -275,12 +280,8 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
         )}
         {rightTab === 'guide' && (
           <div className="p-4">
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Huong dan Subtopic</h4>
-            {subtopicGuideline ? (
-              <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{subtopicGuideline}</p>
-            ) : (
-              <p className="text-sm text-gray-500 italic">Khong co huong dan cho subtopic nay.</p>
-            )}
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Huong dan</h4>
+            <p className="text-sm text-gray-500 italic">Khong co huong dan.</p>
             {task?.projectId?.questions && task.projectId.questions.length > 0 && (
               <div className="mt-4">
                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Cau hoi</h4>
@@ -297,40 +298,45 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
         )}
       </div>
       <div className="border-t border-gray-700 p-4 space-y-2 shrink-0 bg-gray-900/80">
+        {allDone && (
+          <button onClick={onSubmitProject} disabled={saving}
+            className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2 mb-1">
+            {saving ? <span className="w-4 h-4 border-2 border-emerald-400 border-t-white rounded-full animate-spin" /> : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            Nộp cho Reviewer
+          </button>
+        )}
         {!isReadOnly && (
           <>
             <button onClick={onComplete} disabled={saving}
               className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <span className="w-4 h-4 border-2 border-blue-400 border-t-white rounded-full animate-spin" /> : (
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  {isLastTask
+                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  }
                 </svg>
               )}
-              Danh dau hoan thanh
+              {isLastTask ? 'Lưu & Hoàn thành' : 'Lưu & Tiếp theo'}
             </button>
-            <button onClick={onSubmit} disabled={saving}
-              className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <span className="w-4 h-4 border-2 border-emerald-400 border-t-white rounded-full animate-spin" /> : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              )}
-              Nop item
-            </button>
-            <button onClick={onReset} disabled={saving || isReadOnly}
+            <button onClick={onReset} disabled={saving}
               className="w-full rounded-lg border border-gray-600 hover:border-gray-500 text-gray-400 hover:text-gray-300 px-4 py-2 text-xs font-medium transition-all disabled:opacity-30">
-              Reset nhan
+              Reset nhãn
             </button>
           </>
         )}
         {['submitted', 'resubmitted'].includes(task?.status) && (
           <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-center">
-            <p className="text-xs text-yellow-400 font-medium">Item dang cho reviewer duyet</p>
+            <p className="text-xs text-yellow-400 font-medium">Project đã nộp, chờ reviewer duyệt</p>
           </div>
         )}
         {task?.status === 'approved' && (
           <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-3 text-center">
-            <p className="text-xs text-emerald-400 font-medium">Item da duoc duyet boi reviewer</p>
+            <p className="text-xs text-emerald-400 font-medium">Task đã được reviewer duyệt</p>
           </div>
         )}
         <button onClick={() => window.history.back()}
@@ -338,7 +344,7 @@ const InfoPanel = ({ task, subtopicName, guideline, onSave, onComplete, onSubmit
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Quay ve Project
+          Quay về Project
         </button>
       </div>
     </div>
@@ -556,7 +562,7 @@ console.log('IMAGE URL =', buildFileUrl(task?.dataItem));
 
 // ===== MAIN WORKSPACE COMPONENT =====
 const Workspace = () => {
-  const { subtopicId } = useParams();
+  const { projectId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const initialTaskId = searchParams.get('taskId');
@@ -564,7 +570,6 @@ const Workspace = () => {
   // REFS: MUST be declared BEFORE useCallback
   const isMountedRef = useRef(true);
   const currentTaskIdRef = useRef(null);
-  const autoSaveTimerRef = useRef(null);
 
   const [tasks, setTasks] = useState([]);
   const [currentTaskId, setCurrentTaskId] = useState(null);
@@ -576,10 +581,9 @@ const Workspace = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingMessage, setSavingMessage] = useState('');
-  const [subtopicInfo, setSubtopicInfo] = useState({ name: '', guideline: '' });
   const [projectInfo, setProjectInfo] = useState({ name: '', id: '' });
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [textContent, setTextContent] = useState('');
+  const [projectLabels, setProjectLabels] = useState([]);
 
   // Mount lifecycle
   useEffect(() => {
@@ -592,85 +596,93 @@ const Workspace = () => {
 
   // Load tasks list
   const loadTasks = useCallback(async () => {
-    if (!subtopicId) return;
+    if (!projectId) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, { params: { subtopicId } });
-      const taskList = (res.data.data || []).map(normalizeTask).filter((item) => {
-        const sid = item.subtopicId?.id || item.subtopicId || item.dataItem?.subtopicId;
-        return !subtopicId || sid === subtopicId;
-      });
+      // Fetch tasks and project detail in parallel
+      const [tasksRes, projectRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/api/tasks/my-tasks`, {
+          params: { project_id: projectId },
+          headers: getAuthHeaders(),
+        }),
+        axios.get(`${API_URL}/api/projects/${projectId}`, {
+          headers: getAuthHeaders(),
+        }),
+      ]);
+
       if (!isMountedRef.current) return;
-      setTasks(taskList);
-      if (taskList.length > 0) {
-        const first = taskList[0];
-        setSubtopicInfo({ name: first.subtopicId?.name || first.subtopicName || first.dataItem?.subtopic?.name || 'Subtopic', guideline: first.subtopicId?.guideline || first.guideline || first.dataItem?.subtopic?.guideline || '' });
-        setProjectInfo({ name: first.projectId?.name || first.project?.name || '', id: first.projectId?.id || first.project?.id || '' });
+
+      // Extract project labels
+      if (projectRes.status === 'fulfilled') {
+        const pData = projectRes.value.data?.project || projectRes.value.data || {};
+        const pName = pData.name || '';
+        const pId = pData._id || pData.id || projectId;
+        setProjectInfo({ name: pName, id: pId });
+
+        // Labels can live at various paths depending on backend populate depth
+        const rawLabels =
+          pData.labels ||
+          pData.labelsets ||
+          pData.label_ids ||
+          pData.labelIds ||
+          [];
+        const normalizedPLabels = Array.isArray(rawLabels)
+          ? rawLabels.map((l) => ({
+              id: l._id || l.id || l,
+              name: l.name || String(l),
+              color: l.color || '#3b82f6',
+              description: l.description || '',
+              shortcut: l.shortcut || '',
+            }))
+          : [];
+        setProjectLabels(normalizedPLabels);
       }
-      if (initialTaskId) {
-        setCurrentTaskId(initialTaskId);
-      } else if (taskList.length > 0) {
-        const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted'];
-        const next = taskList.find((t) => priorityOrder.includes(t.status));
-        setCurrentTaskId(next?.id || taskList[0].id);
+
+      if (tasksRes.status === 'fulfilled') {
+        const rawTasks = Array.isArray(tasksRes.value.data)
+          ? tasksRes.value.data
+          : tasksRes.value.data?.data || tasksRes.value.data?.tasks || [];
+        const taskList = rawTasks.map(normalizeTask);
+        setTasks(taskList);
+        if (taskList.length > 0 && !projectRes.status === 'fulfilled') {
+          const first = taskList[0];
+          setProjectInfo((prev) => prev.name ? prev : { name: first.projectId?.name || first.project?.name || '', id: first.projectId?.id || first.project?.id || '' });
+        }
+        if (initialTaskId) {
+          setCurrentTaskId(initialTaskId);
+        } else if (taskList.length > 0) {
+          const priorityOrder = ['rejected', 'revised', 'in_progress', 'assigned', 'completed', 'submitted', 'resubmitted'];
+          const next = taskList.find((t) => priorityOrder.includes(t.status));
+          setCurrentTaskId(next?.id || taskList[0].id);
+        }
       }
     } catch (err) {
       console.error('Error loading tasks:', err);
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
-  }, [subtopicId, initialTaskId]);
+  }, [projectId, initialTaskId]);
 
   // Load task detail
   const loadTaskDetail = useCallback(async (taskId) => {
     if (!taskId) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/api/tasks/${taskId}`);
+      const res = await axios.get(`${API_URL}/api/tasks/${taskId}`, { headers: getAuthHeaders() });
       const taskData = normalizeTask(res.data);
-      let mergedTaskData = { ...taskData };
-
-try {
-  const assetRes = await axios.get(
-    `${API_URL}/api/subtopics/${subtopicId}/assets`
-  );
-
-  const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
-
-  const matchedAsset = assets.find((a) => {
-    return (
-      a.id === taskData?.dataItem?.id ||
-      a.id === taskData?.data_item?.id ||
-      a.filename === taskData?.dataItem?.filename ||
-      a.filename === taskData?.data_item?.filename ||
-      a.original_name === taskData?.dataItem?.originalName ||
-      a.original_name === taskData?.data_item?.original_name ||
-      a.original_name === taskData?.dataItem?.filename ||
-      a.original_name === taskData?.data_item?.filename
-    );
-  });
-
-  if (matchedAsset) {
-    mergedTaskData = {
-      ...taskData,
-      dataItem: {
-        ...(getTaskDataItem(taskData) || {}),
-        ...matchedAsset,
-        originalName: matchedAsset.original_name,
-        mimeType: matchedAsset.mime_type,
-        storageUrl: matchedAsset.storage_url,
-      },
-    };
-  }
-} catch (err) {
-  console.error('Cannot load assets for subtopic:', err);
-}
       if (!isMountedRef.current) return;
-      setTask(mergedTaskData);
-      const initialLabels = mergedTaskData.labels || mergedTaskData.annotation_data || {};
+
+      setTask({
+        ...taskData,
+        availableLabels: taskData.availableLabels?.length
+          ? taskData.availableLabels
+          : projectLabels,
+      });
+
+      const initialLabels = taskData.labels || taskData.annotation_data || {};
 
       setLabels(initialLabels);
-      const kind = getTaskKind(mergedTaskData);
+      const kind = getTaskKind(taskData);
 
       if (kind === 'text') {
         try {
@@ -703,9 +715,19 @@ const textRes = await axios.get(
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
-  }, []);
+  }, [projectLabels]);
 
-  // Load tasks on mount/subtopicId change
+  // Sync project labels to task if task loaded without labels
+  useEffect(() => {
+    if (task && projectLabels.length > 0 && (!task.availableLabels || task.availableLabels.length === 0)) {
+      setTask(prev => ({
+        ...prev,
+        availableLabels: projectLabels
+      }));
+    }
+  }, [task?.id, projectLabels]);
+
+  // Load tasks on mount/projectId change
   useEffect(() => {
     setCurrentTaskId(null);
     setTask(null);
@@ -729,14 +751,6 @@ const textRes = await axios.get(
   // Handlers
   const handleAnnotationsChange = useCallback((newAnnotations) => { setAnnotations(newAnnotations); }, []);
   const handleLabelsChange = useCallback((newLabels) => { setLabels(newLabels); }, []);
-
-  // Auto-save: clear previous timer and set new one (2s debounce)
-  useEffect(() => {
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
-    autoSaveTimerRef.current = setTimeout(() => { handleSave(); }, 2000);
-    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [annotations, textSpans, annotationNote]);
 
 const handleSave = useCallback(async () => {
   if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
@@ -776,141 +790,54 @@ const handleSave = useCallback(async () => {
       { annotation_data: labelsPayload },
       { headers: getAuthHeaders() }
     );
-
-    setTasks((prev) =>
-      prev.map((t) =>
-        (t.id === task.id && (t.status === 'assigned' || t.status === 'rejected')) ? { ...t, status: 'in_progress' } : t
-      )
-    );
-
-    setTask((prev) =>
-      (prev && (prev.status === 'assigned' || prev.status === 'rejected')) ? { ...prev, status: 'in_progress' } : prev
-    );
   } catch (err) {
     console.error('Save failed:', err?.response?.data || err);
   }
 }, [task, annotations, labels, textSpans, annotationNote]);
 
-const handleComplete = useCallback(async () => {
+const handleSaveAndNext = useCallback(async () => {
   if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
   const kind = getTaskKind(task);
-
   if (kind === 'image' && annotations.length === 0) {
-    alert('Vui long them it nhat mot nhan truoc khi hoan thanh.');
+    alert('Vui lòng thêm ít nhất một nhãn trước khi tiếp tục.');
     return;
   }
-
   if (kind === 'text' && textSpans.length === 0 && !annotationNote?.trim()) {
-    alert('Vui long ghi nhan it nhat mot phan hoac them ghi chu.');
+    alert('Vui lòng ghi nhãn ít nhất một phần hoặc thêm ghi chú.');
     return;
   }
-
   if (kind === 'audio' && !(labels.segments?.length) && !annotationNote?.trim()) {
-    alert('Vui long ghi nhan it nhat mot doan.');
+    alert('Vui lòng ghi nhãn ít nhất một đoạn.');
     return;
   }
 
   setSaving(true);
-
   try {
-    // 1) Start task nếu đang assigned hoặc rejected
     if (task.status === 'assigned' || task.status === 'rejected') {
-      await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
-
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === task.id ? { ...t, status: 'in_progress' } : t
-        )
-      );
-
-      setTask((prev) =>
-        prev ? { ...prev, status: 'in_progress' } : prev
-      );
+      await axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() });
     }
-
-    // 2) Save
     await handleSave();
 
-    // 3) Submit
-    await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
-
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === task.id ? { ...t, status: 'submitted' } : t
-      )
+      prev.map((t) => t.id === task.id ? { ...t, status: 'completed' } : t)
     );
+    setTask((prev) => prev ? { ...prev, status: 'completed' } : prev);
 
-    setTask((prev) =>
-      prev ? { ...prev, status: 'submitted' } : null
-    );
-
-    setSavingMessage('Da danh dau hoan thanh!');
-    setTimeout(() => setSavingMessage(''), 3000);
+    const currentIdx = tasks.findIndex((t) => t.id === task.id);
+    if (currentIdx < tasks.length - 1) {
+      const nextId = tasks[currentIdx + 1].id;
+      setCurrentTaskId(nextId);
+      navigate(`/annotator/workspace/${projectId}?taskId=${nextId}`, { replace: true });
+    }
+    // Nếu là task cuối thì ở lại, nút "Nộp cho Reviewer" sẽ hiện ra
   } catch (err) {
-    alert('Loi: ' + (err.response?.data?.message || err.message));
+    alert('Lỗi: ' + (err.response?.data?.message || err.message));
   } finally {
     setSaving(false);
   }
-}, [task, annotations, labels, textSpans, annotationNote, handleSave]);
+}, [task, annotations, labels, textSpans, annotationNote, handleSave, tasks, navigate, projectId]);
 
-  const handleSubmit = useCallback(async () => { if (!task) return; setShowSubmitConfirm(true); }, [task]);
-
-const handleConfirmSubmit = useCallback(async () => {
-  if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
-
-  setShowSubmitConfirm(false);
-  setSaving(true);
-
-  try {
-    // 1) Lấy status thật từ backend
-    const latestRes = await axios.get(`${API_URL}/api/tasks/${task.id}`, {
-      headers: getAuthHeaders(),
-    });
-
-    const latestTask = normalizeTask(latestRes.data);
-    const backendStatus = latestTask?.status;
-
-    console.log('BACKEND STATUS BEFORE SUBMIT =', backendStatus);
-
-    // 2) Nếu backend vẫn là assigned hoặc rejected thì start thật trên server
-    if (backendStatus === 'assigned' || backendStatus === 'rejected') {
-      await axios.put(
-        `${API_URL}/api/tasks/${task.id}/start`,
-        {},
-        { headers: getAuthHeaders() }
-      );
-    }
-
-    // 3) Save draft
-    await handleSave();
-
-    // 4) Submit
-    await axios.post(
-      `${API_URL}/api/tasks/${task.id}/submit`,
-      {},
-      { headers: getAuthHeaders() }
-    );
-
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === task.id ? { ...t, status: 'submitted' } : t
-      )
-    );
-
-    setTask((prev) =>
-      prev ? { ...prev, status: 'submitted' } : prev
-    );
-
-    setSavingMessage('Da nop thanh cong!');
-    setTimeout(() => setSavingMessage(''), 3000);
-  } catch (err) {
-    console.error('Submit failed:', err?.response?.data || err);
-    alert('Loi: ' + (err.response?.data?.message || err.message));
-  } finally {
-    setSaving(false);
-  }
-}, [task, handleSave]);
 
   const handleReset = useCallback(() => {
     if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
@@ -923,8 +850,8 @@ const handleConfirmSubmit = useCallback(async () => {
 
   const handleTaskSelect = useCallback((taskId) => {
     setCurrentTaskId(taskId);
-    navigate(`/annotator/workspace/${subtopicId}?taskId=${taskId}`, { replace: true });
-  }, [subtopicId, navigate]);
+    navigate(`/annotator/workspace/${projectId}?taskId=${taskId}`, { replace: true });
+  }, [projectId, navigate]);
 
   const handleNavigateTask = useCallback((direction) => {
     const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
@@ -932,36 +859,54 @@ const handleConfirmSubmit = useCallback(async () => {
     else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1].id);
   }, [tasks, currentTaskId, handleTaskSelect]);
 
+  const handleSubmitProject = useCallback(async () => {
+    const toSubmit = tasks.filter((t) => t.status === 'completed');
+    if (!toSubmit.length) return;
+    setSaving(true);
+    try {
+      for (const t of toSubmit) {
+        await axios.post(`${API_URL}/api/tasks/${t.id}/submit`, {}, { headers: getAuthHeaders() });
+      }
+      navigate(`/annotator/projects/${projectId}`);
+    } catch (err) {
+      alert('Nộp bài thất bại: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSaving(false);
+    }
+  }, [tasks, projectId, navigate]);
+
   // Keyboard shortcuts
   useEffect(() => {
     if (loading) return;
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSave(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!saving && !['submitted', 'resubmitted', 'approved'].includes(task?.status)) handleSubmit(); }
       if (e.key === 'ArrowLeft') handleNavigateTask('prev');
       if (e.key === 'ArrowRight') handleNavigateTask('next');
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [loading, saving, task?.status, handleSave, handleSubmit, handleNavigateTask]);
+  }, [loading, handleNavigateTask]);
 
   const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
-  const completedCount = tasks.filter((t) => ['submitted', 'resubmitted', 'approved'].includes(t.status)).length;
+  const isLastTask = currentIdx === tasks.length - 1;
+  const labeledCount = tasks.filter((t) => ['in_progress', 'submitted', 'resubmitted', 'approved', 'completed'].includes(t.status)).length;
+  const allTasksDone = tasks.length > 0 && tasks.every((t) => ['completed', 'submitted', 'resubmitted', 'approved'].includes(t.status));
+  const hasPendingSubmit = tasks.some((t) => t.status === 'completed');
+  const showSubmitButton = allTasksDone && hasPendingSubmit;
   const pct = tasks.length > 0 ? Math.round(((currentIdx + 1) / tasks.length) * 100) : 0;
   const taskWithContent = task ? { ...task, _textContent: textContent } : null;
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
       <div className="w-72 shrink-0">
-        <TaskListPanel tasks={tasks} currentTaskId={currentTaskId} onSelect={handleTaskSelect} subtopicName={subtopicInfo.name} />
+        <TaskListPanel tasks={tasks} currentTaskId={currentTaskId} onSelect={handleTaskSelect} projectName={projectInfo.name} />
       </div>
       <div className="flex-1 flex flex-col min-w-0">
         <div className="shrink-0 border-b border-gray-700 bg-gray-900/80 px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-gray-200 truncate">{subtopicInfo.name} — Item {currentIdx + 1}/{tasks.length}</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Da hoan thanh: {completedCount}/{tasks.length} items</p>
+              <h2 className="text-sm font-bold text-gray-200 truncate">{projectInfo.name} — Item {currentIdx + 1}/{tasks.length}</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Đã gán nhãn: {labeledCount}/{tasks.length} items</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => handleNavigateTask('prev')} disabled={currentIdx <= 0}
@@ -1007,24 +952,11 @@ const handleConfirmSubmit = useCallback(async () => {
           annotationNote={annotationNote} setAnnotationNote={setAnnotationNote} />
       </div>
       <div className="w-80 shrink-0">
-        <InfoPanel task={task} subtopicName={subtopicInfo.name} guideline={subtopicInfo.guideline}
-          onSave={handleSave} onComplete={handleComplete} onSubmit={handleSubmit} onReset={handleReset}
-          saving={saving} savingMessage={savingMessage} />
+        <InfoPanel task={task}
+          onComplete={handleSaveAndNext} onReset={handleReset}
+          saving={saving} savingMessage={savingMessage} isLastTask={isLastTask}
+          allDone={showSubmitButton} onSubmitProject={handleSubmitProject} />
       </div>
-      <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth
-        PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '16px' } }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>Xac nhan nop bai</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" sx={{ color: '#94a3b8' }} gutterBottom>Ban co chac chan muon nop item nay de review?</Typography>
-          <Typography variant="body2" sx={{ color: '#64748b', mt: 1 }}>Sau khi nop, ban se khong the chinh sua nua cho den khi duoc reviewer xu ly.</Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setShowSubmitConfirm(false)} sx={{ color: '#94a3b8' }}>Huy</Button>
-          <Button onClick={handleConfirmSubmit} variant="contained" disabled={saving} sx={{ bgcolor: '#2563eb', '&:hover': { bgcolor: '#3b82f6' } }}>
-            {saving ? 'Dang nop...' : 'Xac nhan nop'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </div>
   );
 };
