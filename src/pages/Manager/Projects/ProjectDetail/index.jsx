@@ -171,7 +171,7 @@ const ManagerProjectDetail = () => {
         map.set(key, {
           key, dataItem,
           fileName: media.fileName, fileUrl: media.fileUrl, mediaType: media.mediaType,
-          datasetId: task.datasetId?.id || task.datasetId?._id || task.datasetId,
+          datasetId: task.datasetId?.id || task.datasetId?._id || task.datasetId || datasets[0]?.id || null,
           itemId: dataItem?.id || dataItem?._id || task.id,
           annotators: [annotatorName],
           annotatorLabels: [{ name: annotatorName, labels, annotations, isPrimary }],
@@ -183,7 +183,7 @@ const ManagerProjectDetail = () => {
       }
     });
     return Array.from(map.values());
-  }, [tasks]);
+  }, [tasks, datasets]);
 
   const selectedApprovedItem = useMemo(
     () => approvedItems.find((x) => String(x.key) === String(selectedApprovedItemKey)) || null,
