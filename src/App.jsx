@@ -14,7 +14,7 @@ import AnnotatorAuditDetail from './pages/Manager/Projects/AnnotatorAudit';
 import Datasets from './pages/Manager/Datasets';
 import DatasetItemDetail from './pages/Manager/Datasets/DatasetItemDetail';
 import Labels from './pages/Manager/Taxonomy/Labels';
-import AnnotatorOverview from './pages/Annotator/Overview';
+import AnnotatorOverview from './pages/Annotator/Dashboard';
 import AnnotatorProjectList from './pages/Annotator/ProjectList';
 import AnnotatorProjectDetail from './pages/Annotator/ProjectDetail';
 import Workspace from './pages/Annotator/Workspace';
