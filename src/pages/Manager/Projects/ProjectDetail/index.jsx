@@ -3,13 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../../../context/AuthContext';
 import axios from 'axios';
 import {
-  Box, Button, Card, CardContent, Chip, CircularProgress, Grid,
-  IconButton, LinearProgress, Paper, Stack, Tab, Tabs, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid,
+  IconButton, LinearProgress, Paper, Snackbar, Stack, Tab, Tabs, Typography,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
   Assignment as AssignmentIcon,
+  AutoFixHigh as AutoFixHighIcon,
   InfoOutlined as InfoOutlinedIcon,
+  PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
 import { API_URL } from '../../../../config/api';
 import { pageSx, panelSx, cardSx, softCardSx, secondaryBtnSx } from './constants';
@@ -42,6 +44,8 @@ const ManagerProjectDetail = () => {
   const [showAnnotatorLabelMap, setShowAnnotatorLabelMap] = useState({});
   const [textContentMap, setTextContentMap] = useState({});
   const [textContentLoadingMap, setTextContentLoadingMap] = useState({});
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [toast, setToast] = useState({ open: false, msg: '', severity: 'success' });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -173,6 +177,7 @@ const ManagerProjectDetail = () => {
           fileName: media.fileName, fileUrl: media.fileUrl, mediaType: media.mediaType,
           datasetId: task.datasetId?.id || task.datasetId?._id || task.datasetId || datasets[0]?.id || null,
           itemId: dataItem?.id || dataItem?._id || task.id,
+          taskId: task.id,
           annotators: [annotatorName],
           annotatorLabels: [{ name: annotatorName, labels, annotations, isPrimary }],
         });
@@ -218,6 +223,45 @@ const ManagerProjectDetail = () => {
     (selectedApprovedItem.annotatorLabels || []).forEach((ann) => { nextMap[ann.name] = true; });
     setShowAnnotatorLabelMap(nextMap);
   }, [selectedApprovedItemKey]);
+
+  const handleReassign = async () => {
+    if (!project || !datasets[0]) return;
+    const annotatorIds = (project.annotators || []).map(a => a?.id || a?._id || a).filter(Boolean);
+    const reviewerId = project.reviewer?.id || project.reviewer?._id || project.reviewer || null;
+    if (!annotatorIds.length) { setToast({ open: true, msg: 'Project chưa có annotator để phân công', severity: 'warning' }); return; }
+    setAssignLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/tasks/assign`, {
+        project_id: project.id,
+        dataset_id: datasets[0].id,
+        annotator_ids: annotatorIds,
+        reviewer_id: reviewerId,
+      }, { headers: getAuthHeaders() });
+      setToast({ open: true, msg: 'Phân công task thành công!', severity: 'success' });
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Phân công task thất bại';
+      setToast({ open: true, msg, severity: 'error' });
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const handleAiAssist = async (taskId) => {
+    if (!taskId) return;
+    try {
+      const res = await axios.post(`${API_URL}/api/tasks/${taskId}/ai-assist`,
+        { image_width: 100, image_height: 100 },
+        { headers: getAuthHeaders() }
+      );
+      const count = res.data?.bboxes?.length || 0;
+      setToast({ open: true, msg: `AI phát hiện ${count} bbox trên ảnh này`, severity: 'info' });
+      return res.data;
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'AI Assist thất bại';
+      setToast({ open: true, msg, severity: 'error' });
+      return null;
+    }
+  };
 
   const groupedByAnnotator = useMemo(() => {
     const map = new Map();
@@ -291,6 +335,14 @@ const ManagerProjectDetail = () => {
           <Stack direction="row" spacing={1.2} flexWrap="wrap">
             <Button sx={secondaryBtnSx} startIcon={<InfoOutlinedIcon />} onClick={() => setProjectInfoDialogOpen(true)}>
               Project info
+            </Button>
+            <Button
+              sx={secondaryBtnSx}
+              startIcon={assignLoading ? <CircularProgress size={14} sx={{ color: '#e2e8f0' }} /> : <PlayArrowIcon />}
+              onClick={handleReassign}
+              disabled={assignLoading}
+            >
+              {assignLoading ? 'Đang phân công...' : 'Assign Tasks'}
             </Button>
             <Button sx={secondaryBtnSx} startIcon={<AssignmentIcon />} disabled>Analytics</Button>
           </Stack>
@@ -386,6 +438,7 @@ const ManagerProjectDetail = () => {
                   setApprovedItemDialogOpen(true);
                   setShowAnnotatorLabels(true);
                 }}
+                onAiAssist={handleAiAssist}
               />
             )}
           </Box>
@@ -412,6 +465,17 @@ const ManagerProjectDetail = () => {
         datasets={datasets}
         statusMeta={statusMeta}
       />
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={4000}
+        onClose={() => setToast(p => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity={toast.severity} onClose={() => setToast(p => ({ ...p, open: false }))} sx={{ borderRadius: 2 }}>
+          {toast.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
