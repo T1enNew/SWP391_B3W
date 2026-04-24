@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Button, Card, CardContent, Chip, CircularProgress, Grid,
-  IconButton, LinearProgress, Stack, Tooltip, Typography,
+  IconButton, LinearProgress, Pagination, Stack, Tooltip, Typography,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -29,11 +29,24 @@ const ImgThumb = ({ src, name }) => {
   );
 };
 
+const ITEMS_PER_PAGE = 12;
+
 const DatasetDetailPanel = ({
   selectedDs, dsItems, isComplete, dsStats, uploading, uploadProgress, itemsLoading,
   deletingItemId, fileInputRef, getTasksForItem,
   onUpload, onDeleteItem, onItemClick, onExport, onDrop,
 }) => {
+  const [itemPage, setItemPage] = useState(1);
+
+  useEffect(() => { setItemPage(1); }, [selectedDs]);
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(dsItems.length / ITEMS_PER_PAGE));
+    if (itemPage > maxPage) setItemPage(maxPage);
+  }, [dsItems.length]);
+
+  const totalItemPages  = Math.max(1, Math.ceil(dsItems.length / ITEMS_PER_PAGE));
+  const paginatedItems  = dsItems.slice((itemPage - 1) * ITEMS_PER_PAGE, itemPage * ITEMS_PER_PAGE);
+
   if (!selectedDs) {
     return (
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: MUTED, gap: 2 }}>
@@ -133,17 +146,27 @@ const DatasetDetailPanel = ({
           <CircularProgress sx={{ color: PRIMARY }} />
         </Box>
       ) : dsItems.length > 0 && (
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
+        <Box sx={{ flex: 1, overflowY: 'auto', p: 2.5, display: 'flex', flexDirection: 'column' }}>
           <Box onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()}
             sx={{ mb: 2, borderRadius: 2, border: `1px dashed ${BORDER}`, bgcolor: PANEL, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 1.5, transition: 'all 0.2s', '&:hover': { borderColor: PRIMARY, bgcolor: 'rgba(59,130,246,0.05)' } }}>
             <UploadIcon sx={{ color: MUTED, fontSize: 20 }} />
             <Typography sx={{ color: MUTED, fontSize: 13 }}>Kéo thả hoặc click để upload thêm ảnh</Typography>
           </Box>
 
+          {/* Page info */}
+          {totalItemPages > 1 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography sx={{ color: MUTED, fontSize: 12 }}>
+                Hiển thị {(itemPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(itemPage * ITEMS_PER_PAGE, dsItems.length)} / {dsItems.length} ảnh
+              </Typography>
+            </Box>
+          )}
+
           <Grid container spacing={2}>
-            {dsItems.map((item, idx) => {
-              const id             = coerceId(item) || idx;
-              const name           = item.originalName || item.original_name || item.filename || `item-${idx + 1}`;
+            {paginatedItems.map((item, idx) => {
+              const globalIdx      = (itemPage - 1) * ITEMS_PER_PAGE + idx;
+              const id             = coerceId(item) || globalIdx;
+              const name           = item.originalName || item.original_name || item.filename || `item-${globalIdx + 1}`;
               const src            = buildImageUrl(item);
               const isDeletingThis = deletingItemId === (coerceId(item) || item.path);
               const approved       = item.status === 'approved' || getTasksForItem(item).some(t => t.status === 'approved') || isComplete;
@@ -177,6 +200,20 @@ const DatasetDetailPanel = ({
               );
             })}
           </Grid>
+
+          {/* Pagination for items */}
+          {totalItemPages > 1 && (
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                count={totalItemPages} page={itemPage} onChange={(_, v) => { setItemPage(v); }}
+                sx={{
+                  '& .MuiPaginationItem-root': { color: MUTED, borderColor: BORDER },
+                  '& .MuiPaginationItem-root.Mui-selected': { bgcolor: PRIMARY, color: '#fff', borderColor: PRIMARY },
+                  '& .MuiPaginationItem-root:hover': { bgcolor: 'rgba(59,130,246,0.12)' },
+                }}
+              />
+            </Box>
+          )}
         </Box>
       )}
     </Box>

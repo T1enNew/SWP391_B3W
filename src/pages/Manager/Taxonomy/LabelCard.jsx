@@ -1,8 +1,8 @@
 import React from 'react';
-import { Box, Card, CardContent, Chip, IconButton, Stack, Typography } from '@mui/material';
+import { Box, IconButton, Stack, Typography } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 
-const CARD = '#131f35', BORDER = '#1e2d47', TEXT = '#e2e8f0', MUTED = '#64748b', DANGER = '#ef4444';
+const CARD = '#0d1829', BORDER = '#1e2d47', TEXT = '#e2e8f0', MUTED = '#64748b', DANGER = '#ef4444';
 
 const hexToRgb = (hex = '#3b82f6') => {
   const r = parseInt(hex.slice(1, 3), 16) || 0;
@@ -11,49 +11,86 @@ const hexToRgb = (hex = '#3b82f6') => {
   return `${r},${g},${b}`;
 };
 
-const LabelCard = ({ label, onEdit, onDelete }) => (
-  <Card sx={{
-    bgcolor: CARD, border: `1px solid ${BORDER}`, borderRadius: 3, color: TEXT,
-    transition: 'all 0.15s',
-    '&:hover': { borderColor: '#2d4a6e', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' },
-  }}>
-    <Box sx={{ height: 4, bgcolor: label.color, borderRadius: '12px 12px 0 0' }} />
-    <CardContent sx={{ p: 2.2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-          <Box sx={{
-            width: 36, height: 36, borderRadius: '50%', bgcolor: label.color, flexShrink: 0,
-            boxShadow: `0 0 0 3px rgba(${hexToRgb(label.color)},0.25)`,
-          }} />
-          <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 800, fontSize: 16, color: TEXT }}>{label.name}</Typography>
-            {label.shortcut && (
-              <Chip size="small" label={`⌨ ${label.shortcut}`}
-                sx={{ bgcolor: 'rgba(59,130,246,0.14)', color: '#93c5fd', fontSize: 10, fontWeight: 700, height: 18, mt: 0.3 }} />
-            )}
-          </Box>
+const LabelCard = ({ label, onEdit, onDelete }) => {
+  const rgb = hexToRgb(label.color);
+
+  return (
+    <Box sx={{
+      bgcolor: CARD,
+      border: `1px solid ${BORDER}`,
+      borderLeft: `4px solid ${label.color}`,
+      borderRadius: 3,
+      p: 2.5,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 1.5,
+      minHeight: 120,
+      transition: 'all 0.15s',
+      cursor: 'default',
+      '&:hover': {
+        borderColor: label.color,
+        borderLeftColor: label.color,
+        boxShadow: `0 6px 24px rgba(${rgb},0.18), 0 0 0 1px rgba(${rgb},0.15)`,
+        transform: 'translateY(-2px)',
+      },
+    }}>
+      {/* Top row: swatch + name + actions */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+        {/* Color swatch */}
+        <Box sx={{
+          width: 40, height: 40, borderRadius: 2, bgcolor: label.color, flexShrink: 0,
+          boxShadow: `0 2px 8px rgba(${rgb},0.4)`,
+        }} />
+
+        {/* Name + shortcut */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{
+            fontWeight: 800, fontSize: 15, color: TEXT,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {label.name}
+          </Typography>
+          {label.shortcut && (
+            <Box sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.5, mt: 0.4,
+              bgcolor: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)',
+              borderRadius: 1, px: 0.8, py: 0.2,
+            }}>
+              <Typography sx={{ fontSize: 10, color: '#a78bfa', fontWeight: 700, fontFamily: 'monospace' }}>
+                ⌨ {label.shortcut}
+              </Typography>
+            </Box>
+          )}
         </Box>
-        <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
+
+        {/* Actions */}
+        <Stack direction="row" spacing={0.3} sx={{ flexShrink: 0, mt: -0.5 }}>
           <IconButton size="small" onClick={() => onEdit(label)}
-            sx={{ color: MUTED, '&:hover': { color: '#60a5fa', bgcolor: 'rgba(59,130,246,0.12)' } }}>
-            <EditIcon sx={{ fontSize: 16 }} />
+            sx={{ color: MUTED, width: 28, height: 28, '&:hover': { color: '#60a5fa', bgcolor: 'rgba(59,130,246,0.12)' } }}>
+            <EditIcon sx={{ fontSize: 14 }} />
           </IconButton>
           <IconButton size="small" onClick={() => onDelete(label)}
-            sx={{ color: MUTED, '&:hover': { color: DANGER, bgcolor: 'rgba(239,68,68,0.12)' } }}>
-            <DeleteIcon sx={{ fontSize: 16 }} />
+            sx={{ color: MUTED, width: 28, height: 28, '&:hover': { color: DANGER, bgcolor: 'rgba(239,68,68,0.12)' } }}>
+            <DeleteIcon sx={{ fontSize: 14 }} />
           </IconButton>
         </Stack>
       </Box>
-      {label.description && (
+
+      {/* Description */}
+      {label.description ? (
         <Typography sx={{
-          color: MUTED, fontSize: 13, lineHeight: 1.5,
+          color: MUTED, fontSize: 12.5, lineHeight: 1.55,
           overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
         }}>
           {label.description}
         </Typography>
+      ) : (
+        <Typography sx={{ color: 'rgba(100,116,139,0.45)', fontSize: 12, fontStyle: 'italic' }}>
+          Chưa có mô tả
+        </Typography>
       )}
-    </CardContent>
-  </Card>
-);
+    </Box>
+  );
+};
 
 export default LabelCard;
