@@ -86,7 +86,8 @@ const ReviewerWorkspace = () => {
           const reviewedItems = itemList.filter(item => item.status !== 'pending_review' && item.status !== 'partially_reviewed');
           const pendingItems  = itemList.filter(item => item.status === 'pending_review' || item.status === 'partially_reviewed');
           const remaining     = Math.max(0, targetCount - reviewedItems.length);
-          itemList = [...reviewedItems, ...pendingItems.slice(0, remaining)];
+          // Chỉ giữ đúng targetCount tasks: reviewed (capped) + pending còn lại trong sample
+          itemList = [...reviewedItems.slice(0, targetCount), ...pendingItems.slice(0, remaining)];
         }
       }
 

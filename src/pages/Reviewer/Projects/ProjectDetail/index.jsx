@@ -169,17 +169,20 @@ const ReviewerProjectDetail = () => {
   const sampleRate    = project?.review_policy?.sample_rate != null
     ? Math.round(project.review_policy.sample_rate * 100)
     : null;
-  const reviewed        = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
   // project_total = tổng task thực của project (không phải chỉ submitted)
   const projectTotal    = stats?.project_total || stats?.total || 0;
   // How many tasks the reviewer is required to review based on sample rate
   const targetCount     = (sampleRate !== null && projectTotal > 0)
     ? Math.max(1, Math.ceil(projectTotal * sampleRate / 100))
     : (stats?.total ?? 0);
+  // reviewedRaw = tổng đã review theo backend (bao gồm cả auto-approve)
+  const reviewedRaw     = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
+  // reviewed chỉ tính trong phạm vi sample (cap ở targetCount)
+  const reviewed        = sampleRate !== null ? Math.min(reviewedRaw, targetCount) : reviewedRaw;
   const pendingDisplay  = Math.max(0, targetCount - reviewed);
   const progressPct     = targetCount > 0 ? Math.min(100, Math.round((reviewed / targetCount) * 100)) : 0;
-  // Tỷ lệ approve = approved / số task đã review trong sample (không phải tổng submitted)
-  const approvalRate    = reviewed > 0 ? Math.round(((stats?.approved ?? 0) / reviewed) * 100) : 0;
+  // Tỷ lệ approve = dựa trên tổng thực tế (reviewedRaw) vì backend tính đúng
+  const approvalRate    = reviewedRaw > 0 ? Math.round(((stats?.approved ?? 0) / reviewedRaw) * 100) : 0;
   const canFinalize     = (stats?.total ?? 0) > 0 && reviewed >= targetCount && !['completed', 'waiting_rework'].includes(project?.status);
   const hasSubmissions  = (stats?.total ?? 0) > 0;
 

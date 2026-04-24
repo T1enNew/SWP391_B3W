@@ -63,6 +63,7 @@ export const modalPaperSx = {
 export const statusPalette = {
   draft:         { label: 'Draft',         color: '#94a3b8', bg: 'rgba(148,163,184,0.16)' },
   active:        { label: 'Active',        color: '#22c55e', bg: 'rgba(34,197,94,0.16)'   },
+  completed:     { label: 'Completed',     color: '#3b82f6', bg: 'rgba(59,130,246,0.16)'  },
   waiting_rework:{ label: 'Waiting rework',color: '#f97316', bg: 'rgba(249,115,22,0.16)'  },
   submitted:     { label: 'In review',     color: '#f59e0b', bg: 'rgba(245,158,11,0.16)'  },
   approved:      { label: 'Approved',      color: '#22c55e', bg: 'rgba(34,197,94,0.16)'   },
