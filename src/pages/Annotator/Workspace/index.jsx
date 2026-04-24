@@ -353,36 +353,46 @@ const handleSave = useCallback(async () => {
   }, [tasks, statusOverrides, projectId, navigate]);
 
   const handleBulkAiLabel = useCallback(async () => {
-    const targetTasks = tasks.filter((t) => !['submitted', 'resubmitted', 'approved'].includes(t.status));
+    // Only image tasks that aren't already submitted/approved
+    const targetTasks = tasks.filter((t) =>
+      !['submitted', 'resubmitted', 'approved'].includes(t.status)
+    );
     setBulkAiLoading(true);
     setBulkAiProgress({ done: 0, total: targetTasks.length });
     let successCount = 0;
 
-    for (const t of targetTasks) {
+    for (let i = 0; i < targetTasks.length; i++) {
+      const t = targetTasks[i];
       try {
+        // apply=true → backend saves suggestions to annotation_data automatically
         const res = await axios.post(
-          `${API_URL}/api/ai/pre-label/${t.id}`,
+          `${API_URL}/api/ai/pre-label/${t.id}?apply=true`,
           {},
           { headers: getAuthHeaders() }
         );
+        const applied = res.data?.applied;
         const suggestions = res.data?.suggestions || [];
-        if (suggestions.length > 0) {
-          const count = suggestions.length;
-          const objects = suggestions.map((s, i) => {
-            const colW = 90 / count;
-            const x1 = 5 + i * colW;
-            const x2 = x1 + colW - 2;
-            return { label: s.name, bbox: [x1, 5, x2, 95], confidence: s.confidence || 1.0, answer: null };
-          });
-          await axios.put(
-            `${API_URL}/api/tasks/${t.id}/save`,
-            { annotation_data: { objects } },
-            { headers: getAuthHeaders() }
-          );
+        if (applied || suggestions.length > 0) {
+          if (!applied && suggestions.length > 0) {
+            // Fallback: backend didn't auto-save, save manually with placeholder bboxes
+            const count = suggestions.length;
+            const objects = suggestions.map((s, idx) => {
+              const colW = 90 / count;
+              const x1 = 5 + idx * colW;
+              return { label: s.name || s.label || String(s), bbox: [x1, 5, x1 + colW - 2, 95], confidence: s.confidence || 1.0, answer: null };
+            });
+            await axios.put(`${API_URL}/api/tasks/${t.id}/save`, { annotation_data: { objects } }, { headers: getAuthHeaders() });
+          }
           successCount++;
         }
-      } catch {}
+      } catch (err) {
+        console.error(`AI pre-label failed for task ${t.id}:`, err?.response?.data || err.message);
+      }
       setBulkAiProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+      // Delay between tasks to avoid Gemini rate limit (free tier ~2 req/min)
+      if (i < targetTasks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
 
     setBulkAiCount(successCount);

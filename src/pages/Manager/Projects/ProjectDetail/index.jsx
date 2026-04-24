@@ -249,15 +249,17 @@ const ManagerProjectDetail = () => {
   const handleAiAssist = async (taskId) => {
     if (!taskId) return;
     try {
-      const res = await axios.post(`${API_URL}/api/tasks/${taskId}/ai-assist`,
-        { image_width: 100, image_height: 100 },
+      const res = await axios.post(
+        `${API_URL}/api/ai/pre-label/${taskId}?apply=true`,
+        {},
         { headers: getAuthHeaders() }
       );
-      const count = res.data?.bboxes?.length || 0;
-      setToast({ open: true, msg: `AI phát hiện ${count} bbox trên ảnh này`, severity: 'info' });
+      const count = res.data?.suggestions?.length || 0;
+      const applied = res.data?.applied;
+      setToast({ open: true, msg: applied ? `AI đã gán ${count} nhãn cho ảnh này` : `AI đề xuất ${count} nhãn (chưa lưu)`, severity: 'info' });
       return res.data;
     } catch (e) {
-      const msg = e?.response?.data?.message || 'AI Assist thất bại';
+      const msg = e?.response?.data?.message || e?.response?.data?.error || 'AI Assist thất bại';
       setToast({ open: true, msg, severity: 'error' });
       return null;
     }
