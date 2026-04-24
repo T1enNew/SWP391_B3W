@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getAuthToken, stringToColor } from '../../../utils/reviewerUtils';
@@ -8,16 +8,21 @@ const fmtShortDate = (d) => {
   return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
+const fmtFullDate = (d) => {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
 const getFileType = (filename) => {
-  if (!filename) return '';
+  if (!filename) return 'FILE';
   const ext = filename.split('.').pop().toLowerCase();
   const map = {
-    jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', bmp: 'image', webp: 'image', svg: 'image',
-    mp3: 'audio', wav: 'audio', ogg: 'audio',
-    mp4: 'video', mov: 'video', avi: 'video',
-    txt: 'text', csv: 'text', json: 'text',
+    jpg: 'IMAGE', jpeg: 'IMAGE', png: 'IMAGE', gif: 'IMAGE', bmp: 'IMAGE', webp: 'IMAGE', svg: 'IMAGE',
+    mp3: 'AUDIO', wav: 'AUDIO', ogg: 'AUDIO',
+    mp4: 'VIDEO', mov: 'VIDEO', avi: 'VIDEO',
+    txt: 'TEXT', csv: 'TEXT', json: 'TEXT',
   };
-  return map[ext] || 'file';
+  return map[ext] || 'FILE';
 };
 
 const getInitials = (name) => {
@@ -27,6 +32,34 @@ const getInitials = (name) => {
 
 const PAGE_SIZE = 10;
 
+// ── Stat Card ────────────────────────────────────────────────────────────────
+const StatCard = ({ label, value, sub, accent, onClick, active }) => (
+  <button
+    onClick={onClick}
+    className={`flex-1 min-w-[140px] rounded-2xl border p-4 text-left transition-all cursor-pointer group ${
+      active
+        ? `border-[${accent}]/60 ring-1 ring-[${accent}]/40 bg-[${accent}]/10`
+        : 'border-gray-700/60 bg-gray-800/60 hover:border-gray-600'
+    }`}
+    style={active ? { borderColor: accent + '60', boxShadow: `0 0 0 1px ${accent}30`, background: accent + '12' } : {}}
+  >
+    <p className="text-3xl font-extrabold leading-none" style={{ color: accent }}>{value}</p>
+    <p className="mt-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+    {sub && <p className="mt-0.5 text-[11px] text-gray-500">{sub}</p>}
+  </button>
+);
+
+// ── Filter Select ─────────────────────────────────────────────────────────────
+const FilterSelect = ({ value, onChange, children }) => (
+  <select
+    value={value} onChange={e => onChange(e.target.value)}
+    className="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500/60 transition-colors"
+  >
+    {children}
+  </select>
+);
+
+// ── Main Component ────────────────────────────────────────────────────────────
 const ReviewerHistory = () => {
   const [reviewedTasks, setReviewedTasks] = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -52,7 +85,7 @@ const ReviewerHistory = () => {
           : [];
         setReviewedTasks(list);
       } catch (err) {
-        setError(err.response?.data?.message || 'Khong tai duoc du lieu');
+        setError(err.response?.data?.message || 'Không tải được dữ liệu');
       } finally {
         setLoading(false);
       }
@@ -73,10 +106,10 @@ const ReviewerHistory = () => {
   const total         = reviewedTasks.length;
   const approvedCount = reviewedTasks.filter(t => t.status === 'approved').length;
   const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
+  const approvalRate  = total > 0 ? Math.round((approvedCount / total) * 100) : 0;
 
   const filtered = useMemo(() => {
     let result = [...reviewedTasks];
-
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(t => {
@@ -87,22 +120,18 @@ const ReviewerHistory = () => {
         return itemName.includes(q) || annotName.includes(q) || projName.includes(q);
       });
     }
-
     if (decisionFilter !== 'all') result = result.filter(t => t.status === decisionFilter);
-
     if (projectFilter !== 'all') {
       result = result.filter(t => {
         const pid = t.project?.id || t.projectId?.id || t.projectId;
-        return pid === projectFilter;
+        return String(pid) === String(projectFilter);
       });
     }
-
     result.sort((a, b) => {
       const dateA = new Date(a.reviewed_at || a.reviewedAt || a.submitted_at || 0);
       const dateB = new Date(b.reviewed_at || b.reviewedAt || b.submitted_at || 0);
       return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
     });
-
     return result;
   }, [reviewedTasks, search, decisionFilter, projectFilter, sortOrder]);
 
@@ -112,183 +141,279 @@ const ReviewerHistory = () => {
   const startIdx    = (currentPage - 1) * PAGE_SIZE;
   const paginated   = filtered.slice(startIdx, startIdx + PAGE_SIZE);
 
+  const hasFilter   = search || decisionFilter !== 'all' || projectFilter !== 'all';
+
   const handlePageChange = (p) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const clearFilters     = () => { setSearch(''); setDecisionFilter('all'); setProjectFilter('all'); setPage(1); };
 
   const handleViewDetail = (task) => {
     const pid = task.project?.id || task.projectId?.id || task.projectId;
     window.location.href = '/reviewer/workspace/' + pid + '?taskId=' + task.id;
   };
 
+  // ── Loading ──
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#080f1e]">
+        <div className="h-11 w-11 animate-spin rounded-full border-4 border-gray-700 border-t-violet-500" />
+        <p className="text-sm text-gray-500">Đang tải lịch sử...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
-      <div className="mx-auto w-full max-w-7xl space-y-5">
+    <div className="min-h-screen bg-[#080f1e] text-gray-200">
+      <div className="mx-auto w-full max-w-7xl space-y-5 p-6">
 
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
-          <h1 className="text-xl font-bold text-gray-100">Lich su cham bai</h1>
-          <p className="mt-1 text-sm text-gray-400">Xem lai cac quyet dinh da cham</p>
-        </div>
-
-        {error && (
-          <div className="rounded-xl border border-rose-700/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>
-        )}
-
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: 'Tat ca', value: total, filter: 'all', active: decisionFilter === 'all' && projectFilter === 'all', cls: 'border-gray-700 bg-gray-800', valCls: 'text-gray-100' },
-            { label: 'Approved', value: approvedCount, filter: 'approved', active: decisionFilter === 'approved', cls: 'border-emerald-700/30 bg-emerald-500/5', valCls: 'text-emerald-400' },
-            { label: 'Rejected', value: rejectedCount, filter: 'rejected', active: decisionFilter === 'rejected', cls: 'border-rose-700/30 bg-rose-500/5', valCls: 'text-rose-400' },
-          ].map(card => (
-            <button
-              key={card.label}
-              onClick={() => { setDecisionFilter(card.filter); setProjectFilter('all'); setPage(1); }}
-              className={`rounded-xl border p-4 text-center cursor-pointer transition-all ${card.active ? 'ring-2 ring-violet-500/50' : ''} ${card.cls}`}
-            >
-              <p className={`text-2xl font-bold ${card.valCls}`}>{card.value}</p>
-              <p className="mt-1 text-xs text-gray-400">{card.label}</p>
-            </button>
-          ))}
-        </div>
-
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[200px]">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text" placeholder="Tim item, annotator, project..."
-                value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                className="w-full rounded-lg border border-gray-700 bg-gray-900 pl-9 pr-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500/50"
-              />
+        {/* ── Header ── */}
+        <div className="rounded-2xl border border-[#1e2d47] bg-[#0d1829] px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-blue-600 shadow-lg shadow-violet-500/20">
+                <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-extrabold text-gray-100">Lịch sử chấm bài</h1>
+                <p className="text-sm text-gray-500">Tổng hợp toàn bộ quyết định review đã thực hiện</p>
+              </div>
             </div>
-
-            <select
-              value={decisionFilter} onChange={(e) => { setDecisionFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none"
-            >
-              <option value="all">Tat ca trang thai</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-
-            <select
-              value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none"
-            >
-              <option value="all">Tat ca project</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-
-            <select
-              value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none"
-            >
-              <option value="newest">Moi nhat</option>
-              <option value="oldest">Cu nhat</option>
-            </select>
-
-            {(search || decisionFilter !== 'all' || projectFilter !== 'all') && (
-              <button
-                onClick={() => { setSearch(''); setDecisionFilter('all'); setProjectFilter('all'); setPage(1); }}
-                className="rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-all"
-              >
-                Xoa loc
-              </button>
+            {/* Approval rate badge */}
+            {total > 0 && (
+              <div className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-4 py-2">
+                <div className="text-right">
+                  <p className="text-xl font-extrabold text-violet-400">{approvalRate}%</p>
+                  <p className="text-[11px] text-gray-500">Tỷ lệ approve</p>
+                </div>
+                <svg className="h-7 w-7 text-violet-400/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-700 bg-gray-800 overflow-hidden">
+        {error && (
+          <div className="rounded-xl border border-rose-700/40 bg-rose-500/8 px-4 py-3 text-sm text-rose-300">{error}</div>
+        )}
+
+        {/* ── Stat cards ── */}
+        <div className="flex flex-wrap gap-3">
+          <StatCard
+            label="Tất cả"
+            value={total}
+            sub={projects.length > 0 ? `Từ ${projects.length} project` : undefined}
+            accent="#6366f1"
+            active={decisionFilter === 'all' && projectFilter === 'all'}
+            onClick={() => { setDecisionFilter('all'); setProjectFilter('all'); setPage(1); }}
+          />
+          <StatCard
+            label="Đã duyệt"
+            value={approvedCount}
+            sub={total > 0 ? `${Math.round(approvedCount / total * 100)}% tổng số` : '—'}
+            accent="#22c55e"
+            active={decisionFilter === 'approved'}
+            onClick={() => { setDecisionFilter('approved'); setPage(1); }}
+          />
+          <StatCard
+            label="Từ chối"
+            value={rejectedCount}
+            sub={total > 0 ? `${Math.round(rejectedCount / total * 100)}% tổng số` : '—'}
+            accent="#ef4444"
+            active={decisionFilter === 'rejected'}
+            onClick={() => { setDecisionFilter('rejected'); setPage(1); }}
+          />
+        </div>
+
+        {/* ── Filter bar ── */}
+        <div className="rounded-2xl border border-[#1e2d47] bg-[#0d1829] p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Search */}
+            <div className="relative min-w-[220px] flex-1">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text" placeholder="Tìm theo tên ảnh, annotator, project..."
+                value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="w-full rounded-xl border border-[#1e2d47] bg-[#080f1e] py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-600 focus:border-violet-500/50 focus:outline-none transition-colors"
+              />
+            </div>
+
+            <FilterSelect value={decisionFilter} onChange={v => { setDecisionFilter(v); setPage(1); }}>
+              <option value="all">Tất cả trạng thái</option>
+              <option value="approved">✓ Đã duyệt</option>
+              <option value="rejected">✗ Từ chối</option>
+            </FilterSelect>
+
+            <FilterSelect value={projectFilter} onChange={v => { setProjectFilter(v); setPage(1); }}>
+              <option value="all">Tất cả project</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </FilterSelect>
+
+            <FilterSelect value={sortOrder} onChange={setSortOrder}>
+              <option value="newest">Mới nhất trước</option>
+              <option value="oldest">Cũ nhất trước</option>
+            </FilterSelect>
+
+            {hasFilter && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1.5 rounded-xl border border-gray-700 px-3 py-2 text-xs text-gray-400 transition-all hover:border-gray-500 hover:text-gray-200"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Xóa lọc
+              </button>
+            )}
+
+            {totalItems > 0 && (
+              <span className="ml-auto text-xs text-gray-500">{totalItems} kết quả</span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Table ── */}
+        <div className="overflow-hidden rounded-2xl border border-[#1e2d47] bg-[#0d1829]">
           {paginated.length === 0 ? (
-            <div className="py-16 text-center">
-              <p className="text-gray-500 text-sm">Khong co lich su cham bai</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 text-gray-600">
+                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <p className="text-base font-semibold text-gray-500">
+                {hasFilter ? 'Không có kết quả phù hợp' : 'Chưa có lịch sử chấm bài'}
+              </p>
+              {hasFilter && (
+                <button onClick={clearFilters} className="text-xs text-violet-400 hover:text-violet-300 underline underline-offset-2">
+                  Xóa bộ lọc
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-900/50 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                    <th className="px-4 py-3 text-left">Item</th>
-                    <th className="px-4 py-3 text-left">Project</th>
-                    <th className="px-4 py-3 text-left">Annotator</th>
-                    <th className="px-4 py-3 text-left">Quyet dinh</th>
-                    <th className="px-4 py-3 text-left">Feedback</th>
-                    <th className="px-4 py-3 text-left">Thoi gian</th>
-                    <th className="px-4 py-3 text-right"></th>
+                  <tr className="border-b border-[#1e2d47] bg-[#080f1e]/60">
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Tệp / Loại</th>
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Project</th>
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Annotator</th>
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Quyết định</th>
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Phản hồi</th>
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500">Thời gian</th>
+                    <th className="px-5 py-3.5" />
                   </tr>
                 </thead>
-                <tbody>
-                  {paginated.map((t, idx) => {
-                    const di        = t.dataItem || t.data_item || {};
-                    const itemName  = di.filename || di.originalName || di.original_name || t.id || 'Unknown';
-                    const itemType  = getFileType(itemName);
-                    const annotName = t.annotator?.full_name || t.annotator?.fullName || t.annotator?.username || 'Unknown';
-                    const projName  = t.project?.name || t.projectId?.name || '-';
+                <tbody className="divide-y divide-[#1e2d47]/60">
+                  {paginated.map((t) => {
+                    const di         = t.dataItem || t.data_item || {};
+                    const itemName   = di.filename || di.originalName || di.original_name || t.id || 'Unknown';
+                    const itemType   = getFileType(itemName);
+                    const annotName  = t.annotator?.full_name || t.annotator?.fullName || t.annotator?.username || 'Unknown';
+                    const projName   = t.project?.name || t.projectId?.name || '-';
                     const isApproved = t.status === 'approved';
-                    const feedback  = t.review_comments || t.reviewComments;
+                    const feedback   = t.review_comments || t.reviewComments;
                     const reviewTime = t.reviewed_at || t.reviewedAt || t.submitted_at;
 
                     return (
-                      <tr key={t.id} className={`border-t border-gray-700/50 transition-colors hover:bg-gray-800/40 ${idx % 2 === 0 ? 'bg-gray-800/20' : ''}`}>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-200 text-sm max-w-[180px] truncate" title={itemName}>{itemName}</p>
-                          {itemType && <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">{itemType}</p>}
+                      <tr key={t.id} className="transition-colors hover:bg-white/[0.025] group">
+                        {/* Item */}
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
+                              itemType === 'IMAGE' ? 'bg-blue-500/15 text-blue-400' :
+                              itemType === 'VIDEO' ? 'bg-purple-500/15 text-purple-400' :
+                              'bg-gray-700 text-gray-400'
+                            }`}>
+                              {itemType === 'IMAGE' ? (
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                              ) : (
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="max-w-[160px] truncate font-semibold text-gray-200 text-sm" title={itemName}>{itemName}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600 mt-0.5">{itemType}</p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="text-gray-300 text-sm">{projName}</span>
+
+                        {/* Project */}
+                        <td className="px-5 py-3.5">
+                          <span className="max-w-[140px] truncate block text-sm text-gray-300" title={projName}>{projName}</span>
                         </td>
-                        <td className="px-4 py-3">
+
+                        {/* Annotator */}
+                        <td className="px-5 py-3.5">
                           <div className="flex items-center gap-2">
                             <div
-                              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
                               style={{ backgroundColor: stringToColor(annotName) }}
                               title={annotName}
                             >
                               {getInitials(annotName)}
                             </div>
-                            <span className="text-gray-300 text-sm truncate max-w-[120px]" title={annotName}>{annotName}</span>
+                            <span className="max-w-[110px] truncate text-sm text-gray-300" title={annotName}>{annotName}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+
+                        {/* Decision */}
+                        <td className="px-5 py-3.5">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${
                             isApproved
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                              ? 'bg-emerald-500/12 text-emerald-400 border-emerald-500/30'
+                              : 'bg-rose-500/12 text-rose-400 border-rose-500/30'
                           }`}>
-                            {isApproved
-                              ? <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                              : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                            }
+                            {isApproved ? (
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            )}
                             {isApproved ? 'Approved' : 'Rejected'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 max-w-[180px]">
-                          {feedback
-                            ? <span className="text-gray-400 text-xs line-clamp-1" title={feedback}>{feedback.length > 40 ? feedback.slice(0, 40) + '...' : feedback}</span>
-                            : <span className="text-gray-600 text-xs">-</span>
-                          }
+
+                        {/* Feedback */}
+                        <td className="px-5 py-3.5 max-w-[180px]">
+                          {feedback ? (
+                            <span className="text-xs text-gray-400 line-clamp-1" title={feedback}>
+                              {feedback.length > 45 ? feedback.slice(0, 45) + '…' : feedback}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-700">—</span>
+                          )}
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="text-gray-400 text-xs">{fmtShortDate(reviewTime)}</span>
+
+                        {/* Time */}
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          <p className="text-xs text-gray-400">{fmtShortDate(reviewTime)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5" title={fmtFullDate(reviewTime)}>
+                            {new Date(reviewTime).toLocaleDateString('vi-VN', { weekday: 'short' })}
+                          </p>
                         </td>
-                        <td className="px-4 py-3 text-right">
+
+                        {/* Action */}
+                        <td className="px-5 py-3.5 text-right">
                           <button
                             onClick={() => handleViewDetail(t)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-400 hover:bg-violet-500/20 transition-all"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/8 px-3.5 py-1.5 text-xs font-semibold text-violet-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-violet-500/18 hover:border-violet-400/50"
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
-                            Xem lai
+                            Xem lại
                           </button>
                         </td>
                       </tr>
@@ -300,34 +425,53 @@ const ReviewerHistory = () => {
           )}
         </div>
 
+        {/* ── Pagination ── */}
         {totalItems > 0 && (
-          <>
+          <div className="flex flex-col items-center gap-3 pb-2">
             {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-1.5 pt-2">
+              <div className="flex items-center gap-1.5">
                 <button onClick={() => handlePageChange(1)} disabled={currentPage === 1}
-                  className="w-8 h-8 rounded-lg border border-gray-700 bg-gray-800 text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">&laquo;</button>
-                <button onClick={() => handlePageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1}
-                  className="w-8 h-8 rounded-lg border border-gray-700 bg-gray-800 text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">&lsaquo;</button>
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-gray-700 bg-gray-800 text-xs text-gray-400 transition-all hover:border-gray-500 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed">
+                  «
+                </button>
+                <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-gray-700 bg-gray-800 text-xs text-gray-400 transition-all hover:border-gray-500 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed">
+                  ‹
+                </button>
+
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let p = totalPages <= 5 ? i + 1 : currentPage <= 3 ? i + 1 : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage - 2 + i;
+                  const p = totalPages <= 5 ? i + 1
+                    : currentPage <= 3 ? i + 1
+                    : currentPage >= totalPages - 2 ? totalPages - 4 + i
+                    : currentPage - 2 + i;
                   return (
                     <button key={p} onClick={() => handlePageChange(p)}
-                      className={`w-8 h-8 rounded-lg border text-xs font-medium transition-all ${p === currentPage ? 'border-violet-500/50 bg-violet-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-400 hover:text-white'}`}>
+                      className={`flex h-8 w-8 items-center justify-center rounded-xl border text-xs font-semibold transition-all ${
+                        p === currentPage
+                          ? 'border-violet-500/60 bg-violet-600 text-white shadow-sm shadow-violet-500/30'
+                          : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-500 hover:text-white'
+                      }`}>
                       {p}
                     </button>
                   );
                 })}
-                <button onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}
-                  className="w-8 h-8 rounded-lg border border-gray-700 bg-gray-800 text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">&rsaquo;</button>
+
+                <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-gray-700 bg-gray-800 text-xs text-gray-400 transition-all hover:border-gray-500 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed">
+                  ›
+                </button>
                 <button onClick={() => handlePageChange(totalPages)} disabled={currentPage === totalPages}
-                  className="w-8 h-8 rounded-lg border border-gray-700 bg-gray-800 text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">&raquo;</button>
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-gray-700 bg-gray-800 text-xs text-gray-400 transition-all hover:border-gray-500 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed">
+                  »
+                </button>
               </div>
             )}
-            <p className="text-center text-xs text-gray-500">
-              Hien thi {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} / {totalItems} ban ghi
+            <p className="text-xs text-gray-600">
+              Hiển thị {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} / {totalItems} bản ghi
             </p>
-          </>
+          </div>
         )}
+
       </div>
     </div>
   );
