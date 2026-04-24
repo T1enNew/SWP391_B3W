@@ -24,9 +24,7 @@ import {
   Visibility as VisibilityIcon,
   Search as SearchIcon,
   InfoOutlined as InfoIcon,
-  FolderOpen as FolderIcon,
   Assignment as TaskIcon,
-  Schedule as DeadlineIcon,
   CheckCircle as CheckIcon,
   RadioButtonUnchecked as DraftIcon,
   Inventory as ArchiveIcon,
@@ -39,6 +37,16 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_URL } from "../../../config/api";
 import { getArray } from "../../../utils/api";
+import {
+  STATUS_CFG,
+  getCfg,
+  OVERDUE_STATUSES,
+  normalizeProject,
+  fmtDateTime,
+  getDeadlineState,
+  computeTaskStats,
+  getDisplayStatus,
+} from "./projectStatusUtils";
 
 const BG = "#080f1e",
   PANEL = "#0d1829",
@@ -50,149 +58,6 @@ const TEXT = "#e2e8f0",
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
-const STATUS_CFG = {
-  active: {
-    label: "Active",
-    color: "#22c55e",
-    bg: "rgba(34,197,94,0.12)",
-    border: "rgba(34,197,94,0.3)",
-    icon: <ActiveIcon sx={{ fontSize: 13 }} />,
-  },
-  draft: {
-    label: "Draft",
-    color: "#94a3b8",
-    bg: "rgba(148,163,184,0.1)",
-    border: "rgba(148,163,184,0.2)",
-    icon: <DraftIcon sx={{ fontSize: 13 }} />,
-  },
-  completed: {
-    label: "Completed",
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.12)",
-    border: "rgba(59,130,246,0.3)",
-    icon: <CheckIcon sx={{ fontSize: 13 }} />,
-  },
-  archived: {
-    label: "Archived",
-    color: "#f59e0b",
-    bg: "rgba(245,158,11,0.12)",
-    border: "rgba(245,158,11,0.3)",
-    icon: <ArchiveIcon sx={{ fontSize: 13 }} />,
-  },
-  in_review: {
-    label: "Đang review",
-    color: "#a78bfa",
-    bg: "rgba(167,139,250,0.12)",
-    border: "rgba(167,139,250,0.3)",
-    icon: <HourglassIcon sx={{ fontSize: 13 }} />,
-  },
-  waiting_rework: {
-    label: "Chờ sửa lại",
-    color: "#f97316",
-    bg: "rgba(249,115,22,0.12)",
-    border: "rgba(249,115,22,0.3)",
-    icon: <ErrorIcon sx={{ fontSize: 13 }} />,
-  },
-  annotator_overdue: {
-    label: "Annotator quá hạn",
-    color: "#ef4444",
-    bg: "rgba(239,68,68,0.12)",
-    border: "rgba(239,68,68,0.3)",
-    icon: <ErrorIcon sx={{ fontSize: 13 }} />,
-  },
-  reviewer_overdue: {
-    label: "Reviewer quá hạn",
-    color: "#f97316",
-    bg: "rgba(249,115,22,0.12)",
-    border: "rgba(249,115,22,0.3)",
-    icon: <ErrorIcon sx={{ fontSize: 13 }} />,
-  },
-  rework_overdue: {
-    label: "Sửa lại quá hạn",
-    color: "#ef4444",
-    bg: "rgba(239,68,68,0.12)",
-    border: "rgba(239,68,68,0.3)",
-    icon: <ErrorIcon sx={{ fontSize: 13 }} />,
-  },
-  overdue: {
-    label: "Quá hạn",
-    color: "#ef4444",
-    bg: "rgba(239,68,68,0.12)",
-    border: "rgba(239,68,68,0.3)",
-    icon: <ErrorIcon sx={{ fontSize: 13 }} />,
-  },
-};
-const getCfg = (s) => STATUS_CFG[s] || STATUS_CFG.draft;
-
-// Tính toán trạng thái hiển thị thực tế dựa trên status + deadline
-const getDisplayStatus = (project) => {
-  if (project.status === "archived") return "archived";
-
-  const isOverdue = project.deadline && new Date(project.deadline) < new Date();
-
-  // Nếu chưa quá hạn → hiển thị đúng trạng thái backend
-  if (!isOverdue) return project.status;
-
-  // Deadline đã qua — xác định lỗi thuộc về ai
-  switch (project.status) {
-    case "completed":
-      // Backend báo completed nhưng deadline đã qua → chưa hoàn thành đúng nghĩa
-      return "overdue";
-    case "draft":
-    case "active":
-      // Annotator chưa nộp bài
-      return "annotator_overdue";
-    case "in_review":
-      // Annotator đã nộp, reviewer chưa chấm
-      return "reviewer_overdue";
-    case "waiting_rework":
-      // Annotator chưa sửa lại bài sau khi bị reject
-      return "rework_overdue";
-    default:
-      return "overdue";
-  }
-};
-
-const normalizeProject = (p) => ({
-  ...p,
-  id: p?.id || p?._id,
-  name: p?.name || "Untitled Project",
-  description: p?.description || "",
-  status: p?.status || "draft",
-  dataset_id: p?.dataset_id || p?.datasetId || p?.dataset?.id || null,
-  dataset_name: p?.dataset?.name || p?.datasetName || "",
-  total_tasks: p?.total_tasks || p?.totalTasks || 0,
-  createdAt: p?.created_at || p?.createdAt,
-  deadline: p?.deadline || null,
-});
-
-const fmtDateTime = (v) => {
-  if (!v) return "N/A";
-  const d = new Date(v);
-  return isNaN(d)
-    ? "N/A"
-    : d.toLocaleString("vi-VN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-};
-
-const getDeadlineState = (deadline) => {
-  if (!deadline) return null;
-  const diff = new Date(deadline) - new Date();
-  const hours = diff / 36e5;
-  if (diff < 0)
-    return { label: "Quá hạn", color: "#ef4444", bg: "rgba(239,68,68,0.1)" };
-  if (hours < 24)
-    return { label: "Hôm nay", color: "#f97316", bg: "rgba(249,115,22,0.1)" };
-  if (hours < 72)
-    return { label: "Sắp đến", color: "#f59e0b", bg: "rgba(245,158,11,0.1)" };
-  return null;
 };
 
 // ── Stat Tile ──────────────────────────────────────────────────────────────────
@@ -242,37 +107,9 @@ const StatTile = ({ icon, value, label, accent, active, onClick }) => (
   </Box>
 );
 
-// ── Info Dialog Row ────────────────────────────────────────────────────────────
-const InfoRow = ({ label, value, color }) => (
-  <Box
-    sx={{
-      display: "flex",
-      gap: 1.5,
-      py: 1,
-      borderBottom: `1px solid ${BORDER}`,
-    }}
-  >
-    <Typography
-      sx={{ color: MUTED, fontSize: 13, minWidth: 130, flexShrink: 0 }}
-    >
-      {label}
-    </Typography>
-    <Typography
-      sx={{
-        color: color || TEXT,
-        fontSize: 13,
-        fontWeight: 600,
-        wordBreak: "break-word",
-      }}
-    >
-      {value ?? "N/A"}
-    </Typography>
-  </Box>
-);
-
 // ── Project Card ───────────────────────────────────────────────────────────────
-const ProjectCard = ({ project, datasets, onInfo, onDelete, onNavigate }) => {
-  const cfg = getCfg(getDisplayStatus(project));
+const ProjectCard = ({ project, taskStats, taskStatsLoading, datasets, onInfo, onDelete, onNavigate }) => {
+  const cfg = getCfg(getDisplayStatus(project, taskStats));
   const dlState = getDeadlineState(project.deadline);
   const dsName =
     project.dataset_name ||
@@ -347,34 +184,41 @@ const ProjectCard = ({ project, datasets, onInfo, onDelete, onNavigate }) => {
             flexShrink: 0,
           }}
         >
-          {/* Status badge — only place with status color */}
-          <Box
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 0.5,
-              bgcolor: cfg.bg,
-              border: `1px solid ${cfg.border}`,
-              borderRadius: 10,
-              px: 1.2,
-              py: 0.35,
-            }}
-          >
+          {/* Status badge */}
+          {taskStatsLoading && !taskStats ? (
+            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1.2, py: 0.35 }}>
+              <CircularProgress size={10} sx={{ color: MUTED }} />
+              <Typography sx={{ color: MUTED, fontSize: 11 }}>...</Typography>
+            </Box>
+          ) : (
             <Box
               sx={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                bgcolor: cfg.color,
-                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.5,
+                bgcolor: cfg.bg,
+                border: `1px solid ${cfg.border}`,
+                borderRadius: 10,
+                px: 1.2,
+                py: 0.35,
               }}
-            />
-            <Typography
-              sx={{ color: cfg.color, fontSize: 11, fontWeight: 700 }}
             >
-              {cfg.label}
-            </Typography>
-          </Box>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: cfg.color,
+                  flexShrink: 0,
+                }}
+              />
+              <Typography
+                sx={{ color: cfg.color, fontSize: 11, fontWeight: 700 }}
+              >
+                {cfg.label}
+              </Typography>
+            </Box>
+          )}
           <Tooltip title="Thông tin đầy đủ">
             <IconButton
               size="small"
@@ -392,7 +236,7 @@ const ProjectCard = ({ project, datasets, onInfo, onDelete, onNavigate }) => {
         </Box>
       </Box>
 
-      {/* Info rows — neutral icons, no per-row color */}
+      {/* Info rows */}
       <Stack spacing={1.2} sx={{ flex: 1 }}>
         <Box
           sx={{
@@ -535,6 +379,8 @@ export default function Projects() {
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [taskStatsMap, setTaskStatsMap] = useState({});
+  const [taskStatsLoading, setTaskStatsLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -553,6 +399,7 @@ export default function Projects() {
 
   const loadData = async () => {
     setLoading(true);
+    setTaskStatsMap({});
     try {
       const [projectRes, datasetRes] = await Promise.allSettled([
         axios.get(`${API_URL}/api/projects`, {
@@ -561,18 +408,45 @@ export default function Projects() {
         }),
         axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
       ]);
+
+      let pList = [];
       if (projectRes.status === "fulfilled") {
         const pData = projectRes.value.data;
-        const pList = pData?.data ? pData.data : getArray(pData);
+        pList = pData?.data ? pData.data : getArray(pData);
         setProjects(pList.map(normalizeProject));
       } else {
         setError("Không tải được danh sách project");
       }
       if (datasetRes.status === "fulfilled")
         setDatasets(getArray(datasetRes.value.data));
+
+      // Phase 2: batch-fetch task stats để tính trạng thái chính xác theo task
+      if (pList.length > 0) {
+        setTaskStatsLoading(true);
+        const taskResults = await Promise.allSettled(
+          pList.map((p) =>
+            axios.get(`${API_URL}/api/tasks/project/${p.id || p._id}`, {
+              headers: getAuthHeaders(),
+            })
+          )
+        );
+        const statsMap = {};
+        taskResults.forEach((res, i) => {
+          if (res.status === "fulfilled") {
+            const raw = Array.isArray(res.value.data)
+              ? res.value.data
+              : res.value.data?.data || res.value.data?.tasks || [];
+            const pid = pList[i].id || pList[i]._id;
+            const stats = computeTaskStats(raw);
+            if (stats) statsMap[pid] = stats;
+          }
+        });
+        setTaskStatsMap(statsMap);
+        setTaskStatsLoading(false);
+      }
     } catch (e) {
       setError(
-        e?.response?.data?.message || e.message || "Không tải được project",
+        e?.response?.data?.message || e.message || "Không tải được project"
       );
     } finally {
       setLoading(false);
@@ -605,49 +479,35 @@ export default function Projects() {
     setInfoDetail(null);
   };
 
-  const counts = useMemo(
-    () => ({
+  const counts = useMemo(() => {
+    const ds = (p) => getDisplayStatus(p, taskStatsMap[p.id] || null);
+    return {
       all: projects.length,
-      active: projects.filter((p) => getDisplayStatus(p) === "active").length,
-      completed: projects.filter((p) => getDisplayStatus(p) === "completed")
-        .length,
-      draft: projects.filter((p) => getDisplayStatus(p) === "draft").length,
-      archived: projects.filter((p) => getDisplayStatus(p) === "archived")
-        .length,
-      overdue: projects.filter((p) =>
-        [
-          "annotator_overdue",
-          "reviewer_overdue",
-          "rework_overdue",
-          "overdue",
-        ].includes(getDisplayStatus(p)),
-      ).length,
-    }),
-    [projects],
-  );
+      active: projects.filter((p) => ds(p) === "active").length,
+      completed: projects.filter((p) => ds(p) === "completed").length,
+      draft: projects.filter((p) => ds(p) === "draft").length,
+      archived: projects.filter((p) => ds(p) === "archived").length,
+      reviewer_pending: projects.filter((p) => ds(p) === "reviewer_pending").length,
+      overdue: projects.filter((p) => OVERDUE_STATUSES.includes(ds(p))).length,
+    };
+  }, [projects, taskStatsMap]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const OVERDUE_STATUSES = [
-      "annotator_overdue",
-      "reviewer_overdue",
-      "rework_overdue",
-      "overdue",
-    ];
     return projects.filter((p) => {
       const okSearch =
         !q ||
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
         p.dataset_name.toLowerCase().includes(q);
-      const ds = getDisplayStatus(p);
+      const ds = getDisplayStatus(p, taskStatsMap[p.id] || null);
       const okStatus =
         statusFilter === "all" ||
         statusFilter === ds ||
         (statusFilter === "overdue" && OVERDUE_STATUSES.includes(ds));
       return okSearch && okStatus;
     });
-  }, [projects, search, statusFilter]);
+  }, [projects, taskStatsMap, search, statusFilter]);
 
   const deleteProject = async () => {
     const project = deleteDialog.project;
@@ -792,6 +652,16 @@ export default function Projects() {
             active={statusFilter === "draft"}
             onClick={() => setStatusFilter("draft")}
           />
+          {counts.reviewer_pending > 0 && (
+            <StatTile
+              icon={<HourglassIcon sx={{ fontSize: 16 }} />}
+              value={counts.reviewer_pending}
+              label="Chờ reviewer"
+              accent="#c084fc"
+              active={statusFilter === "reviewer_pending"}
+              onClick={() => setStatusFilter("reviewer_pending")}
+            />
+          )}
           {counts.overdue > 0 && (
             <StatTile
               icon={<ErrorIcon sx={{ fontSize: 16 }} />}
@@ -934,6 +804,8 @@ export default function Projects() {
               <Grid item xs={12} sm={6} lg={4} key={project.id}>
                 <ProjectCard
                   project={project}
+                  taskStats={taskStatsMap[project.id] || null}
+                  taskStatsLoading={taskStatsLoading}
                   datasets={datasets}
                   onInfo={openInfo}
                   onDelete={(p) => setDeleteDialog({ open: true, project: p })}
@@ -1007,7 +879,7 @@ export default function Projects() {
       {infoProject &&
         (() => {
           const p = infoDetail ? { ...infoProject, ...infoDetail } : infoProject;
-          const infoCfg = getCfg(getDisplayStatus(p));
+          const infoCfg = getCfg(getDisplayStatus(p, taskStatsMap[p.id] || null));
           const infoDlState = getDeadlineState(p.deadline);
           const dsName =
             p.dataset?.name ||
@@ -1164,12 +1036,10 @@ export default function Projects() {
 
                 {/* Detail rows */}
                 <Box sx={{ px: 3, pt: 0.5, pb: 1 }}>
-                  {/* Dataset */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Dataset</Typography>
                     <Typography sx={{ color: "#93c5fd", fontSize: 13, fontWeight: 600 }}>{dsName}</Typography>
                   </Box>
-                  {/* Deadline */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Deadline</Typography>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -1181,12 +1051,10 @@ export default function Projects() {
                       <Typography sx={{ color: infoDlState ? infoDlState.color : "#fbbf24", fontSize: 13, fontWeight: 600 }}>{fmtDateTime(p.deadline)}</Typography>
                     </Box>
                   </Box>
-                  {/* Ngày tạo */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Ngày tạo</Typography>
                     <Typography sx={{ color: TEXT, fontSize: 13, fontWeight: 600 }}>{fmtDateTime(p.createdAt || p.created_at)}</Typography>
                   </Box>
-                  {/* Reviewer */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Reviewer</Typography>
                     {rv ? (
@@ -1203,7 +1071,6 @@ export default function Projects() {
                       <Typography sx={{ color: MUTED, fontSize: 13, fontStyle: "italic" }}>Chưa phân công</Typography>
                     )}
                   </Box>
-                  {/* Annotators */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Annotators</Typography>
                     {annotators.length > 0 ? (
@@ -1228,14 +1095,12 @@ export default function Projects() {
                       <Typography sx={{ color: MUTED, fontSize: 13, fontStyle: "italic" }}>Chưa phân công</Typography>
                     )}
                   </Box>
-                  {/* Guidelines */}
                   {guidelines && (
                     <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
                       <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Guidelines</Typography>
                       <Typography sx={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>{guidelines}</Typography>
                     </Box>
                   )}
-                  {/* Project ID */}
                   <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4 }}>
                     <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Project ID</Typography>
                     <Typography sx={{ color: "#475569", fontSize: 11, fontFamily: "monospace", wordBreak: "break-all" }}>{p.id}</Typography>
@@ -1259,9 +1124,7 @@ export default function Projects() {
                   Đóng
                 </Button>
                 <Button
-                  onClick={() =>
-                    navigate(`/manager/projects/${p.id}`)
-                  }
+                  onClick={() => navigate(`/manager/projects/${p.id}`)}
                   variant="contained"
                   startIcon={<VisibilityIcon sx={{ fontSize: 15 }} />}
                   sx={{
@@ -1279,7 +1142,6 @@ export default function Projects() {
             </Dialog>
           );
         })()}
-
 
       <Snackbar
         open={toast.open}

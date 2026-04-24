@@ -4,16 +4,16 @@ import {
   InputAdornment, Pagination, Paper, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
 import {
-  AutoFixHigh as AutoFixHighIcon,
   CheckCircle as CheckCircleIcon,
   FilterList as FilterListIcon,
   Label as LabelIcon,
   Person as PersonIcon,
+  Schedule as ScheduleIcon,
   Search as SearchIcon,
   Storage as StorageIcon,
 } from '@mui/icons-material';
 import { cardSx, panelSx, primaryBtnSx, secondaryBtnSx, typePalette } from './constants';
-import { getLabelColor } from './utils';
+import { getLabelColor, formatDateTime } from './utils';
 
 const PAGE_SIZE = 12;
 
@@ -35,11 +35,10 @@ const MetaStat = ({ icon, value, tooltip }) => (
   </Tooltip>
 );
 
-const ItemsTab = ({ approvedItems, datasets, onViewDetail, onAiAssist }) => {
+const ItemsTab = ({ approvedItems, datasets, onViewDetail }) => {
   const [searchText, setSearchText] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('all');
   const [page, setPage] = useState(1);
-  const [aiLoadingId, setAiLoadingId] = useState(null);
 
   // Collect all unique labels + count per label
   const labelStats = useMemo(() => {
@@ -71,15 +70,6 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail, onAiAssist }) => {
   const handleLabelClick = (label) => { setSelectedLabel(prev => prev === label ? 'all' : label); setPage(1); };
   const clearFilters = () => { setSearchText(''); setSelectedLabel('all'); setPage(1); };
 
-  const handleAiAssist = async (item) => {
-    if (!item.taskId || aiLoadingId) return;
-    setAiLoadingId(item.taskId);
-    try {
-      await onAiAssist?.(item.taskId);
-    } finally {
-      setAiLoadingId(null);
-    }
-  };
 
   return (
     <Stack spacing={2.5}>
@@ -231,7 +221,6 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail, onAiAssist }) => {
                 const firstDataset = datasets.find((ds) => String(ds.id) === String(item.datasetId));
                 const palette = typePalette[item.mediaType] || typePalette.other;
                 const Icon = palette.icon;
-                const isAiLoading = aiLoadingId === item.taskId;
                 return (
                   <Grid item xs={12} sm={6} lg={4} key={item.key}>
                     <Card sx={{
@@ -284,6 +273,15 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail, onAiAssist }) => {
                           <MetaStat icon={<LabelIcon sx={{ color: '#c4b5fd', fontSize: 15 }} />} value={`${labelSet.length} label${labelSet.length !== 1 ? 's' : ''}`} tooltip={labelSet.join(', ') || 'No labels'} />
                         </Stack>
 
+                        {item.approvedAt && (
+                          <Stack direction="row" spacing={0.6} alignItems="center">
+                            <ScheduleIcon sx={{ color: '#22c55e', fontSize: 13 }} />
+                            <Typography variant="caption" sx={{ color: '#4ade80', fontWeight: 600, fontSize: '0.72rem' }}>
+                              Approved: {formatDateTime(item.approvedAt)}
+                            </Typography>
+                          </Stack>
+                        )}
+
                         {/* Label chips — clickable to filter */}
                         {labelSet.length > 0 && (
                           <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap' }}>
@@ -304,25 +302,11 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail, onAiAssist }) => {
                         )}
 
                         {/* Actions */}
-                        <Stack direction="row" spacing={1} sx={{ mt: 'auto' }}>
+                        <Box sx={{ mt: 'auto' }}>
                           <Button fullWidth variant="contained" sx={primaryBtnSx} onClick={() => onViewDetail(item)}>
                             View detail
                           </Button>
-                          {item.taskId && item.mediaType === 'image' && (
-                            <Tooltip title="Chạy AI phát hiện bbox" arrow>
-                              <Button
-                                variant="outlined"
-                                disabled={!!aiLoadingId}
-                                onClick={() => handleAiAssist(item)}
-                                sx={{ minWidth: 40, px: 1.2, borderColor: '#4f46e5', color: '#818cf8', '&:hover': { borderColor: '#6366f1', bgcolor: 'rgba(99,102,241,0.08)' }, '&.Mui-disabled': { borderColor: '#334155', color: '#475569' } }}
-                              >
-                                {isAiLoading
-                                  ? <CircularProgress size={16} sx={{ color: '#818cf8' }} />
-                                  : <AutoFixHighIcon sx={{ fontSize: 18 }} />}
-                              </Button>
-                            </Tooltip>
-                          )}
-                        </Stack>
+                        </Box>
                       </Box>
                     </Card>
                   </Grid>

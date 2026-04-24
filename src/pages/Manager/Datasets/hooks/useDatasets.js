@@ -120,9 +120,12 @@ export function useDatasets() {
       const primaryKey = keys[0];
       if (!primaryKey) return;
 
+      const approvedAt = task.reviewed_at || task.updated_at || null;
+
       if (!map.has(primaryKey)) {
         map.set(primaryKey, {
           fileName: di?.originalName || di?.original_name || di?.filename || primaryKey,
+          approvedAt,
           fileUrl: (() => {
             if (!di || typeof di === 'string') return '';
             const base    = API_URL.replace(/\/+$/, '');
@@ -425,7 +428,8 @@ export function useDatasets() {
         ? (matchingTasks[0]?.dataItem || matchingTasks[0]?.data_item || {}) : {};
       const fileUrl = buildImageUrl(Object.keys(diObj).length ? diObj : item);
 
-      setDetailItem({ fileName: itemFilename, fileUrl, itemId, mediaType: 'image', annotatorLabels: [...annotatorMap.values()] });
+      const approvedAt = matchingTasks[0]?.reviewed_at || matchingTasks[0]?.updated_at || null;
+      setDetailItem({ fileName: itemFilename, fileUrl, itemId, mediaType: 'image', approvedAt, annotatorLabels: [...annotatorMap.values()] });
       setDetailDialogOpen(true);
     } else {
       navigate(

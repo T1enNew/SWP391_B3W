@@ -9,7 +9,6 @@ import {
 import {
   ArrowBack as ArrowBackIcon,
   Assignment as AssignmentIcon,
-  AutoFixHigh as AutoFixHighIcon,
   InfoOutlined as InfoOutlinedIcon,
   PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
@@ -17,8 +16,9 @@ import { API_URL } from '../../../../config/api';
 import { pageSx, panelSx, cardSx, softCardSx, secondaryBtnSx } from './constants';
 import {
   getAuthHeaders, normalizeProject, normalizeDataset, normalizeTask,
-  getStatusMeta, getItemMediaInfo, extractAnnotations, formatDateTime,
+  getItemMediaInfo, extractAnnotations, formatDateTime,
 } from './utils';
+import { computeTaskStats, getDisplayStatus, getCfg } from '../projectStatusUtils';
 import StatCard from './StatCard';
 import DatasetChip from './DatasetChip';
 import OverviewTab from './OverviewTab';
@@ -171,6 +171,8 @@ const ManagerProjectDetail = () => {
       const labels = Array.from(new Set(annotations.map((x) => x.label).filter(Boolean)));
       const isPrimary = Boolean(task?.primaryForItem);
 
+      const approvedAt = task.reviewed_at || task.updated_at || null;
+
       if (!map.has(key)) {
         map.set(key, {
           key, dataItem,
@@ -178,6 +180,7 @@ const ManagerProjectDetail = () => {
           datasetId: task.datasetId?.id || task.datasetId?._id || task.datasetId || datasets[0]?.id || null,
           itemId: dataItem?.id || dataItem?._id || task.id,
           taskId: task.id,
+          approvedAt,
           annotators: [annotatorName],
           annotatorLabels: [{ name: annotatorName, labels, annotations, isPrimary }],
         });
@@ -246,25 +249,6 @@ const ManagerProjectDetail = () => {
     }
   };
 
-  const handleAiAssist = async (taskId) => {
-    if (!taskId) return;
-    try {
-      const res = await axios.post(
-        `${API_URL}/api/ai/pre-label/${taskId}?apply=true`,
-        {},
-        { headers: getAuthHeaders() }
-      );
-      const count = res.data?.suggestions?.length || 0;
-      const applied = res.data?.applied;
-      setToast({ open: true, msg: applied ? `AI đã gán ${count} nhãn cho ảnh này` : `AI đề xuất ${count} nhãn (chưa lưu)`, severity: 'info' });
-      return res.data;
-    } catch (e) {
-      const msg = e?.response?.data?.message || e?.response?.data?.error || 'AI Assist thất bại';
-      setToast({ open: true, msg, severity: 'error' });
-      return null;
-    }
-  };
-
   const groupedByAnnotator = useMemo(() => {
     const map = new Map();
     tasks.forEach((task) => {
@@ -308,6 +292,10 @@ const ManagerProjectDetail = () => {
     return Array.from(map.values()).sort((a, b) => b.assigned - a.assigned);
   }, [tasks, project]);
 
+  // Phải đặt trước early return để không vi phạm Rules of Hooks
+  const taskStats = useMemo(() => computeTaskStats(tasks), [tasks]);
+  const statusMeta = getCfg(getDisplayStatus(project ?? {}, taskStats));
+
   if (loading) {
     return (
       <Box sx={{ ...pageSx, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -315,8 +303,6 @@ const ManagerProjectDetail = () => {
       </Box>
     );
   }
-
-  const statusMeta = getStatusMeta(project?.status);
 
   return (
     <Box sx={pageSx}>
@@ -440,7 +426,6 @@ const ManagerProjectDetail = () => {
                   setApprovedItemDialogOpen(true);
                   setShowAnnotatorLabels(true);
                 }}
-                onAiAssist={handleAiAssist}
               />
             )}
           </Box>

@@ -4,8 +4,9 @@ import {
   Grid, Stack, Switch, Typography,
 } from '@mui/material';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import { Schedule as ScheduleIcon } from '@mui/icons-material';
 import ImageViewer from '../../../components/ImageViewer';
-import { getLabelColor } from '../Projects/ProjectDetail/utils';
+import { getLabelColor, formatDateTime } from '../Projects/ProjectDetail/utils';
 import { TEXT, MUTED } from './constants';
 
 const ItemDetailDialog = ({ open, onClose, item }) => {
@@ -61,6 +62,16 @@ const ItemDetailDialog = ({ open, onClose, item }) => {
                 <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Item ID</Typography>
                 <Typography sx={{ fontSize: 12, wordBreak: 'break-all' }}>{item.itemId || item._id || item.id || '—'}</Typography>
               </Box>
+
+              {item.approvedAt && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, px: 1.4, py: 0.9, borderRadius: 2, bgcolor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                  <ScheduleIcon sx={{ color: '#22c55e', fontSize: 15, flexShrink: 0 }} />
+                  <Box>
+                    <Typography sx={{ color: '#4ade80', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Approved at</Typography>
+                    <Typography sx={{ color: '#86efac', fontSize: 13, fontWeight: 600 }}>{formatDateTime(item.approvedAt)}</Typography>
+                  </Box>
+                </Box>
+              )}
 
               <Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
