@@ -5,12 +5,16 @@ import { getAuthHeaders } from '../../../utils/auth';
 import { TASK_STATUS } from './constants';
 import { getTaskKind } from './utils';
 
-const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotations, textSpans, audioLabels, onApplyAiSuggestions }) => {
+const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotations, textSpans, audioLabels, onApplyAiSuggestions, onApplyAiBboxes }) => {
   const [rightTab, setRightTab] = useState('info');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState(null);
   const [aiError, setAiError] = useState('');
   const [aiApplied, setAiApplied] = useState(false);
+  const [bboxLoading, setBboxLoading] = useState(false);
+  const [bboxResults, setBboxResults] = useState(null);
+  const [bboxError, setBboxError] = useState('');
+  const [bboxApplied, setBboxApplied] = useState(false);
   const labels = task?.availableLabels || [];
   const isReadOnly = ['submitted', 'resubmitted', 'approved'].includes(task?.status);
   const hasFeedback = task?.status === 'rejected' && (task?.reviewComments || task?.rejectionReason);
@@ -41,11 +45,35 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
     }
   };
 
+  const handleAiAssist = async () => {
+    if (!task?.id) return;
+    setBboxLoading(true);
+    setBboxError('');
+    setBboxResults(null);
+    setBboxApplied(false);
+    try {
+      // Gửi 100x100 để response trả về tọa độ theo % (0-100) trực tiếp
+      const res = await axios.post(
+        `${API_URL}/api/tasks/${task.id}/ai-assist`,
+        { image_width: 100, image_height: 100 },
+        { headers: getAuthHeaders() }
+      );
+      setBboxResults(res.data);
+    } catch (err) {
+      setBboxError(err?.response?.data?.message || 'AI Assist gặp lỗi, vui lòng thử lại.');
+    } finally {
+      setBboxLoading(false);
+    }
+  };
+
   // Reset AI state when task changes
   React.useEffect(() => {
     setAiSuggestions(null);
     setAiError('');
     setAiApplied(false);
+    setBboxResults(null);
+    setBboxError('');
+    setBboxApplied(false);
   }, [task?.id]);
 
   return (
@@ -249,6 +277,95 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
         )}
         {rightTab === 'ai' && kind === 'image' && (
           <div className="p-4 space-y-4">
+            {/* ── Section 1: AI Bbox Detection ── */}
+            <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-3">
+              <p className="text-xs text-indigo-300 font-semibold mb-0.5">✨ AI Phát hiện Bounding Box</p>
+              <p className="text-xs text-indigo-400/70">AI tự động phát hiện vùng đối tượng và tạo bbox nháp để bạn chỉnh sửa.</p>
+            </div>
+            {isReadOnly ? (
+              <p className="text-xs text-gray-500 italic">Task đã nộp, không thể dùng AI.</p>
+            ) : (
+              <>
+                <button
+                  onClick={handleAiAssist}
+                  disabled={bboxLoading}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                >
+                  {bboxLoading ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                      </svg>
+                      Đang phân tích ảnh...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 010 2H5a1 1 0 01-1-1zm0 8a1 1 0 011-1h4a1 1 0 010 2H5a1 1 0 01-1-1zm8-8a1 1 0 011-1h4a1 1 0 010 2h-4a1 1 0 01-1-1zm0 8a1 1 0 011-1h4a1 1 0 010 2h-4a1 1 0 01-1-1zM3 3h18v18H3z" />
+                      </svg>
+                      Phát hiện Bounding Box
+                    </>
+                  )}
+                </button>
+                {bboxError && (
+                  <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-3">
+                    <p className="text-xs text-rose-400">{bboxError}</p>
+                  </div>
+                )}
+                {bboxResults && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Kết quả phát hiện</p>
+                      <span className="text-xs text-indigo-400/70">{bboxResults.mode || 'AI'} · {bboxResults.bboxes?.length || 0} bbox</span>
+                    </div>
+                    {(!bboxResults.bboxes || bboxResults.bboxes.length === 0) ? (
+                      <p className="text-sm text-gray-500 italic">AI không phát hiện được đối tượng nào.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                        {bboxResults.bboxes.map((b, i) => {
+                          const pct = Math.round((b.confidence || 0) * 100);
+                          const labelInfo = labels.find(l => l.name === b.label);
+                          return (
+                            <div key={i} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-2.5">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: labelInfo?.color || '#6366f1' }} />
+                                <span className="text-xs font-semibold text-gray-200 flex-1 truncate">{b.label}</span>
+                                <span className={`text-xs font-bold ${pct >= 80 ? 'text-emerald-400' : pct >= 50 ? 'text-yellow-400' : 'text-gray-500'}`}>{pct}%</span>
+                              </div>
+                              <div className="h-1 w-full rounded-full bg-gray-700 overflow-hidden">
+                                <div className={`h-full rounded-full ${pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-gray-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {!bboxApplied && bboxResults.bboxes?.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (onApplyAiBboxes) onApplyAiBboxes(bboxResults.bboxes);
+                          setBboxApplied(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 px-4 py-2 text-xs font-semibold text-white transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Áp dụng bbox lên ảnh
+                      </button>
+                    )}
+                    {bboxApplied && (
+                      <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2.5 text-center">
+                        <p className="text-xs text-emerald-400 font-medium">Đã áp dụng bbox — kiểm tra và chỉnh sửa trước khi nộp</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="border-t border-gray-700/50 pt-3">
             <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3">
               <p className="text-xs text-purple-300 font-semibold mb-0.5">AI Gợi ý nhãn (Google Gemini)</p>
               <p className="text-xs text-purple-400/70">AI phân tích ảnh và gợi ý nhãn phù hợp từ bộ nhãn của task.</p>
@@ -342,6 +459,7 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
                 )}
               </>
             )}
+            </div>{/* end label-suggestions section */}
           </div>
         )}
       </div>

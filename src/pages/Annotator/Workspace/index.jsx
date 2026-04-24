@@ -432,10 +432,9 @@ const handleSave = useCallback(async () => {
           annotations={annotations} textSpans={textSpans} audioLabels={labels}
           onApplyAiSuggestions={(suggestions) => {
             if (!suggestions?.length) return;
-            // Convert each AI suggestion into a bbox annotation spread across image
+            // Convert label suggestions into placeholder bboxes spread across image
             const count = suggestions.length;
             const newAnns = suggestions.map((s, i) => {
-              // Distribute boxes: if multiple, split image horizontally
               const colW = 90 / count;
               const x1 = 5 + i * colW;
               const x2 = x1 + colW - 2;
@@ -448,6 +447,19 @@ const handleSave = useCallback(async () => {
                 answer: null,
               };
             });
+            setAnnotations(newAnns);
+          }}
+          onApplyAiBboxes={(bboxes) => {
+            if (!bboxes?.length) return;
+            // API trả về {label, x, y, width, height, confidence} trong không gian 0-100 (%)
+            const newAnns = bboxes.map((b, i) => ({
+              id: Date.now() + i,
+              label: b.label,
+              bbox: [b.x, b.y, b.x + b.width, b.y + b.height],
+              confidence: b.confidence || 1.0,
+              type: 'bbox',
+              answer: null,
+            }));
             setAnnotations(newAnns);
           }}
         />

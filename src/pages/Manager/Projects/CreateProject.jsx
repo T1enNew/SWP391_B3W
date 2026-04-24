@@ -129,8 +129,22 @@ export default function CreateProject() {
       const project = res.data?.project || res.data;
       const projectId = coerceId(project);
       if (!projectId) throw new Error('Server không trả về project ID');
-      showToast('Tạo project thành công!');
-      setTimeout(() => navigate(`/manager/projects/${projectId}`), 800);
+
+      // Gán tasks cho annotators (chia đều items trong dataset)
+      try {
+        await axios.post(`${API_URL}/api/tasks/assign`, {
+          project_id: projectId,
+          dataset_id: selectedDatasetId,
+          annotator_ids: selectedAnnotators,
+          reviewer_id: selectedReviewer,
+        }, { headers: getAuthHeaders() });
+        showToast('Tạo project và phân công task thành công!');
+      } catch (assignErr) {
+        const assignMsg = assignErr?.response?.data?.message || 'Không thể phân công task';
+        showToast(`Project đã tạo nhưng phân công task thất bại: ${assignMsg}`, 'warning');
+      }
+
+      setTimeout(() => navigate(`/manager/projects/${projectId}`), 900);
     } catch (e) {
       let errorMsg = 'Tạo project thất bại';
       const data = e?.response?.data;
