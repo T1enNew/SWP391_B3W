@@ -38,6 +38,13 @@ const Workspace = () => {
   // Resets on page reload (intended - backend is source of truth on reload)
   const [statusOverrides, setStatusOverrides] = useState({});
 
+  // Bulk AI state
+  const [bulkAiDialog, setBulkAiDialog] = useState(false);
+  const [bulkAiLoading, setBulkAiLoading] = useState(false);
+  const [bulkAiProgress, setBulkAiProgress] = useState({ done: 0, total: 0 });
+  const [bulkAiDone, setBulkAiDone] = useState(false);
+  const [bulkAiCount, setBulkAiCount] = useState(0);
+
   // Mount lifecycle
   useEffect(() => {
     isMountedRef.current = true;
@@ -345,6 +352,45 @@ const handleSave = useCallback(async () => {
     }
   }, [tasks, statusOverrides, projectId, navigate]);
 
+  const handleBulkAiLabel = useCallback(async () => {
+    const targetTasks = tasks.filter((t) => !['submitted', 'resubmitted', 'approved'].includes(t.status));
+    setBulkAiLoading(true);
+    setBulkAiProgress({ done: 0, total: targetTasks.length });
+    let successCount = 0;
+
+    for (const t of targetTasks) {
+      try {
+        const res = await axios.post(
+          `${API_URL}/api/ai/pre-label/${t.id}`,
+          {},
+          { headers: getAuthHeaders() }
+        );
+        const suggestions = res.data?.suggestions || [];
+        if (suggestions.length > 0) {
+          const count = suggestions.length;
+          const objects = suggestions.map((s, i) => {
+            const colW = 90 / count;
+            const x1 = 5 + i * colW;
+            const x2 = x1 + colW - 2;
+            return { label: s.name, bbox: [x1, 5, x2, 95], confidence: s.confidence || 1.0, answer: null };
+          });
+          await axios.put(
+            `${API_URL}/api/tasks/${t.id}/save`,
+            { annotation_data: { objects } },
+            { headers: getAuthHeaders() }
+          );
+          successCount++;
+        }
+      } catch {}
+      setBulkAiProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+    }
+
+    setBulkAiCount(successCount);
+    setBulkAiLoading(false);
+    setBulkAiDone(true);
+    if (currentTaskId) loadTaskDetail(currentTaskId);
+  }, [tasks, currentTaskId, loadTaskDetail]);
+
   // Keyboard shortcuts
   useEffect(() => {
     if (loading) return;
@@ -396,10 +442,19 @@ const handleSave = useCallback(async () => {
                 </svg>
               </button>
             </div>
-            <div className="hidden sm:block w-32 shrink-0">
-              <div className="h-1.5 w-full rounded-full bg-gray-700 overflow-hidden">
-                <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+            <div className="hidden sm:flex items-center gap-2 shrink-0">
+              <div className="w-24">
+                <div className="h-1.5 w-full rounded-full bg-gray-700 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+                </div>
               </div>
+              <button
+                onClick={() => { setBulkAiDialog(true); setBulkAiDone(false); }}
+                className="flex items-center gap-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/40 px-3 py-1.5 text-xs font-semibold text-purple-300 transition-all whitespace-nowrap"
+                title="AI tự động gán nhãn toàn bộ project"
+              >
+                ✨ AI gán nhãn tất cả
+              </button>
             </div>
           </div>
           {effectiveTask && (
@@ -424,32 +479,83 @@ const handleSave = useCallback(async () => {
           annotations={annotations} labels={labels} textSpans={textSpans} setTextSpans={setTextSpans}
           annotationNote={annotationNote} setAnnotationNote={setAnnotationNote} />
       </div>
+      {bulkAiDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="p-6 border-b border-gray-700/60">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-2xl">✨</span>
+                <h3 className="text-base font-bold text-gray-100">AI hỗ trợ gán nhãn tự động</h3>
+              </div>
+              <p className="text-xs text-gray-500 ml-9">Google Gemini</p>
+            </div>
+            <div className="p-6 space-y-4">
+              {!bulkAiLoading && !bulkAiDone && (
+                <>
+                  <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-4">
+                    <p className="text-sm text-purple-200 leading-relaxed">
+                      AI sẽ tự động phân tích và gán nhãn cho tất cả <span className="font-bold text-purple-100">{tasks.filter(t => !['submitted','resubmitted','approved'].includes(t.status)).length} task</span> chưa hoàn thành trong project này.
+                    </p>
+                    <p className="text-xs text-purple-400/70 mt-2">Sau khi hoàn thành, nhãn sẽ tự động hiển thị khi bạn chuyển sang từng task. Bạn vẫn có thể chỉnh sửa lại.</p>
+                  </div>
+                  <p className="text-sm text-gray-400">Bạn có muốn AI hỗ trợ gán nhãn toàn bộ project này không?</p>
+                </>
+              )}
+              {bulkAiLoading && (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-300 font-medium">Đang xử lý...</p>
+                  <div className="h-2 w-full rounded-full bg-gray-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-purple-500 transition-all duration-300"
+                      style={{ width: bulkAiProgress.total > 0 ? `${Math.round((bulkAiProgress.done / bulkAiProgress.total) * 100)}%` : '0%' }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 text-right">{bulkAiProgress.done}/{bulkAiProgress.total} tasks</p>
+                  <p className="text-xs text-gray-500 italic">Vui lòng không đóng trang trong lúc AI đang xử lý.</p>
+                </div>
+              )}
+              {bulkAiDone && (
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-4">
+                  <p className="text-sm text-emerald-300 font-semibold mb-1">Hoàn thành!</p>
+                  <p className="text-sm text-emerald-200">AI đã gán nhãn thành công <span className="font-bold">{bulkAiCount}</span> task. Nhãn sẽ tự động hiện khi bạn chuyển sang từng task.</p>
+                </div>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex justify-end gap-2">
+              {!bulkAiLoading && !bulkAiDone && (
+                <>
+                  <button
+                    onClick={() => setBulkAiDialog(false)}
+                    className="rounded-lg border border-gray-600 hover:border-gray-500 text-gray-400 hover:text-gray-300 px-4 py-2 text-sm font-medium transition-all"
+                  >
+                    Không
+                  </button>
+                  <button
+                    onClick={handleBulkAiLabel}
+                    className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 text-sm font-semibold transition-all flex items-center gap-2"
+                  >
+                    ✨ Có, bắt đầu
+                  </button>
+                </>
+              )}
+              {bulkAiDone && (
+                <button
+                  onClick={() => setBulkAiDialog(false)}
+                  className="rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 px-5 py-2 text-sm font-semibold transition-all"
+                >
+                  Đóng
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="w-80 shrink-0">
         <InfoPanel task={effectiveTask}
           onReset={handleReset}
           saving={saving}
           allDone={showSubmitButton} onSubmitProject={handleSubmitProject}
           annotations={annotations} textSpans={textSpans} audioLabels={labels}
-          onApplyAiSuggestions={(suggestions) => {
-            if (!suggestions?.length) return;
-            // Convert each AI suggestion into a bbox annotation spread across image
-            const count = suggestions.length;
-            const newAnns = suggestions.map((s, i) => {
-              // Distribute boxes: if multiple, split image horizontally
-              const colW = 90 / count;
-              const x1 = 5 + i * colW;
-              const x2 = x1 + colW - 2;
-              return {
-                id: Date.now() + i,
-                label: s.name,
-                bbox: [x1, 5, x2, 95],
-                confidence: s.confidence || 1.0,
-                type: 'bbox',
-                answer: null,
-              };
-            });
-            setAnnotations(newAnns);
-          }}
         />
       </div>
     </div>
