@@ -354,64 +354,56 @@ const handleSave = useCallback(async () => {
   }, [tasks, statusOverrides, projectId, navigate]);
 
   const handleBulkAiLabel = useCallback(async () => {
-    const targetTasks = tasks.filter((t) => !['submitted', 'resubmitted', 'approved'].includes(t.status));
+    // Only image tasks that aren't already submitted/approved
+    const targetTasks = tasks.filter((t) =>
+      !['submitted', 'resubmitted', 'approved'].includes(t.status)
+    );
     setBulkAiLoading(true);
     setBulkAiError('');
     setBulkAiProgress({ done: 0, total: targetTasks.length });
     let successCount = 0;
     let lastError = '';
 
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
     for (let i = 0; i < targetTasks.length; i++) {
       const t = targetTasks[i];
-      // Delay between requests to avoid Gemini rate limiting (except first)
-      if (i > 0) await delay(3000);
-
-      let retries = 2;
-      let succeeded = false;
-      while (retries > 0 && !succeeded) {
-        try {
-          const res = await axios.post(
-            `${API_URL}/api/ai/pre-label/${t.id}`,
-            {},
-            { headers: getAuthHeaders() }
-          );
-          const suggestions = res.data?.suggestions || [];
-          if (suggestions.length > 0) {
+      try {
+        // apply=true → backend saves suggestions to annotation_data automatically
+        const res = await axios.post(
+          `${API_URL}/api/ai/pre-label/${t.id}?apply=true`,
+          {},
+          { headers: getAuthHeaders() }
+        );
+        const applied = res.data?.applied;
+        const suggestions = res.data?.suggestions || [];
+        if (applied || suggestions.length > 0) {
+          if (!applied && suggestions.length > 0) {
+            // Fallback: backend didn't auto-save, save manually with placeholder bboxes
             const count = suggestions.length;
             const objects = suggestions.map((s, idx) => {
               const colW = 90 / count;
               const x1 = 5 + idx * colW;
-              const x2 = x1 + colW - 2;
-              return { label: s.name, bbox: [x1, 5, x2, 95], confidence: s.confidence || 1.0, answer: null };
+              return { label: s.name || s.label || String(s), bbox: [x1, 5, x1 + colW - 2, 95], confidence: s.confidence || 1.0, answer: null };
             });
-            await axios.put(
-              `${API_URL}/api/tasks/${t.id}/save`,
-              { annotation_data: { objects } },
-              { headers: getAuthHeaders() }
-            );
-            successCount++;
+            await axios.put(`${API_URL}/api/tasks/${t.id}/save`, { annotation_data: { objects } }, { headers: getAuthHeaders() });
           }
-          succeeded = true;
-        } catch (err) {
-          retries--;
-          if (retries > 0) {
-            // Wait before retry
-            await delay(4000);
-          } else {
-            const serverMsg = err?.response?.data?.message || '';
-            const serverErr = err?.response?.data?.error || '';
-            const combined = serverErr ? `${serverMsg} — ${serverErr}` : serverMsg;
-            if (combined.includes('GoogleGenerativeAI') || combined.includes('generativelanguage')) {
-              lastError = 'Gemini API bị giới hạn tốc độ (rate limit). Thử lại sau vài phút.';
-            } else {
-              lastError = combined || `Lỗi server (${err?.response?.status || 'unknown'})`;
-            }
-          }
+          successCount++;
         }
+      } catch (err) {
+        const serverMsg = err?.response?.data?.message || '';
+        const serverErr = err?.response?.data?.error || '';
+        const combined = serverErr ? `${serverMsg} — ${serverErr}` : serverMsg;
+        if (combined.includes('GoogleGenerativeAI') || combined.includes('generativelanguage')) {
+          lastError = 'Gemini API bị giới hạn tốc độ (rate limit). Thử lại sau vài phút.';
+        } else {
+          lastError = combined || `Lỗi server (${err?.response?.status || 'unknown'})`;
+        }
+        console.error(`AI pre-label failed for task ${t.id}:`, err?.response?.data || err.message);
       }
       setBulkAiProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+      // Delay between tasks to avoid Gemini rate limit (free tier ~2 req/min)
+      if (i < targetTasks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
 
     setBulkAiCount(successCount);
