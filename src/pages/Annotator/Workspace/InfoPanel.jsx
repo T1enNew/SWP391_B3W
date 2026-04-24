@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import axios from 'axios';
+import { API_URL } from '../../../config/api';
+import { getAuthHeaders } from '../../../utils/auth';
 import { TASK_STATUS } from './constants';
 import { getTaskKind } from './utils';
 
@@ -36,7 +39,13 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
         }
       }
     } catch (err) {
-      setAiError(err?.response?.data?.message || 'AI gặp lỗi, vui lòng thử lại.');
+      const msg = err?.response?.data?.message || '';
+      const detail = err?.response?.data?.error || '';
+      if (msg.includes('GoogleGenerativeAI') || detail.includes('GoogleGenerativeAI') || detail.includes('generativelanguage')) {
+        setAiError('Gemini API key chưa được cấu hình hoặc hết quota. Liên hệ admin kiểm tra biến GEMINI_API_KEY trên server.');
+      } else {
+        setAiError(msg || 'AI gặp lỗi, vui lòng thử lại.');
+      }
     } finally {
       setAiLoading(false);
     }
@@ -57,7 +66,13 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
       );
       setBboxResults(res.data);
     } catch (err) {
-      setBboxError(err?.response?.data?.message || 'AI Assist gặp lỗi, vui lòng thử lại.');
+      const msg = err?.response?.data?.message || '';
+      const detail = err?.response?.data?.error || '';
+      if (msg.includes('GoogleGenerativeAI') || detail.includes('GoogleGenerativeAI') || detail.includes('generativelanguage')) {
+        setBboxError('Gemini API key chưa được cấu hình hoặc hết quota. Liên hệ admin kiểm tra biến GEMINI_API_KEY trên server.');
+      } else {
+        setBboxError(msg || 'AI Assist gặp lỗi, vui lòng thử lại.');
+      }
     } finally {
       setBboxLoading(false);
     }

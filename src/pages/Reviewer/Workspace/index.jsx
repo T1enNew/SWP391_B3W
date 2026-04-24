@@ -45,9 +45,11 @@ const ReviewerWorkspace = () => {
       const headers = { Authorization: `Bearer ${getAuthToken()}` };
       const params = { limit: 1000 };
 
-      const [pendingRes, reviewedRes] = await Promise.allSettled([
+      const [pendingRes, reviewedRes, projRes, statsRes] = await Promise.allSettled([
         axios.get(`${API_URL}/api/reviews/pending`, { headers, params }),
         axios.get(`${API_URL}/api/reviews/reviewed`, { headers, params }),
+        projectId ? axios.get(`${API_URL}/api/projects/${projectId}`, { headers }) : Promise.resolve({ data: null }),
+        projectId ? axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`, { headers }) : Promise.resolve({ data: null }),
       ]);
 
       const extractList = (res) => {
@@ -68,7 +70,26 @@ const ReviewerWorkspace = () => {
         : combined;
 
       const taskList = filtered.map(normalizeTask);
-      const itemList = buildItemList(taskList, projectId);
+      let itemList = buildItemList(taskList, projectId);
+
+      // Apply sample rate: limit pending queue to only the required number of tasks
+      if (projectId && projRes.status === 'fulfilled' && projRes.value.data) {
+        const projData = projRes.value.data?.project || projRes.value.data;
+        const rawRate = projData?.review_policy?.sample_rate;
+        if (rawRate != null && rawRate < 1) {
+          // Use total_tasks from project (all tasks), not just submitted ones
+          const projectTotal = projData?.total_tasks || projData?.totalTasks || 0;
+          const totalTasks = projectTotal || (statsRes.status === 'fulfilled'
+            ? (statsRes.value.data?.total ?? itemList.length)
+            : itemList.length);
+          const targetCount = Math.max(1, Math.ceil(totalTasks * rawRate));
+          const reviewedItems = itemList.filter(item => item.status !== 'pending_review' && item.status !== 'partially_reviewed');
+          const pendingItems  = itemList.filter(item => item.status === 'pending_review' || item.status === 'partially_reviewed');
+          const remaining     = Math.max(0, targetCount - reviewedItems.length);
+          itemList = [...reviewedItems, ...pendingItems.slice(0, remaining)];
+        }
+      }
+
       setItems(itemList);
       if (itemList.length > 0) selectItem(itemList[0]);
     } catch (err) {

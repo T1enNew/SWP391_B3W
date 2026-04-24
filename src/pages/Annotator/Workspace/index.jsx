@@ -44,6 +44,7 @@ const Workspace = () => {
   const [bulkAiProgress, setBulkAiProgress] = useState({ done: 0, total: 0 });
   const [bulkAiDone, setBulkAiDone] = useState(false);
   const [bulkAiCount, setBulkAiCount] = useState(0);
+  const [bulkAiError, setBulkAiError] = useState('');
 
   // Mount lifecycle
   useEffect(() => {
@@ -355,37 +356,66 @@ const handleSave = useCallback(async () => {
   const handleBulkAiLabel = useCallback(async () => {
     const targetTasks = tasks.filter((t) => !['submitted', 'resubmitted', 'approved'].includes(t.status));
     setBulkAiLoading(true);
+    setBulkAiError('');
     setBulkAiProgress({ done: 0, total: targetTasks.length });
     let successCount = 0;
+    let lastError = '';
 
-    for (const t of targetTasks) {
-      try {
-        const res = await axios.post(
-          `${API_URL}/api/ai/pre-label/${t.id}`,
-          {},
-          { headers: getAuthHeaders() }
-        );
-        const suggestions = res.data?.suggestions || [];
-        if (suggestions.length > 0) {
-          const count = suggestions.length;
-          const objects = suggestions.map((s, i) => {
-            const colW = 90 / count;
-            const x1 = 5 + i * colW;
-            const x2 = x1 + colW - 2;
-            return { label: s.name, bbox: [x1, 5, x2, 95], confidence: s.confidence || 1.0, answer: null };
-          });
-          await axios.put(
-            `${API_URL}/api/tasks/${t.id}/save`,
-            { annotation_data: { objects } },
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    for (let i = 0; i < targetTasks.length; i++) {
+      const t = targetTasks[i];
+      // Delay between requests to avoid Gemini rate limiting (except first)
+      if (i > 0) await delay(3000);
+
+      let retries = 2;
+      let succeeded = false;
+      while (retries > 0 && !succeeded) {
+        try {
+          const res = await axios.post(
+            `${API_URL}/api/ai/pre-label/${t.id}`,
+            {},
             { headers: getAuthHeaders() }
           );
-          successCount++;
+          const suggestions = res.data?.suggestions || [];
+          if (suggestions.length > 0) {
+            const count = suggestions.length;
+            const objects = suggestions.map((s, idx) => {
+              const colW = 90 / count;
+              const x1 = 5 + idx * colW;
+              const x2 = x1 + colW - 2;
+              return { label: s.name, bbox: [x1, 5, x2, 95], confidence: s.confidence || 1.0, answer: null };
+            });
+            await axios.put(
+              `${API_URL}/api/tasks/${t.id}/save`,
+              { annotation_data: { objects } },
+              { headers: getAuthHeaders() }
+            );
+            successCount++;
+          }
+          succeeded = true;
+        } catch (err) {
+          retries--;
+          if (retries > 0) {
+            // Wait before retry
+            await delay(4000);
+          } else {
+            const serverMsg = err?.response?.data?.message || '';
+            const serverErr = err?.response?.data?.error || '';
+            const combined = serverErr ? `${serverMsg} — ${serverErr}` : serverMsg;
+            if (combined.includes('GoogleGenerativeAI') || combined.includes('generativelanguage')) {
+              lastError = 'Gemini API bị giới hạn tốc độ (rate limit). Thử lại sau vài phút.';
+            } else {
+              lastError = combined || `Lỗi server (${err?.response?.status || 'unknown'})`;
+            }
+          }
         }
-      } catch {}
+      }
       setBulkAiProgress((prev) => ({ ...prev, done: prev.done + 1 }));
     }
 
     setBulkAiCount(successCount);
+    if (lastError && successCount === 0) setBulkAiError(lastError);
     setBulkAiLoading(false);
     setBulkAiDone(true);
     if (currentTaskId) loadTaskDetail(currentTaskId);
@@ -449,7 +479,7 @@ const handleSave = useCallback(async () => {
                 </div>
               </div>
               <button
-                onClick={() => { setBulkAiDialog(true); setBulkAiDone(false); }}
+                onClick={() => { setBulkAiDialog(true); setBulkAiDone(false); setBulkAiError(''); }}
                 className="flex items-center gap-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/40 px-3 py-1.5 text-xs font-semibold text-purple-300 transition-all whitespace-nowrap"
                 title="AI tự động gán nhãn toàn bộ project"
               >
@@ -514,10 +544,29 @@ const handleSave = useCallback(async () => {
                   <p className="text-xs text-gray-500 italic">Vui lòng không đóng trang trong lúc AI đang xử lý.</p>
                 </div>
               )}
-              {bulkAiDone && (
+              {bulkAiDone && bulkAiError && bulkAiCount === 0 && (
+                <div className="space-y-3">
+                  <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-4">
+                    <p className="text-sm text-rose-300 font-semibold mb-1">AI gặp lỗi</p>
+                    <p className="text-sm text-rose-200">{bulkAiError}</p>
+                    <p className="text-xs text-rose-400/70 mt-2">Vui lòng kiểm tra kết nối server và thử lại.</p>
+                  </div>
+                </div>
+              )}
+              {bulkAiDone && !bulkAiError && (
                 <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-4">
                   <p className="text-sm text-emerald-300 font-semibold mb-1">Hoàn thành!</p>
                   <p className="text-sm text-emerald-200">AI đã gán nhãn thành công <span className="font-bold">{bulkAiCount}</span> task. Nhãn sẽ tự động hiện khi bạn chuyển sang từng task.</p>
+                </div>
+              )}
+              {bulkAiDone && bulkAiError && bulkAiCount > 0 && (
+                <div className="space-y-2">
+                  <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-3">
+                    <p className="text-sm text-emerald-200">Gán nhãn thành công <span className="font-bold">{bulkAiCount}</span> task.</p>
+                  </div>
+                  <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3">
+                    <p className="text-xs text-yellow-300">Một số task gặp lỗi: {bulkAiError}</p>
+                  </div>
                 </div>
               )}
             </div>

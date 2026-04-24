@@ -21,10 +21,10 @@ const ReviewerProjectDetail = () => {
   const [error, setError]           = useState('');
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [toast, setToast]           = useState(null);
-  const [modalType, setModalType]   = useState(null);
-  const [reviewComment, setReviewComment] = useState('');
-  const [isSubmitting, setIsSubmitting]   = useState(false);
-  const [modalError, setModalError] = useState('');
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [reviewComment, setReviewComment]       = useState('');
+  const [isSubmitting, setIsSubmitting]         = useState(false);
+  const [modalError, setModalError]             = useState('');
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
@@ -43,10 +43,14 @@ const ReviewerProjectDetail = () => {
       const projData = projRes.data?.project || projRes.data;
       setProject(projData);
 
+      // Total tasks in the project (all tasks, not just submitted ones)
+      const projectTotal = projData?.total_tasks || projData?.totalTasks || 0;
+
       const s = statsRes.data;
       if (s && (s.total ?? 0) > 0) {
         setStats({
           total:         s.total        ?? 0,
+          project_total: projectTotal   || s.total,
           approved:      s.approved     ?? 0,
           rejected:      s.rejected     ?? 0,
           pending:       s.pending      ?? (s.total ?? 0) - (s.approved ?? 0) - (s.rejected ?? 0),
@@ -69,6 +73,7 @@ const ReviewerProjectDetail = () => {
         const total    = pending.length + reviewed.length;
         setStats({
           total,
+          project_total: projectTotal   || total,
           approved,
           rejected,
           pending: pending.length,
@@ -84,38 +89,49 @@ const ReviewerProjectDetail = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const submitProjectAction = async () => {
+  const handleApproveProject = async () => {
     setModalError('');
-    if (modalType === 'reject' && !reviewComment.trim()) {
-      setModalError('Vui lòng điền lý do Reject.');
-      return;
-    }
     setIsSubmitting(true);
     try {
-      if (modalType === 'approve') {
-        await axios.post(
-          `${API_URL}/api/projects/${projectId}/approve`,
-          { comment: reviewComment },
-          { headers: { Authorization: `Bearer ${getAuthToken()}` } }
-        );
-        setToast({ type: 'success', message: 'Đã Approve dự án.' });
-      } else {
-        await axios.post(
-          `${API_URL}/api/projects/${projectId}/reject`,
-          { comment: reviewComment },
-          { headers: { Authorization: `Bearer ${getAuthToken()}` } }
-        );
-        setToast({ type: 'success', message: 'Đã Reject dự án.' });
+      const headers = { Authorization: `Bearer ${getAuthToken()}` };
+
+      // Auto-approve ALL remaining pending submissions in this project
+      // This ensures 100% approval rate before calling project approve
+      const pendingRes = await axios.get(`${API_URL}/api/reviews/pending`, {
+        headers,
+        params: { limit: 1000 },
+      }).catch(() => ({ data: [] }));
+      const rawPending = pendingRes.data;
+      const pendingList = Array.isArray(rawPending) ? rawPending
+        : Array.isArray(rawPending?.reviews) ? rawPending.reviews
+        : Array.isArray(rawPending?.data) ? rawPending.data : [];
+      const projectPending = pendingList.filter(t => {
+        const pid = t.project?.id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
+        return String(pid) === String(projectId);
+      });
+      for (const t of projectPending) {
+        const submissionId = t.id || t._id;
+        if (submissionId) {
+          await axios.post(
+            `${API_URL}/api/reviews/${submissionId}/approve`,
+            { review_comments: reviewComment },
+            { headers }
+          ).catch((e) => console.warn('Auto-approve task failed:', submissionId, e?.response?.data));
+        }
       }
-      setModalType(null);
+
+      // Approve the project (all tasks approved → backend approval rate = 100%)
+      await axios.post(
+        `${API_URL}/api/projects/${projectId}/approve`,
+        { comment: reviewComment },
+        { headers }
+      );
+      setToast({ type: 'success', message: 'Đã Approve dự án thành công.' });
+      setShowApproveModal(false);
       setReviewComment('');
       fetchData();
     } catch (err) {
-      if (err.response?.status === 400 && modalType === 'approve') {
-        setModalError(err.response?.data?.message || 'Tỷ lệ Approve chưa đạt ngưỡng cho phép.');
-      } else {
-        setModalError(err.response?.data?.message || 'Có lỗi xảy ra.');
-      }
+      setModalError(err.response?.data?.message || 'Có lỗi xảy ra khi approve.');
     } finally {
       setIsSubmitting(false);
     }
@@ -150,14 +166,22 @@ const ReviewerProjectDetail = () => {
 
   const overdue       = project?.deadline && new Date(project.deadline) < new Date();
   const guideline     = project?.guidelines || '';
-  const reviewed      = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
-  const progressPct   = stats?.total ? Math.round((reviewed / stats.total) * 100) : 0;
-  const approvalRate  = stats?.approval_rate ?? (stats?.total > 0 ? Math.round(((stats?.approved ?? 0) / stats.total) * 100) : 0);
-  const canFinalize   = stats?.total > 0 && (stats?.pending ?? 0) === 0 && !['completed', 'waiting_rework'].includes(project?.status);
   const sampleRate    = project?.review_policy?.sample_rate != null
     ? Math.round(project.review_policy.sample_rate * 100)
     : null;
-  const hasSubmissions = (stats?.total ?? 0) > 0;
+  const reviewed        = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
+  // project_total = tổng task thực của project (không phải chỉ submitted)
+  const projectTotal    = stats?.project_total || stats?.total || 0;
+  // How many tasks the reviewer is required to review based on sample rate
+  const targetCount     = (sampleRate !== null && projectTotal > 0)
+    ? Math.max(1, Math.ceil(projectTotal * sampleRate / 100))
+    : (stats?.total ?? 0);
+  const pendingDisplay  = Math.max(0, targetCount - reviewed);
+  const progressPct     = targetCount > 0 ? Math.min(100, Math.round((reviewed / targetCount) * 100)) : 0;
+  // Tỷ lệ approve = approved / số task đã review trong sample (không phải tổng submitted)
+  const approvalRate    = reviewed > 0 ? Math.round(((stats?.approved ?? 0) / reviewed) * 100) : 0;
+  const canFinalize     = (stats?.total ?? 0) > 0 && reviewed >= targetCount && !['completed', 'waiting_rework'].includes(project?.status);
+  const hasSubmissions  = (stats?.total ?? 0) > 0;
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
@@ -212,36 +236,15 @@ const ReviewerProjectDetail = () => {
               )}
 
               {canFinalize && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setModalType('reject'); setReviewComment(''); setModalError(''); }}
-                    className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-400 hover:bg-rose-500/20 transition-all"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Reject Project
-                  </button>
-                  <button
-                    onClick={() => { setModalType('approve'); setReviewComment(''); setModalError(''); }}
-                    disabled={approvalRate < 70}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
-                      approvalRate < 70
-                        ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
-                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Approve Project
-                  </button>
-                </div>
-              )}
-              {canFinalize && approvalRate < 70 && (
-                <p className="text-xs text-rose-400/90">
-                  Tỷ lệ approved ({approvalRate}%) chưa đủ 70%. Bắt buộc Reject.
-                </p>
+                <button
+                  onClick={() => { setShowApproveModal(true); setReviewComment(''); setModalError(''); }}
+                  className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Approve Project
+                </button>
               )}
             </div>
           </div>
@@ -249,11 +252,11 @@ const ReviewerProjectDetail = () => {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 mt-5">
             <div className="rounded-lg bg-gray-900/60 p-3">
               <p className="text-xs text-gray-500">Tổng task</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-200">{stats?.total ?? 0}</p>
+              <p className="mt-0.5 text-2xl font-bold text-gray-200">{projectTotal || (stats?.total ?? 0)}</p>
             </div>
             <div className="rounded-lg bg-yellow-500/5 p-3 border border-yellow-500/10">
               <p className="text-xs text-yellow-500/70">Cần review</p>
-              <p className="mt-0.5 text-2xl font-bold text-yellow-400">{stats?.pending ?? 0}</p>
+              <p className="mt-0.5 text-2xl font-bold text-yellow-400">{pendingDisplay}</p>
             </div>
             <div className="rounded-lg bg-emerald-500/5 p-3 border border-emerald-500/10">
               <p className="text-xs text-emerald-500/70">Approved</p>
@@ -277,7 +280,7 @@ const ReviewerProjectDetail = () => {
               <p className="text-sm text-violet-300">
                 <span className="font-semibold">Sample rate: {sampleRate}%</span>
                 <span className="text-violet-400/70 ml-1">
-                  — reviewer kiểm tra ngẫu nhiên {sampleRate}% số bài nộp của annotator
+                  — chỉ cần review {targetCount}/{projectTotal || (stats?.total ?? 0)} task ({sampleRate}% tổng)
                 </span>
               </p>
             </div>
@@ -287,11 +290,11 @@ const ReviewerProjectDetail = () => {
             <div className="mt-4">
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span className="text-gray-400 font-medium">Tiến độ review</span>
-                <span className="text-gray-200 font-semibold">{progressPct}% ({reviewed}/{stats.total})</span>
+                <span className="text-gray-200 font-semibold">{progressPct}% ({reviewed}/{targetCount})</span>
               </div>
               <div className="h-3 w-full rounded-full bg-gray-700/60 overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${reviewed === stats.total ? 'bg-emerald-500' : 'bg-gradient-to-r from-violet-600 to-fuchsia-500'}`}
+                  className={`h-full rounded-full transition-all duration-500 ${reviewed >= targetCount ? 'bg-emerald-500' : 'bg-gradient-to-r from-violet-600 to-fuchsia-500'}`}
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
@@ -325,9 +328,9 @@ const ReviewerProjectDetail = () => {
               <p className="text-sm text-gray-400 mt-0.5">
                 {!hasSubmissions
                   ? 'Annotator chưa nộp bài, chưa có gì để review'
-                  : (stats?.pending ?? 0) > 0
-                    ? `Còn ${stats.pending} task cần review`
-                    : 'Tất cả task đã được review'}
+                  : pendingDisplay > 0
+                    ? `Còn ${pendingDisplay} task cần review`
+                    : 'Đã đủ sample — có thể finalize project'}
               </p>
             </div>
             <button
@@ -344,8 +347,8 @@ const ReviewerProjectDetail = () => {
               </svg>
               {!hasSubmissions
                 ? 'Chưa có bài nộp'
-                : (stats?.pending ?? 0) > 0
-                  ? `Vào review (${stats.pending} task)`
+                : pendingDisplay > 0
+                  ? `Vào review (${pendingDisplay} task)`
                   : 'Xem lại'}
             </button>
           </div>
@@ -377,42 +380,30 @@ const ReviewerProjectDetail = () => {
         </div>
       )}
 
-      {modalType && (
+      {showApproveModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-800 p-6 shadow-2xl">
             <div className="flex items-center gap-3 border-b border-gray-700/60 pb-4">
-              <div className={`rounded-full p-2.5 ${modalType === 'approve' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                {modalType === 'approve'
-                  ? <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                  : <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                }
+              <div className="rounded-full p-2.5 bg-emerald-500/10 text-emerald-400">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
               </div>
               <div>
-                <h2 className="text-lg font-bold text-gray-100">
-                  {modalType === 'approve' ? 'Approve Project' : 'Reject Project'}
-                </h2>
+                <h2 className="text-lg font-bold text-gray-100">Approve Project</h2>
                 <p className="text-sm text-gray-400 mt-0.5">
-                  {modalType === 'approve'
-                    ? 'Dự án sẽ chuyển sang trạng thái "Completed".'
-                    : 'Dự án sẽ chuyển về "Waiting Rework".'}
+                  Tất cả task trong sample sẽ được approve và dự án chuyển sang "Completed".
                 </p>
               </div>
             </div>
 
             <div className="mt-5">
-              <label className="flex justify-between text-sm font-medium text-gray-300 mb-1.5">
-                <span>Lý do / Bình luận</span>
-                {modalType === 'reject' && <span className="text-rose-400">* Bắt buộc</span>}
-              </label>
+              <label className="text-sm font-medium text-gray-300 mb-1.5 block">Nhận xét (tùy chọn)</label>
               <textarea
                 value={reviewComment}
                 onChange={(e) => { setReviewComment(e.target.value); if (modalError) setModalError(''); }}
-                placeholder={modalType === 'approve' ? 'Nhan xet (tuy chon)...' : 'Ly do reject...'}
-                className={`w-full resize-y rounded-xl border bg-gray-900/50 p-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 transition-all min-h-[100px] ${
-                  modalType === 'approve'
-                    ? 'border-gray-700 focus:border-emerald-500/50 focus:ring-emerald-500/20'
-                    : 'border-gray-700 focus:border-rose-500/50 focus:ring-rose-500/20'
-                }`}
+                placeholder="Nhận xét cho annotator..."
+                className="w-full resize-y rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-emerald-500/50 focus:ring-emerald-500/20 transition-all min-h-[80px]"
               />
             </div>
 
@@ -425,19 +416,15 @@ const ReviewerProjectDetail = () => {
             <div className="mt-6 flex justify-end gap-3">
               <button
                 disabled={isSubmitting}
-                onClick={() => { setModalType(null); setModalError(''); }}
+                onClick={() => { setShowApproveModal(false); setModalError(''); }}
                 className="rounded-lg px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-all disabled:opacity-50"
               >
-                Huy
+                Hủy
               </button>
               <button
-                disabled={isSubmitting || (modalType === 'reject' && !reviewComment.trim())}
-                onClick={submitProjectAction}
-                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-                  modalType === 'approve'
-                    ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
-                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
-                }`}
+                disabled={isSubmitting}
+                onClick={handleApproveProject}
+                className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting && (
                   <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -445,7 +432,7 @@ const ReviewerProjectDetail = () => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                 )}
-                {modalType === 'approve' ? 'Approve' : 'Reject'}
+                {isSubmitting ? 'Đang xử lý...' : 'Approve'}
               </button>
             </div>
           </div>

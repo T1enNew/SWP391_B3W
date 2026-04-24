@@ -31,18 +31,15 @@ const getProjectStatus = (stats, deadline) => {
   const overdue = deadline && new Date(deadline) < new Date();
   if (!stats || stats.total === 0)
     return { label: "Chưa có bài để review", color: "bg-gray-600 text-gray-300", icon: "○" };
-  if (stats.reviewed === stats.total) {
-    if (stats.rejected === stats.total)
-      return { label: "Đã reject hết", color: "bg-rose-500/15 text-rose-400 border border-rose-500/30", icon: "✗" };
+  const targetCount = stats.targetCount ?? stats.total;
+  const pendingDisplay = stats.pendingDisplay ?? stats.pending;
+  if (stats.reviewed >= targetCount)
     return { label: "Đã review xong", color: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30", icon: "✓" };
-  }
-  if (stats.rejected > 0)
-    return { label: "Chờ annotator sửa lại", color: "bg-amber-500/15 text-amber-400 border border-amber-500/30", icon: "↩" };
-  if (stats.pending > 0)
+  if (pendingDisplay > 0)
     return { label: "Đang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
   if (overdue)
     return { label: "Quá hạn", color: "bg-rose-500/15 text-rose-400 border border-rose-500/30", icon: "⚠" };
-  return { label: "Dang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
+  return { label: "Đang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
 };
 
 const StatusBadge = ({ stats, deadline }) => {
@@ -86,11 +83,11 @@ const ProjectCard = ({ project, onOpen }) => {
 
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="rounded-lg bg-gray-900/60 p-2.5 text-center">
-          <p className="text-lg font-bold text-gray-200">{stats.total || 0}</p>
+          <p className="text-lg font-bold text-gray-200">{stats.project_total || stats.total || 0}</p>
           <p className="text-xs text-gray-500">Tổng item</p>
         </div>
         <div className="rounded-lg bg-yellow-500/5 p-2.5 text-center border border-yellow-500/10">
-          <p className="text-lg font-bold text-yellow-400">{stats.pending || 0}</p>
+          <p className="text-lg font-bold text-yellow-400">{stats.pendingDisplay ?? stats.pending ?? 0}</p>
           <p className="text-xs text-yellow-500/70">Cần review</p>
         </div>
         <div className="rounded-lg bg-emerald-500/5 p-2.5 text-center border border-emerald-500/10">
@@ -99,27 +96,30 @@ const ProjectCard = ({ project, onOpen }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        <div className="rounded-lg bg-gray-900/40 p-2 text-center">
-          <p className="text-sm font-bold text-emerald-400">{stats.approved || 0} approved</p>
-        </div>
-        <div className="rounded-lg bg-gray-900/40 p-2 text-center">
-          <p className="text-sm font-bold text-rose-400">{stats.rejected || 0} rejected</p>
-        </div>
+      <div className="rounded-lg bg-gray-900/40 p-2 text-center mb-4">
+        <p className="text-sm font-bold text-emerald-400">{stats.reviewed || 0} đã approved</p>
       </div>
 
       {stats.total > 0 && (
         <div className="mb-3">
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="text-gray-500">Tiến độ review</span>
-            <span className="font-semibold text-gray-300">{stats.reviewed}/{stats.total}</span>
-          </div>
-          <div className="h-2 w-full rounded-full bg-gray-700/60 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${stats.reviewed === stats.total ? "bg-emerald-500" : "bg-gradient-to-r from-violet-600 to-fuchsia-500"}`}
-              style={{ width: `${stats.total ? Math.round((stats.reviewed / stats.total) * 100) : 0}%` }}
-            />
-          </div>
+          {(() => {
+            const targetCount = stats.targetCount ?? stats.total;
+            const pct = targetCount > 0 ? Math.min(100, Math.round((stats.reviewed / targetCount) * 100)) : 0;
+            return (
+              <>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="text-gray-500">Tiến độ review</span>
+                  <span className="font-semibold text-gray-300">{stats.reviewed}/{targetCount}</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-gray-700/60 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${stats.reviewed >= targetCount ? "bg-emerald-500" : "bg-gradient-to-r from-violet-600 to-fuchsia-500"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -193,7 +193,11 @@ const ReviewerProjectList = () => {
           datasetId: p.datasetId || null,
           datasetName: p.datasetId?.name || p.datasetName || "",
           review_policy: p.review_policy || null,
-          stats: { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
+          stats: {
+            total: 0,
+            project_total: p.total_tasks || p.totalTasks || 0,
+            pending: 0, approved: 0, rejected: 0, reviewed: 0,
+          },
         };
       });
 
@@ -236,7 +240,17 @@ const ReviewerProjectList = () => {
         else if (t.status === "rejected") projMap[pid].stats.rejected += 1;
       });
 
-      setProjects(Object.values(projMap));
+      // Apply sample rate: compute targetCount and pendingDisplay per project
+      const projectList = Object.values(projMap).map((p) => {
+        const rawRate = p.review_policy?.sample_rate;
+        const projectTotal = p.stats.project_total || p.stats.total;
+        const targetCount = (rawRate != null && rawRate < 1 && projectTotal > 0)
+          ? Math.max(1, Math.ceil(projectTotal * rawRate))
+          : p.stats.total;
+        const pendingDisplay = Math.max(0, targetCount - p.stats.reviewed);
+        return { ...p, stats: { ...p.stats, targetCount, pendingDisplay } };
+      });
+      setProjects(projectList);
     } catch (err) {
       if (err.response?.status === 403) {
         setProjects([]);
@@ -265,27 +279,26 @@ const ReviewerProjectList = () => {
     if (filter === "all") return true;
     const s = p.stats || {};
     const overdue = p.deadline && new Date(p.deadline) < new Date();
-    if (filter === "pending")      return (s.pending || 0) > 0;
-    if (filter === "reviewed")     return s.reviewed === s.total && s.total > 0;
-    if (filter === "has_rejected") return (s.rejected || 0) > 0;
+    if (filter === "pending")      return (s.pendingDisplay ?? s.pending ?? 0) > 0;
+    if (filter === "reviewed")     return s.reviewed >= (s.targetCount ?? s.total) && s.total > 0;
+    if (filter === "has_rejected") return false;
     if (filter === "overdue")      return overdue;
     return true;
   });
 
   const counts = {
     all:          projects.length,
-    pending:      projects.filter((p) => (p.stats?.pending || 0) > 0).length,
-    reviewed:     projects.filter((p) => p.stats?.reviewed === p.stats?.total && p.stats?.total > 0).length,
-    has_rejected: projects.filter((p) => (p.stats?.rejected || 0) > 0).length,
+    pending:      projects.filter((p) => (p.stats?.pendingDisplay ?? p.stats?.pending ?? 0) > 0).length,
+    reviewed:     projects.filter((p) => p.stats?.reviewed >= (p.stats?.targetCount ?? p.stats?.total) && p.stats?.total > 0).length,
+    has_rejected: 0,
     overdue:      projects.filter((p) => p.deadline && new Date(p.deadline) < new Date()).length,
   };
 
   const filterTabs = [
-    { key: "all",          label: "Tất cả" },
-    { key: "pending",      label: "Cần review" },
-    { key: "has_rejected", label: "Bị reject" },
-    { key: "reviewed",     label: "Đã xong" },
-    { key: "overdue",      label: "Quá hạn" },
+    { key: "all",      label: "Tất cả" },
+    { key: "pending",  label: "Cần review" },
+    { key: "reviewed", label: "Đã xong" },
+    { key: "overdue",  label: "Quá hạn" },
   ];
 
   if (loading) {
@@ -308,7 +321,7 @@ const ReviewerProjectList = () => {
               <h1 className="text-2xl font-bold text-gray-100">Công việc Review</h1>
               <p className="mt-1 text-sm text-gray-400">
                 {projects.length} project &mdash;{" "}
-                {projects.reduce((acc, p) => acc + (p.stats?.pending || 0), 0)} item cần review
+                {projects.reduce((acc, p) => acc + (p.stats?.pendingDisplay ?? p.stats?.pending ?? 0), 0)} item cần review
               </p>
             </div>
             <button
