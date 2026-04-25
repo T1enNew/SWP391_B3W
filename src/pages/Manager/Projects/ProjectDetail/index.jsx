@@ -234,12 +234,13 @@ const ManagerProjectDetail = () => {
     if (!annotatorIds.length) { setToast({ open: true, msg: 'Project chưa có annotator để phân công', severity: 'warning' }); return; }
     setAssignLoading(true);
     try {
-      await axios.post(`${API_URL}/api/tasks/assign`, {
+      const assignPayload = {
         project_id: project.id,
         dataset_id: datasets[0].id,
         annotator_ids: annotatorIds,
-        reviewer_id: reviewerId,
-      }, { headers: getAuthHeaders() });
+        ...(reviewerId ? { reviewer_id: reviewerId } : {}),
+      };
+      await axios.post(`${API_URL}/api/tasks/assign`, assignPayload, { headers: getAuthHeaders() });
       setToast({ open: true, msg: 'Phân công task thành công!', severity: 'success' });
     } catch (e) {
       const msg = e?.response?.data?.message || 'Phân công task thất bại';

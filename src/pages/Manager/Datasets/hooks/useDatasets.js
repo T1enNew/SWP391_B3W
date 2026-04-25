@@ -1,3 +1,8 @@
+// useDatasets.js
+// Hook trung tâm quản lý toàn bộ logic trang Datasets của Manager.
+// Bao gồm: fetch danh sách dataset, xem items, upload, xóa, edit, export JSON annotation,
+//   tính trạng thái hoàn thành (isComplete) và map task theo item (approvedItemsMap).
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -5,6 +10,7 @@ import { API_URL } from '../../../../config/api';
 import { getArray } from '../../../../utils/api';
 import { getAuthHeaders, coerceId, buildImageUrl } from '../utils';
 
+// Hook chính — trả về toàn bộ state, computed values, và handlers cần thiết cho trang Datasets
 export function useDatasets() {
   const navigate    = useNavigate();
   const fileInputRef = useRef(null);
@@ -45,7 +51,7 @@ export function useDatasets() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [dsStatusMap, setDsStatusMap]         = useState({});
 
-  /* ── derived ── */
+  // Index task theo itemId và tên file để tra cứu nhanh khi render từng item trong grid
   const tasksByItemId = useMemo(() => {
     const byId   = new Map();
     const byName = new Map();
@@ -65,6 +71,7 @@ export function useDatasets() {
     return { byId, byName };
   }, [linkedTasks]);
 
+  // Tra task liên quan đến 1 item cụ thể: tìm theo id trước, fallback theo tên file, dedup kết quả
   const getTasksForItem = useCallback((item) => {
     const id    = coerceId(item);
     const fname = item?.originalName || item?.original_name || item?.filename || '';
@@ -78,6 +85,8 @@ export function useDatasets() {
     });
   }, [tasksByItemId]);
 
+  // Dataset được coi là hoàn thành khi tất cả items đã có task approved.
+  // Quyết định hành vi khi click item: xem annotation (isComplete) vs xem detail page
   const isComplete = useMemo(() => {
     if (dsItems.length === 0) return false;
     if (dsItems.every(i => i.status === 'approved')) return true;
@@ -86,6 +95,7 @@ export function useDatasets() {
     return false;
   }, [dsItems, linkedTasks]);
 
+  // Đếm task theo trạng thái để hiển thị progress bar trong dataset detail panel
   const dsStats = useMemo(() => ({
     approved:   linkedTasks.filter(t => t.status === 'approved').length,
     reviewing:  linkedTasks.filter(t => t.status === 'submitted').length,
@@ -93,6 +103,9 @@ export function useDatasets() {
     annotating: linkedTasks.filter(t => !['approved', 'submitted', 'rejected'].includes(t.status)).length,
   }), [linkedTasks]);
 
+  // Map từ itemId/filename → thông tin annotation đã approved (annotators, labels, bboxes, fileUrl).
+  // Dùng khi click item trong dataset đã hoàn thành để hiển thị popup xem annotation.
+  // Build URL file theo nhiều fallback: signed_url → path → tên file
   const approvedItemsMap = useMemo(() => {
     const map = new Map();
     linkedTasks.filter(t => t.status === 'approved').forEach(task => {
@@ -160,7 +173,8 @@ export function useDatasets() {
     return datasets.filter(ds => !q || (ds.name || '').toLowerCase().includes(q) || (ds.description || '').toLowerCase().includes(q));
   }, [datasets, search]);
 
-  /* ── status map (pre-load for all cards) ── */
+  // Pre-load trạng thái hoàn thành cho tất cả dataset cards (hiển thị badge Complete/In Progress).
+  // Fetch tất cả projects + tasks một lần, gom theo dataset id → không cần fetch lại khi chọn từng dataset
   const buildDsStatusMap = useCallback(async (dsList) => {
     if (!dsList?.length) return;
     try {
@@ -202,7 +216,7 @@ export function useDatasets() {
     } catch { /* silent */ }
   }, []);
 
-  /* ── loaders ── */
+  // Fetch danh sách datasets, rồi trigger buildDsStatusMap để load trạng thái cho từng card
   const fetchDatasets = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -218,6 +232,7 @@ export function useDatasets() {
     }
   }, [buildDsStatusMap]);
 
+  // Fetch danh sách items (file ảnh/text/audio) trong 1 dataset cụ thể khi user click vào dataset đó
   const fetchDatasetItems = useCallback(async (ds) => {
     if (!ds) return;
     setItemsLoading(true);
@@ -234,6 +249,8 @@ export function useDatasets() {
     }
   }, []);
 
+  // Fetch tất cả tasks liên kết với dataset đang xem (qua các project dùng dataset đó).
+  // Không có API trực tiếp dataset→tasks nên phải đi qua project list → filter → fetch tasks
   const fetchLinkedTasks = useCallback(async (ds) => {
     if (!ds) return;
     setLinkedTasks([]);
@@ -274,6 +291,7 @@ export function useDatasets() {
   /* ── handlers ── */
   const showToast = useCallback((msg, sev = 'success') => setToast({ open: true, msg, sev }), []);
 
+  // Tạo dataset mới với type mặc định là "image"
   const handleCreate = async () => {
     if (!createForm.name.trim()) return showToast('Vui lòng nhập tên dataset', 'warning');
     setCreating(true);
@@ -325,6 +343,8 @@ export function useDatasets() {
     }
   };
 
+  // Upload nhiều file vào dataset đang chọn (multipart/form-data).
+  // Hiển thị progress bar trong quá trình upload, refresh item list sau khi xong.
   const handleUpload = async (files) => {
     if (!selectedDs || !files?.length) return;
     setUploading(true);
@@ -383,6 +403,9 @@ export function useDatasets() {
     }
   };
 
+  // Xử lý click vào 1 item trong dataset:
+  //   - Dataset đã hoàn thành (isComplete) → mở popup xem annotation của item đó
+  //   - Dataset chưa hoàn thành → navigate sang trang chi tiết item
   const handleItemClick = (item) => {
     if (isComplete) {
       const itemId       = coerceId(item);
@@ -439,6 +462,8 @@ export function useDatasets() {
     }
   };
 
+  // Export toàn bộ annotation đã approved của dataset ra file JSON và tải về máy.
+  // Chỉ hoạt động khi isComplete = true. Format: { dataset info, summary stats, items[] }
   const handleExport = () => {
     if (!selectedDs || !isComplete) return;
     const items = dsItems.map(item => {
@@ -471,6 +496,7 @@ export function useDatasets() {
     URL.revokeObjectURL(url);
   };
 
+  // Xử lý kéo-thả file vào vùng upload → gọi handleUpload
   const handleDrop = (e) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;

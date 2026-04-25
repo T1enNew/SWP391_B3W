@@ -1,3 +1,7 @@
+// useDashboard.js
+// Hook cung cấp toàn bộ dữ liệu thống kê cho trang Dashboard của Manager.
+// Không dùng endpoint riêng cho dashboard — tổng hợp từ datasets + projects + tasks.
+
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../../config/api';
@@ -5,6 +9,8 @@ import { API_URL } from '../../../../config/api';
 const getAuthToken = () =>
   sessionStorage.getItem('token') || localStorage.getItem('token') || '';
 
+// Hook chính — trả về { loading, stats }
+// stats chứa: số liệu tổng quan, pipeline stages, datasetHealth, topLabels, topAnnotators
 export function useDashboard() {
   const [loading, setLoading]     = useState(true);
   const [datasets, setDatasets]   = useState([]);
@@ -17,7 +23,7 @@ export function useDashboard() {
         const token = getAuthToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-        // Only call endpoints that exist in Swagger
+        // Bước 1: Fetch datasets + projects song song
         const [datasetsRes, projectsRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers }),
           axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers }),
@@ -40,7 +46,7 @@ export function useDashboard() {
         setDatasets(dsList);
         setProjects(pjList);
 
-        // Fetch task stats for each project (uses /api/tasks/project/:id which exists)
+        // Bước 2: Fetch tasks của từng project song song để tính số liệu annotation
         const taskResults = await Promise.allSettled(
           pjList.map((p) => {
             const pid = p._id || p.id;
@@ -48,7 +54,8 @@ export function useDashboard() {
           })
         );
 
-        // Build synthetic statusList from tasks
+        // Bước 3: Gom task theo dataset → tạo statusList để useMemo tính stats
+        // Mỗi entry trong statusList = 1 dataset + số task approved/submitted/rejected/pending
         const syntheticStatuses = dsList.map((ds) => {
           const dsId = ds._id || ds.id;
           const linkedProjects = pjList.filter((p) => {
@@ -101,6 +108,10 @@ export function useDashboard() {
     fetchAll();
   }, []);
 
+  // Tổng hợp toàn bộ số liệu để hiển thị trên Dashboard.
+  // Chạy lại mỗi khi statusList / datasets / projects thay đổi.
+  // Output gồm: tổng quan (counts), pipeline (raw→annotating→reviewing→approved),
+  //   datasetHealth (trạng thái từng dataset), topLabels, topAnnotators
   const stats = useMemo(() => {
     const totalDatasets  = datasets.length;
     const totalProjects  = projects.length;

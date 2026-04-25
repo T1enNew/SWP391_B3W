@@ -1,7 +1,12 @@
+// auditUtils.js
+// Các hàm tiện ích dùng trong trang Audit (AnnotatorAudit, AuditTaskTable, AuditTaskDetailPanel).
+// Xử lý: icon trạng thái task, phân loại loại media, build URL file, parse annotation labels.
+
 import React from 'react';
 import { CheckCircle as CheckCircleIcon, Cancel as CancelIcon, Pending as PendingIcon } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 
+// Trả về icon MUI tương ứng với trạng thái task để hiển thị trong bảng audit
 export const getStatusIcon = (status) => {
   switch (status) {
     case 'approved': return <CheckCircleIcon className="text-green-600" fontSize="small" />;
@@ -12,6 +17,8 @@ export const getStatusIcon = (status) => {
   }
 };
 
+// Phân loại loại media của task: "image" | "audio" | "text" | "other"
+// Ưu tiên mimeType từ dataItem, fallback sang phân tích tên file/path
 export const getTaskKind = (task) => {
   const mimeType = (task.dataItem?.mimeType || '').toLowerCase();
   const filename  = (task.dataItem?.filename || '').toLowerCase();
@@ -28,12 +35,15 @@ export const getTaskKind = (task) => {
   return 'other';
 };
 
+// Build URL đầy đủ của file media trong task để hiển thị trong panel chi tiết
 export const getDataItemUrl = (task) => {
   const p = task?.dataItem?.path;
   if (!p) return '';
   return `${API_URL}/${String(p).replace(/^\/+/, '')}`;
 };
 
+// Trích xuất danh sách bounding box từ labels của task ảnh.
+// Lọc bỏ các bbox không hợp lệ (thiếu 4 tọa độ hoặc không phải số)
 export const getAnnotatorImageObjects = (task) => {
   const objects = task?.labels?.objects;
   if (!Array.isArray(objects)) return [];
@@ -47,6 +57,7 @@ export const getAnnotatorImageObjects = (task) => {
     .filter(obj => Array.isArray(obj.bbox) && obj.bbox.length === 4 && obj.bbox.every(v => Number.isFinite(v)));
 };
 
+// Gán màu nhất quán cho mỗi label dựa trên hash tên label → cùng label luôn cùng màu
 export const getLabelColor = (label = '') => {
   const palette = ['#1976d2', '#16a34a', '#ea580c', '#9333ea', '#0f766e', '#dc2626', '#2563eb'];
   const key = String(label);
@@ -55,6 +66,8 @@ export const getLabelColor = (label = '') => {
   return palette[hash % palette.length];
 };
 
+// Chuẩn hóa danh sách segment audio từ labels của task.
+// Lọc segment không hợp lệ (start >= end hoặc không phải số)
 export const getNormalizedAudioSegments = (task) => {
   const segments = task?.labels?.segments;
   if (!Array.isArray(segments)) return [];
@@ -69,6 +82,8 @@ export const getNormalizedAudioSegments = (task) => {
     .filter(seg => Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start);
 };
 
+// Lấy đoạn text tương ứng với span annotation trong task text.
+// Ưu tiên span.text nếu có, fallback slice từ textContent theo start/end
 export const getSpanText = (span, textContent) => {
   if (span?.text) return span.text;
   if (!textContent) return '';
@@ -76,6 +91,8 @@ export const getSpanText = (span, textContent) => {
   return textContent.slice(span.start, span.end);
 };
 
+// Render phần hiển thị labels của annotator trong panel chi tiết audit.
+// Phân loại theo loại media: audio → segments, text → spans, ảnh → objects/bbox, fallback → JSON raw
 export const renderAnnotatorLabels = (task, textContent, getNormAudio) => {
   const labels = task?.labels;
   if (!labels || (typeof labels === 'object' && Object.keys(labels).length === 0))

@@ -132,12 +132,13 @@ export default function CreateProject() {
 
       // Gán tasks cho annotators (chia đều items trong dataset)
       try {
-        await axios.post(`${API_URL}/api/tasks/assign`, {
+        const assignPayload = {
           project_id: projectId,
           dataset_id: selectedDatasetId,
           annotator_ids: selectedAnnotators,
-          reviewer_id: selectedReviewer,
-        }, { headers: getAuthHeaders() });
+          ...(selectedReviewer ? { reviewer_id: selectedReviewer } : {}),
+        };
+        await axios.post(`${API_URL}/api/tasks/assign`, assignPayload, { headers: getAuthHeaders() });
         showToast('Tạo project và phân công task thành công!');
       } catch (assignErr) {
         const assignMsg = assignErr?.response?.data?.message || 'Không thể phân công task';

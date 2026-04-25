@@ -1,3 +1,8 @@
+// projectStatusUtils.js
+// Chứa toàn bộ logic tính toán & hiển thị trạng thái của Project.
+// Được dùng chung bởi trang danh sách Projects (index.jsx), hook useProjects,
+// và trang chi tiết ProjectDetail.
+
 import React from "react";
 import {
   CheckCircle as CheckIcon,
@@ -8,6 +13,8 @@ import {
   HourglassEmpty as HourglassIcon,
 } from "@mui/icons-material";
 
+// Bảng cấu hình màu sắc + icon cho từng trạng thái project
+// Key = tên status, value = { label hiển thị, màu chữ, màu nền, icon }
 export const STATUS_CFG = {
   active: {
     label: "Active",
@@ -90,8 +97,10 @@ export const STATUS_CFG = {
   },
 };
 
+// Lấy cấu hình hiển thị của một status; fallback về "draft" nếu không tìm thấy
 export const getCfg = (s) => STATUS_CFG[s] || STATUS_CFG.draft;
 
+// Danh sách các status được coi là "quá hạn" — dùng để filter & đếm ở trang danh sách
 export const OVERDUE_STATUSES = [
   "annotator_overdue",
   "reviewer_overdue",
@@ -99,6 +108,8 @@ export const OVERDUE_STATUSES = [
   "overdue",
 ];
 
+// Chuẩn hóa object project từ API về shape nhất quán để dùng trong UI.
+// Backend có thể trả về nhiều tên field khác nhau (id/_id, dataset_id/datasetId, v.v.)
 export const normalizeProject = (p) => ({
   ...p,
   id: p?.id || p?._id,
@@ -112,6 +123,7 @@ export const normalizeProject = (p) => ({
   deadline: p?.deadline || null,
 });
 
+// Format ngày giờ sang chuỗi tiếng Việt "dd/mm/yyyy hh:mm"; trả về "N/A" nếu không có giá trị
 export const fmtDateTime = (v) => {
   if (!v) return "N/A";
   const d = new Date(v);
@@ -126,6 +138,9 @@ export const fmtDateTime = (v) => {
       });
 };
 
+// Tính trạng thái cảnh báo deadline để hiển thị badge màu trên card project.
+// Trả về null nếu project đã xong (completed/archived) hoặc chưa đến hạn cảnh báo.
+// Trả về { label, color, bg } nếu quá hạn / còn < 24h / còn < 72h.
 export const getDeadlineState = (deadline, status) => {
   if (!deadline) return null;
   if (status === "completed" || status === "archived") return null;
@@ -140,7 +155,10 @@ export const getDeadlineState = (deadline, status) => {
   return null;
 };
 
-// Tổng hợp số lượng task theo từng trạng thái
+// Đếm task theo từng nhóm trạng thái từ mảng task raw của API.
+// Kết quả được dùng trong getDisplayStatus để suy ra trạng thái thực tế của project.
+// submitted/pending_review/in_review => nhóm "chờ reviewer chấm"
+// resubmitted/partially_reviewed     => nhóm "đã nộp lại"
 export const computeTaskStats = (tasks) => {
   if (!Array.isArray(tasks) || tasks.length === 0) return null;
   const total = tasks.length;
@@ -156,11 +174,16 @@ export const computeTaskStats = (tasks) => {
   };
 };
 
-/**
- * Tính trạng thái hiển thị thực tế của project.
- * Nếu có taskStats (từ task-level API), dùng để xác định chính xác ai có lỗi.
- * Nếu không có, fallback sang project.status + deadline.
- */
+// Hàm trung tâm: tính trạng thái hiển thị thực tế của project từ dữ liệu task.
+//
+// Logic ưu tiên:
+//   1. archived  → luôn trả về "archived"
+//   2. Có taskStats + đã quá deadline → phân loại ai gây quá hạn
+//      (annotator chưa nộp > có task bị reject > reviewer chưa chấm)
+//   3. Có taskStats + chưa quá deadline → tính theo tiến độ task hiện tại
+//   4. Không có taskStats → fallback theo project.status + deadline
+//
+// Được gọi ở trang danh sách (index.jsx), ProjectCard, và hook useProjects.counts
 export const getDisplayStatus = (project, taskStats = null) => {
   if (project.status === "archived") return "archived";
 
