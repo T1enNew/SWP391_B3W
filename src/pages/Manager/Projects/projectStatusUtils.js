@@ -126,8 +126,9 @@ export const fmtDateTime = (v) => {
       });
 };
 
-export const getDeadlineState = (deadline) => {
+export const getDeadlineState = (deadline, status) => {
   if (!deadline) return null;
+  if (status === "completed" || status === "archived") return null;
   const diff = new Date(deadline) - new Date();
   const hours = diff / 36e5;
   if (diff < 0)
@@ -147,10 +148,11 @@ export const computeTaskStats = (tasks) => {
     total,
     assigned: tasks.filter((t) => t.status === "assigned").length,
     inProgress: tasks.filter((t) => t.status === "in_progress").length,
-    submitted: tasks.filter((t) => t.status === "submitted").length,
-    resubmitted: tasks.filter((t) => t.status === "resubmitted").length,
+    // submitted/resubmitted + pending_review/in_review đều là "đang chờ reviewer chấm"
+    submitted: tasks.filter((t) => ["submitted", "pending_review", "in_review"].includes(t.status)).length,
+    resubmitted: tasks.filter((t) => ["resubmitted", "partially_reviewed"].includes(t.status)).length,
     rejected: tasks.filter((t) => t.status === "rejected").length,
-    approved: tasks.filter((t) => t.status === "approved").length,
+    approved: tasks.filter((t) => ["approved", "fully_reviewed", "finalized"].includes(t.status)).length,
   };
 };
 
@@ -191,18 +193,21 @@ export const getDisplayStatus = (project, taskStats = null) => {
   }
 
   // Fallback: không có task data
+  const REVIEWER_STATUSES = ["in_review", "pending_review", "reviewer_pending"];
+
   if (!isOverdue) {
-    // in_review từ backend → annotator đã submit, reviewer cần hành động
-    return project.status === "in_review" ? "reviewer_pending" : project.status;
+    return REVIEWER_STATUSES.includes(project.status) ? "reviewer_pending" : project.status;
   }
 
   switch (project.status) {
     case "completed":
-      return "overdue";
+      return "completed";
     case "draft":
     case "active":
       return "annotator_overdue";
     case "in_review":
+    case "pending_review":
+    case "reviewer_pending":
       return "reviewer_overdue";
     case "waiting_rework":
       return "rework_overdue";

@@ -108,9 +108,20 @@ const StatTile = ({ icon, value, label, accent, active, onClick }) => (
 );
 
 // ── Project Card ───────────────────────────────────────────────────────────────
-const ProjectCard = ({ project, taskStats, taskStatsLoading, datasets, onInfo, onDelete, onNavigate }) => {
+const ProjectCard = ({
+  project,
+  taskStats,
+  taskStatsLoading,
+  datasets,
+  onInfo,
+  onDelete,
+  onNavigate,
+}) => {
   const cfg = getCfg(getDisplayStatus(project, taskStats));
-  const dlState = getDeadlineState(project.deadline);
+  const dlState = getDeadlineState(
+    project.deadline,
+    getDisplayStatus(project, taskStats),
+  );
   const dsName =
     project.dataset_name ||
     datasets.find((d) => d.id === project.dataset_id)?.name ||
@@ -186,7 +197,15 @@ const ProjectCard = ({ project, taskStats, taskStatsLoading, datasets, onInfo, o
         >
           {/* Status badge */}
           {taskStatsLoading && !taskStats ? (
-            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1.2, py: 0.35 }}>
+            <Box
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.5,
+                px: 1.2,
+                py: 0.35,
+              }}
+            >
               <CircularProgress size={10} sx={{ color: MUTED }} />
               <Typography sx={{ color: MUTED, fontSize: 11 }}>...</Typography>
             </Box>
@@ -427,8 +446,8 @@ export default function Projects() {
           pList.map((p) =>
             axios.get(`${API_URL}/api/tasks/project/${p.id || p._id}`, {
               headers: getAuthHeaders(),
-            })
-          )
+            }),
+          ),
         );
         const statsMap = {};
         taskResults.forEach((res, i) => {
@@ -446,7 +465,7 @@ export default function Projects() {
       }
     } catch (e) {
       setError(
-        e?.response?.data?.message || e.message || "Không tải được project"
+        e?.response?.data?.message || e.message || "Không tải được project",
       );
     } finally {
       setLoading(false);
@@ -487,7 +506,8 @@ export default function Projects() {
       completed: projects.filter((p) => ds(p) === "completed").length,
       draft: projects.filter((p) => ds(p) === "draft").length,
       archived: projects.filter((p) => ds(p) === "archived").length,
-      reviewer_pending: projects.filter((p) => ds(p) === "reviewer_pending").length,
+      reviewer_pending: projects.filter((p) => ds(p) === "reviewer_pending")
+        .length,
       overdue: projects.filter((p) => OVERDUE_STATUSES.includes(ds(p))).length,
     };
   }, [projects, taskStatsMap]);
@@ -878,21 +898,35 @@ export default function Projects() {
       {/* ── Info Dialog ── */}
       {infoProject &&
         (() => {
-          const p = infoDetail ? { ...infoProject, ...infoDetail } : infoProject;
-          const infoCfg = getCfg(getDisplayStatus(p, taskStatsMap[p.id] || null));
-          const infoDlState = getDeadlineState(p.deadline);
+          const p = infoDetail
+            ? { ...infoProject, ...infoDetail }
+            : infoProject;
+          const infoCfg = getCfg(
+            getDisplayStatus(p, taskStatsMap[p.id] || null),
+          );
+          const infoDlState = getDeadlineState(
+            p.deadline,
+            getDisplayStatus(p, taskStatsMap[p.id] || null),
+          );
           const dsName =
             p.dataset?.name ||
             p.dataset_name ||
-            datasets.find((d) => d.id === (p.dataset_id || p.datasetId || p.dataset?.id))?.name ||
+            datasets.find(
+              (d) => d.id === (p.dataset_id || p.datasetId || p.dataset?.id),
+            )?.name ||
             "N/A";
           const rv = p.reviewer || p.reviewer_id || p.reviewerId || null;
           const rvName = rv?.fullName || rv?.full_name || rv?.username || null;
           const rvEmail = rv?.email || null;
-          const annotators = Array.isArray(p.annotators) ? p.annotators
-            : Array.isArray(p.annotator_ids) ? p.annotator_ids : [];
-          const sampleRate = p.review_policy?.sample_rate != null
-            ? `${Math.round(p.review_policy.sample_rate * 100)}%` : null;
+          const annotators = Array.isArray(p.annotators)
+            ? p.annotators
+            : Array.isArray(p.annotator_ids)
+              ? p.annotator_ids
+              : [];
+          const sampleRate =
+            p.review_policy?.sample_rate != null
+              ? `${Math.round(p.review_policy.sample_rate * 100)}%`
+              : null;
           const guidelines = p.guidelines || "";
           return (
             <Dialog
@@ -1014,99 +1048,451 @@ export default function Projects() {
 
               <DialogContent sx={{ p: 0 }}>
                 {infoLoading ? (
-                  <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                  <Box
+                    sx={{ display: "flex", justifyContent: "center", py: 6 }}
+                  >
                     <CircularProgress size={28} sx={{ color: PRIMARY }} />
                   </Box>
-                ) : (<>
-                {/* Stats row */}
-                <Stack direction="row" divider={<Box sx={{ width: "1px", bgcolor: BORDER }} />}
-                  sx={{ borderBottom: `1px solid ${BORDER}` }}>
-                  {[
-                    { val: p.total_tasks ?? 0, label: "Tasks",       color: "#60a5fa" },
-                    { val: annotators.length,   label: "Annotators",  color: "#a78bfa" },
-                    { val: rv ? 1 : 0,          label: "Reviewer",    color: rv ? "#4ade80" : MUTED },
-                    ...(sampleRate ? [{ val: sampleRate, label: "Sample rate", color: "#f59e0b" }] : []),
-                  ].map(({ val, label, color }) => (
-                    <Box key={label} sx={{ flex: 1, py: 2.5, textAlign: "center" }}>
-                      <Typography sx={{ color, fontSize: 24, fontWeight: 800, lineHeight: 1 }}>{val}</Typography>
-                      <Typography sx={{ color: MUTED, fontSize: 10, mt: 0.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</Typography>
-                    </Box>
-                  ))}
-                </Stack>
+                ) : (
+                  <>
+                    {/* Stats row */}
+                    <Stack
+                      direction="row"
+                      divider={<Box sx={{ width: "1px", bgcolor: BORDER }} />}
+                      sx={{ borderBottom: `1px solid ${BORDER}` }}
+                    >
+                      {[
+                        {
+                          val: p.total_tasks ?? 0,
+                          label: "Tasks",
+                          color: "#60a5fa",
+                        },
+                        {
+                          val: annotators.length,
+                          label: "Annotators",
+                          color: "#a78bfa",
+                        },
+                        {
+                          val: rv ? 1 : 0,
+                          label: "Reviewer",
+                          color: rv ? "#4ade80" : MUTED,
+                        },
+                        ...(sampleRate
+                          ? [
+                              {
+                                val: sampleRate,
+                                label: "Sample rate",
+                                color: "#f59e0b",
+                              },
+                            ]
+                          : []),
+                      ].map(({ val, label, color }) => (
+                        <Box
+                          key={label}
+                          sx={{ flex: 1, py: 2.5, textAlign: "center" }}
+                        >
+                          <Typography
+                            sx={{
+                              color,
+                              fontSize: 24,
+                              fontWeight: 800,
+                              lineHeight: 1,
+                            }}
+                          >
+                            {val}
+                          </Typography>
+                          <Typography
+                            sx={{
+                              color: MUTED,
+                              fontSize: 10,
+                              mt: 0.5,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
 
-                {/* Detail rows */}
-                <Box sx={{ px: 3, pt: 0.5, pb: 1 }}>
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Dataset</Typography>
-                    <Typography sx={{ color: "#93c5fd", fontSize: 13, fontWeight: 600 }}>{dsName}</Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Deadline</Typography>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      {infoDlState && (
-                        <Box sx={{ bgcolor: `${infoDlState.color}20`, border: `1px solid ${infoDlState.color}50`, borderRadius: 10, px: 1, py: 0.15 }}>
-                          <Typography sx={{ color: infoDlState.color, fontSize: 10, fontWeight: 700 }}>{infoDlState.label}</Typography>
-                        </Box>
-                      )}
-                      <Typography sx={{ color: infoDlState ? infoDlState.color : "#fbbf24", fontSize: 13, fontWeight: 600 }}>{fmtDateTime(p.deadline)}</Typography>
-                    </Box>
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Ngày tạo</Typography>
-                    <Typography sx={{ color: TEXT, fontSize: 13, fontWeight: 600 }}>{fmtDateTime(p.createdAt || p.created_at)}</Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Reviewer</Typography>
-                    {rv ? (
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1.2 }}>
-                        <Box sx={{ width: 30, height: 30, borderRadius: "50%", bgcolor: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          <Typography sx={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>{(rvName || "R")[0].toUpperCase()}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography sx={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>{rvName || "Reviewer"}</Typography>
-                          {rvEmail && <Typography sx={{ color: MUTED, fontSize: 11 }}>{rvEmail}</Typography>}
+                    {/* Detail rows */}
+                    <Box sx={{ px: 3, pt: 0.5, pb: 1 }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                          borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Dataset
+                        </Typography>
+                        <Typography
+                          sx={{
+                            color: "#93c5fd",
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {dsName}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                          borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Deadline
+                        </Typography>
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          {infoDlState && (
+                            <Box
+                              sx={{
+                                bgcolor: `${infoDlState.color}20`,
+                                border: `1px solid ${infoDlState.color}50`,
+                                borderRadius: 10,
+                                px: 1,
+                                py: 0.15,
+                              }}
+                            >
+                              <Typography
+                                sx={{
+                                  color: infoDlState.color,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {infoDlState.label}
+                              </Typography>
+                            </Box>
+                          )}
+                          <Typography
+                            sx={{
+                              color: infoDlState
+                                ? infoDlState.color
+                                : "#fbbf24",
+                              fontSize: 13,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {fmtDateTime(p.deadline)}
+                          </Typography>
                         </Box>
                       </Box>
-                    ) : (
-                      <Typography sx={{ color: MUTED, fontSize: 13, fontStyle: "italic" }}>Chưa phân công</Typography>
-                    )}
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Annotators</Typography>
-                    {annotators.length > 0 ? (
-                      <Stack spacing={1}>
-                        {annotators.map((ann, idx) => {
-                          const name  = ann?.fullName || ann?.full_name || ann?.username || null;
-                          const email = ann?.email || null;
-                          return (
-                            <Box key={idx} sx={{ display: "flex", alignItems: "center", gap: 1.2 }}>
-                              <Box sx={{ width: 28, height: 28, borderRadius: "50%", bgcolor: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                <Typography sx={{ color: "#a78bfa", fontSize: 12, fontWeight: 700 }}>{(name || "A")[0].toUpperCase()}</Typography>
-                              </Box>
-                              <Box>
-                                <Typography sx={{ color: "#c4b5fd", fontSize: 13, fontWeight: 600 }}>{name || `Annotator ${idx + 1}`}</Typography>
-                                {email && <Typography sx={{ color: MUTED, fontSize: 11 }}>{email}</Typography>}
-                              </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                          borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Ngày tạo
+                        </Typography>
+                        <Typography
+                          sx={{ color: TEXT, fontSize: 13, fontWeight: 600 }}
+                        >
+                          {fmtDateTime(p.createdAt || p.created_at)}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                          borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Reviewer
+                        </Typography>
+                        {rv ? (
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1.2,
+                            }}
+                          >
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: "50%",
+                                bgcolor: "rgba(74,222,128,0.12)",
+                                border: "1px solid rgba(74,222,128,0.3)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Typography
+                                sx={{
+                                  color: "#4ade80",
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {(rvName || "R")[0].toUpperCase()}
+                              </Typography>
                             </Box>
-                          );
-                        })}
-                      </Stack>
-                    ) : (
-                      <Typography sx={{ color: MUTED, fontSize: 13, fontStyle: "italic" }}>Chưa phân công</Typography>
-                    )}
-                  </Box>
-                  {guidelines && (
-                    <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4, borderBottom: `1px solid rgba(30,45,71,0.7)` }}>
-                      <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Guidelines</Typography>
-                      <Typography sx={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>{guidelines}</Typography>
+                            <Box>
+                              <Typography
+                                sx={{
+                                  color: "#4ade80",
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {rvName || "Reviewer"}
+                              </Typography>
+                              {rvEmail && (
+                                <Typography sx={{ color: MUTED, fontSize: 11 }}>
+                                  {rvEmail}
+                                </Typography>
+                              )}
+                            </Box>
+                          </Box>
+                        ) : (
+                          <Typography
+                            sx={{
+                              color: MUTED,
+                              fontSize: 13,
+                              fontStyle: "italic",
+                            }}
+                          >
+                            Chưa phân công
+                          </Typography>
+                        )}
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                          borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Annotators
+                        </Typography>
+                        {annotators.length > 0 ? (
+                          <Stack spacing={1}>
+                            {annotators.map((ann, idx) => {
+                              const name =
+                                ann?.fullName ||
+                                ann?.full_name ||
+                                ann?.username ||
+                                null;
+                              const email = ann?.email || null;
+                              return (
+                                <Box
+                                  key={idx}
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1.2,
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: "50%",
+                                      bgcolor: "rgba(167,139,250,0.12)",
+                                      border: "1px solid rgba(167,139,250,0.3)",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <Typography
+                                      sx={{
+                                        color: "#a78bfa",
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {(name || "A")[0].toUpperCase()}
+                                    </Typography>
+                                  </Box>
+                                  <Box>
+                                    <Typography
+                                      sx={{
+                                        color: "#c4b5fd",
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      {name || `Annotator ${idx + 1}`}
+                                    </Typography>
+                                    {email && (
+                                      <Typography
+                                        sx={{ color: MUTED, fontSize: 11 }}
+                                      >
+                                        {email}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </Box>
+                              );
+                            })}
+                          </Stack>
+                        ) : (
+                          <Typography
+                            sx={{
+                              color: MUTED,
+                              fontSize: 13,
+                              fontStyle: "italic",
+                            }}
+                          >
+                            Chưa phân công
+                          </Typography>
+                        )}
+                      </Box>
+                      {guidelines && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 2,
+                            py: 1.4,
+                            borderBottom: `1px solid rgba(30,45,71,0.7)`,
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              color: MUTED,
+                              fontSize: 11,
+                              minWidth: 100,
+                              flexShrink: 0,
+                              pt: 0.3,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            Guidelines
+                          </Typography>
+                          <Typography
+                            sx={{
+                              color: "#94a3b8",
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {guidelines}
+                          </Typography>
+                        </Box>
+                      )}
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          py: 1.4,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: MUTED,
+                            fontSize: 11,
+                            minWidth: 100,
+                            flexShrink: 0,
+                            pt: 0.3,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Project ID
+                        </Typography>
+                        <Typography
+                          sx={{
+                            color: "#TEXT",
+                            fontSize: 11,
+                            fontFamily: "monospace",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {p.id}
+                        </Typography>
+                      </Box>
                     </Box>
-                  )}
-                  <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, py: 1.4 }}>
-                    <Typography sx={{ color: MUTED, fontSize: 11, minWidth: 100, flexShrink: 0, pt: 0.3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Project ID</Typography>
-                    <Typography sx={{ color: "#475569", fontSize: 11, fontFamily: "monospace", wordBreak: "break-all" }}>{p.id}</Typography>
-                  </Box>
-                </Box>
-                </>)}
+                  </>
+                )}
               </DialogContent>
 
               <DialogActions
