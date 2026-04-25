@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
 import { API_URL } from '../../../config/api';
@@ -34,6 +34,9 @@ const ReviewerWorkspace = () => {
   const [activeAnnotatorId, setActiveAnnotatorId] = useState(null);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [fetchError, setFetchError]         = useState(null);
+  const [projectDeadline, setProjectDeadline] = useState(null);
+  const [projectName, setProjectName]       = useState('');
+  const navigate = useNavigate();
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -75,6 +78,8 @@ const ReviewerWorkspace = () => {
       // Apply sample rate: limit pending queue to only the required number of tasks
       if (projectId && projRes.status === 'fulfilled' && projRes.value.data) {
         const projData = projRes.value.data?.project || projRes.value.data;
+        setProjectDeadline(projData?.deadline || null);
+        setProjectName(projData?.name || '');
         const rawRate = projData?.review_policy?.sample_rate;
         if (rawRate != null && rawRate < 1) {
           // Use total_tasks from project (all tasks), not just submitted ones
@@ -313,6 +318,29 @@ const ReviewerWorkspace = () => {
         <div className="text-center max-w-xs p-4">
           <p className="text-rose-400 text-xs font-semibold mb-2">{fetchError}</p>
           <button onClick={fetchQueue} className="rounded bg-violet-600 px-3 py-1.5 text-xs text-white">Thu lai</button>
+        </div>
+      </div>
+    );
+  }
+
+  const isOverdue = projectDeadline && new Date(projectDeadline) < new Date();
+
+  if (!loading && isOverdue) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10 border border-rose-500/30">
+            <svg className="h-8 w-8 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-rose-400 mb-2">Project đã quá hạn</h2>
+          <p className="text-gray-400 text-sm mb-1">Deadline của project <span className="font-semibold text-gray-200">{projectName}</span> đã kết thúc.</p>
+          <p className="text-gray-500 text-xs mb-6">Bạn không thể tiếp tục review trên project này.</p>
+          <button onClick={() => navigate('/reviewer/projects')}
+            className="rounded-lg bg-gray-700 hover:bg-gray-600 px-5 py-2.5 text-sm font-semibold text-gray-200 transition-all">
+            Quay lại danh sách project
+          </button>
         </div>
       </div>
     );

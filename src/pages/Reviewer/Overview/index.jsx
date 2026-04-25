@@ -489,22 +489,34 @@ const ReviewerOverview = () => {
             </div>
           </button>
 
-          {queueItems.length > 0 && (
-            <button
-              onClick={() => handleReview(queueItems[0])}
-              className="group flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 text-left hover:bg-amber-500/10 hover:border-amber-500/40 transition-all"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-amber-300">Bắt đầu ngay</p>
-                <p className="text-xs text-gray-500">Review item đầu tiên trong queue</p>
-              </div>
-            </button>
-          )}
+          {queueItems.length > 0 && (() => {
+            const firstItem = queueItems[0];
+            const firstProj = allProjects.find(p => String(p.id || p._id) === String(firstItem.projectId));
+            const firstOverdue = firstProj?.deadline && new Date(firstProj.deadline) < new Date();
+            return (
+              <button
+                onClick={() => !firstOverdue && handleReview(firstItem)}
+                disabled={!!firstOverdue}
+                className={`group flex items-center gap-3 rounded-2xl border px-5 py-4 text-left transition-all ${
+                  firstOverdue
+                    ? 'border-gray-700/40 bg-gray-800/40 cursor-not-allowed opacity-60'
+                    : 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/40'
+                }`}
+              >
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${firstOverdue ? 'bg-gray-700 text-gray-500' : 'bg-amber-500/15 text-amber-400'}`}>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${firstOverdue ? 'text-gray-500' : 'text-amber-300'}`}>
+                    {firstOverdue ? 'Project đã quá hạn' : 'Bắt đầu ngay'}
+                  </p>
+                  <p className="text-xs text-gray-500">{firstOverdue ? 'Không thể review project quá hạn' : 'Review item đầu tiên trong queue'}</p>
+                </div>
+              </button>
+            );
+          })()}
         </div>
 
       </div>

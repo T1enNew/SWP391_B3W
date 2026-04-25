@@ -37,6 +37,7 @@ const Workspace = () => {
   // Local status overrides: takes priority over backend status for display
   // Resets on page reload (intended - backend is source of truth on reload)
   const [statusOverrides, setStatusOverrides] = useState({});
+  const [projectDeadline, setProjectDeadline] = useState(null);
 
   // Bulk AI state
   const [bulkAiDialog, setBulkAiDialog] = useState(false);
@@ -79,6 +80,7 @@ const Workspace = () => {
         const pName = pData.name || '';
         const pId = pData._id || pData.id || projectId;
         setProjectInfo({ name: pName, id: pId });
+        setProjectDeadline(pData.deadline || null);
 
         // Labels can live at various paths depending on backend populate depth
         const rawLabels =
@@ -436,6 +438,29 @@ const handleSave = useCallback(async () => {
   const showSubmitButton = allTasksDone && hasPendingSubmit;
   const pct = effectiveTasks.length > 0 ? Math.round(((currentIdx + 1) / effectiveTasks.length) * 100) : 0;
   const taskWithContent = effectiveTask ? { ...effectiveTask, _textContent: textContent } : null;
+
+  const isOverdue = projectDeadline && new Date(projectDeadline) < new Date();
+
+  if (!loading && isOverdue) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10 border border-rose-500/30">
+            <svg className="h-8 w-8 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-rose-400 mb-2">Project đã quá hạn</h2>
+          <p className="text-gray-400 text-sm mb-1">Deadline của project <span className="font-semibold text-gray-200">{projectInfo.name}</span> đã kết thúc.</p>
+          <p className="text-gray-500 text-xs mb-6">Bạn không thể tiếp tục làm việc trên project này.</p>
+          <button onClick={() => navigate('/annotator/projects')}
+            className="rounded-lg bg-gray-700 hover:bg-gray-600 px-5 py-2.5 text-sm font-semibold text-gray-200 transition-all">
+            Quay lại danh sách project
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">

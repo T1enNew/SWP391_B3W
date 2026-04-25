@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Box, Button, Card, Chip, CircularProgress, Divider, Grid,
+  Box, Button, Chip,
   InputAdornment, Pagination, Paper, Stack, TextField, Tooltip, Typography,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -12,10 +13,10 @@ import {
   Search as SearchIcon,
   Storage as StorageIcon,
 } from '@mui/icons-material';
-import { cardSx, panelSx, primaryBtnSx, secondaryBtnSx, typePalette } from './constants';
+import { panelSx, secondaryBtnSx, typePalette } from './constants';
 import { getLabelColor, formatDateTime } from './utils';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 10;
 
 const searchSx = {
   '& .MuiOutlinedInput-root': {
@@ -26,14 +27,6 @@ const searchSx = {
   },
 };
 
-const MetaStat = ({ icon, value, tooltip }) => (
-  <Tooltip title={tooltip} arrow placement="top">
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      {icon}
-      <Typography variant="caption" sx={{ color: '#cbd5e1', fontWeight: 600 }}>{value}</Typography>
-    </Stack>
-  </Tooltip>
-);
 
 const ItemsTab = ({ approvedItems, datasets, onViewDetail }) => {
   const [searchText, setSearchText] = useState('');
@@ -201,7 +194,7 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail }) => {
             )}
           </Stack>
 
-          {/* ── Grid or empty filter state ── */}
+          {/* ── Table or empty filter state ── */}
           {pagedItems.length === 0 ? (
             <Paper sx={{ ...panelSx, p: 5, textAlign: 'center' }}>
               <FilterListIcon sx={{ fontSize: 44, color: '#334155', mb: 1.5 }} />
@@ -215,104 +208,118 @@ const ItemsTab = ({ approvedItems, datasets, onViewDetail }) => {
               </Button>
             </Paper>
           ) : (
-            <Grid container spacing={2.5}>
-              {pagedItems.map((item) => {
-                const labelSet = Array.from(new Set(item.annotatorLabels.flatMap((ann) => ann.labels).filter(Boolean)));
-                const firstDataset = datasets.find((ds) => String(ds.id) === String(item.datasetId));
-                const palette = typePalette[item.mediaType] || typePalette.other;
-                const Icon = palette.icon;
-                return (
-                  <Grid item xs={12} sm={6} lg={4} key={item.key}>
-                    <Card sx={{
-                      ...cardSx, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                      transition: 'transform 0.18s, box-shadow 0.18s',
-                      '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 20px 45px rgba(0,0,0,0.4)', borderColor: '#475569' },
-                    }}>
-                      {/* Preview */}
-                      <Box sx={{ position: 'relative', height: 190, bgcolor: '#0b1220', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        {item.mediaType === 'image' && item.fileUrl ? (
-                          <Box component="img" src={item.fileUrl} alt={item.fileName} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <Stack alignItems="center" spacing={1.5}>
-                            <Box sx={{ p: 2, borderRadius: '50%', bgcolor: palette.bg }}>
-                              <Icon sx={{ color: palette.color, fontSize: 36 }} />
-                            </Box>
-                            <Typography variant="caption" sx={{ color: '#94a3b8', px: 2, textAlign: 'center' }} noWrap>{item.fileName}</Typography>
+            <TableContainer component={Paper} sx={{ ...panelSx, overflow: 'hidden' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ '& th': { bgcolor: '#0d1829', color: '#64748b', fontWeight: 700, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 0.6, borderBottom: '1px solid #1e2d47', py: 1.2 } }}>
+                    <TableCell sx={{ width: 40 }}>#</TableCell>
+                    <TableCell>File</TableCell>
+                    <TableCell>Dataset</TableCell>
+                    <TableCell>Nhãn</TableCell>
+                    <TableCell sx={{ width: 120 }}>Annotators</TableCell>
+                    <TableCell sx={{ width: 160 }}>Approved at</TableCell>
+                    <TableCell sx={{ width: 110 }} align="center">Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pagedItems.map((item, idx) => {
+                    const labelSet = Array.from(new Set(item.annotatorLabels.flatMap((ann) => ann.labels).filter(Boolean)));
+                    const firstDataset = datasets.find((ds) => String(ds.id) === String(item.datasetId));
+                    const palette = typePalette[item.mediaType] || typePalette.other;
+                    const Icon = palette.icon;
+                    return (
+                      <TableRow
+                        key={item.key}
+                        sx={{
+                          '& td': { borderBottom: '1px solid #1e2d47', py: 1.1, color: '#e2e8f0', fontSize: '0.82rem' },
+                          '&:hover': { bgcolor: 'rgba(59,130,246,0.05)' },
+                        }}
+                      >
+                        <TableCell sx={{ color: '#475569 !important', fontWeight: 600 }}>
+                          {(page - 1) * PAGE_SIZE + idx + 1}
+                        </TableCell>
+
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Chip
+                              icon={<Icon sx={{ color: `${palette.color} !important`, fontSize: '11px !important' }} />}
+                              label={item.mediaType.toUpperCase()} size="small"
+                              sx={{ bgcolor: `${palette.color}18`, color: palette.color, border: `1px solid ${palette.color}40`, fontWeight: 700, fontSize: '0.62rem', height: 20 }}
+                            />
+                            <Tooltip title={item.fileName} arrow placement="top">
+                              <Typography noWrap sx={{ color: '#f1f5f9', fontWeight: 600, fontSize: '0.82rem', maxWidth: 200 }}>
+                                {item.fileName}
+                              </Typography>
+                            </Tooltip>
                           </Stack>
-                        )}
-                        <Chip
-                          icon={<Icon sx={{ color: `${palette.color} !important`, fontSize: '13px !important' }} />}
-                          label={item.mediaType.toUpperCase()} size="small"
-                          sx={{ position: 'absolute', top: 10, left: 10, bgcolor: 'rgba(15,23,42,0.82)', backdropFilter: 'blur(6px)', color: palette.color, border: `1px solid ${palette.color}40`, fontWeight: 700, fontSize: '0.68rem' }}
-                        />
-                        <Box sx={{ position: 'absolute', top: 10, right: 10, bgcolor: 'rgba(34,197,94,0.18)', border: '1px solid rgba(34,197,94,0.35)', backdropFilter: 'blur(6px)', borderRadius: 99, px: 1, py: 0.2, display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                          <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 12 }} />
-                          <Typography sx={{ color: '#22c55e', fontSize: '0.65rem', fontWeight: 700 }}>Approved</Typography>
-                        </Box>
-                      </Box>
+                        </TableCell>
 
-                      {/* Body */}
-                      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flex: 1, gap: 1.2 }}>
-                        <Tooltip title={item.fileName} placement="top" arrow>
-                          <Typography variant="subtitle2" fontWeight={800} noWrap sx={{ color: '#f1f5f9', fontSize: '0.95rem' }}>
-                            {item.fileName}
-                          </Typography>
-                        </Tooltip>
-
-                        <Stack direction="row" spacing={0.6} alignItems="center">
-                          <StorageIcon sx={{ color: '#60a5fa', fontSize: 14 }} />
-                          <Typography variant="caption" sx={{ color: '#60a5fa', fontWeight: 600 }} noWrap>
-                            {firstDataset?.name || 'Unknown dataset'}
-                          </Typography>
-                        </Stack>
-
-                        <Divider sx={{ borderColor: '#243041' }} />
-
-                        <Stack direction="row" spacing={2.5}>
-                          <MetaStat icon={<PersonIcon sx={{ color: '#6ee7b7', fontSize: 15 }} />} value={`${item.annotators.length} annotator${item.annotators.length > 1 ? 's' : ''}`} tooltip={item.annotators.join(', ')} />
-                          <MetaStat icon={<LabelIcon sx={{ color: '#c4b5fd', fontSize: 15 }} />} value={`${labelSet.length} label${labelSet.length !== 1 ? 's' : ''}`} tooltip={labelSet.join(', ') || 'No labels'} />
-                        </Stack>
-
-                        {item.approvedAt && (
-                          <Stack direction="row" spacing={0.6} alignItems="center">
-                            <ScheduleIcon sx={{ color: '#22c55e', fontSize: 13 }} />
-                            <Typography variant="caption" sx={{ color: '#4ade80', fontWeight: 600, fontSize: '0.72rem' }}>
-                              Approved: {formatDateTime(item.approvedAt)}
+                        <TableCell>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <StorageIcon sx={{ color: '#60a5fa', fontSize: 13 }} />
+                            <Typography noWrap sx={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.8rem', maxWidth: 150 }}>
+                              {firstDataset?.name || '—'}
                             </Typography>
                           </Stack>
-                        )}
+                        </TableCell>
 
-                        {/* Label chips — clickable to filter */}
-                        {labelSet.length > 0 && (
-                          <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap' }}>
-                            {labelSet.slice(0, 4).map((label) => (
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                            {labelSet.slice(0, 3).map((label) => (
                               <Chip key={label} size="small" label={label}
                                 onClick={() => handleLabelClick(label)}
                                 sx={{
-                                  bgcolor: getLabelColor(label), color: '#fff', fontWeight: 700, fontSize: '0.68rem', height: 22,
-                                  cursor: 'pointer', outline: selectedLabel === label ? '2px solid #fff' : 'none',
+                                  bgcolor: getLabelColor(label), color: '#fff', fontWeight: 700,
+                                  fontSize: '0.65rem', height: 20, cursor: 'pointer',
+                                  outline: selectedLabel === label ? '2px solid #fff' : 'none',
                                   '&:hover': { opacity: 0.85 },
                                 }}
                               />
                             ))}
-                            {labelSet.length > 4 && (
-                              <Chip size="small" label={`+${labelSet.length - 4}`} sx={{ bgcolor: '#2d3748', color: '#94a3b8', height: 22, fontSize: '0.68rem' }} />
+                            {labelSet.length > 3 && (
+                              <Tooltip title={labelSet.slice(3).join(', ')} arrow>
+                                <Chip size="small" label={`+${labelSet.length - 3}`}
+                                  sx={{ bgcolor: '#2d3748', color: '#94a3b8', height: 20, fontSize: '0.65rem' }} />
+                              </Tooltip>
                             )}
                           </Box>
-                        )}
+                        </TableCell>
 
-                        {/* Actions */}
-                        <Box sx={{ mt: 'auto' }}>
-                          <Button fullWidth variant="contained" sx={primaryBtnSx} onClick={() => onViewDetail(item)}>
-                            View detail
+                        <TableCell>
+                          <Tooltip title={item.annotators.join(', ') || '—'} arrow>
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                              <PersonIcon sx={{ color: '#6ee7b7', fontSize: 14 }} />
+                              <Typography sx={{ color: '#6ee7b7', fontWeight: 600, fontSize: '0.8rem' }}>
+                                {item.annotators.length}
+                              </Typography>
+                            </Stack>
+                          </Tooltip>
+                        </TableCell>
+
+                        <TableCell>
+                          {item.approvedAt ? (
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                              <ScheduleIcon sx={{ color: '#4ade80', fontSize: 13 }} />
+                              <Typography sx={{ color: '#4ade80', fontSize: '0.78rem', fontWeight: 600 }}>
+                                {formatDateTime(item.approvedAt)}
+                              </Typography>
+                            </Stack>
+                          ) : <Typography sx={{ color: '#475569', fontSize: '0.78rem' }}>—</Typography>}
+                        </TableCell>
+
+                        <TableCell align="center">
+                          <Button size="small" variant="outlined"
+                            onClick={() => onViewDetail(item)}
+                            sx={{ borderColor: '#334155', color: '#93c5fd', borderRadius: 1.5, textTransform: 'none', fontSize: '0.75rem', py: 0.3, px: 1.2, '&:hover': { bgcolor: 'rgba(59,130,246,0.1)', borderColor: '#3b82f6' } }}>
+                            Chi tiết
                           </Button>
-                        </Box>
-                      </Box>
-                    </Card>
-                  </Grid>
-                );
-              })}
-            </Grid>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
 
           {/* ── Pagination ── */}

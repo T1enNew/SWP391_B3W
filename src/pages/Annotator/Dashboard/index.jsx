@@ -160,6 +160,8 @@ const AnnotatorOverview = () => {
   // First actionable task to navigate to
   const firstTask = actionTasks[0];
   const firstTaskProjId = firstTask ? getTaskProjId(firstTask) : null;
+  const firstTaskProj = projectsWithStats.find(p => String(p.id || p.projectId) === String(firstTaskProjId));
+  const firstTaskOverdue = firstTaskProj?.pOverdue ?? false;
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
@@ -412,16 +414,24 @@ const AnnotatorOverview = () => {
           </button>
 
           {firstTaskProjId && (
-            <button onClick={() => navigate(`/annotator/projects/${firstTaskProjId}`)}
-              className="group flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 text-left hover:bg-amber-500/10 hover:border-amber-500/40 transition-all">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
+            <button
+              onClick={() => !firstTaskOverdue && navigate(`/annotator/projects/${firstTaskProjId}`)}
+              disabled={firstTaskOverdue}
+              className={`group flex items-center gap-3 rounded-2xl border px-5 py-4 text-left transition-all ${
+                firstTaskOverdue
+                  ? 'border-gray-700/40 bg-gray-800/40 cursor-not-allowed opacity-60'
+                  : 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/40'
+              }`}>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${firstTaskOverdue ? 'bg-gray-700 text-gray-500' : 'bg-amber-500/15 text-amber-400'}`}>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-amber-300">Tiếp tục làm</p>
-                <p className="text-xs text-gray-500">Mở task ưu tiên tiếp theo</p>
+                <p className={`text-sm font-semibold ${firstTaskOverdue ? 'text-gray-500' : 'text-amber-300'}`}>
+                  {firstTaskOverdue ? 'Project đã quá hạn' : 'Tiếp tục làm'}
+                </p>
+                <p className="text-xs text-gray-500">{firstTaskOverdue ? 'Không thể làm task quá hạn' : 'Mở task ưu tiên tiếp theo'}</p>
               </div>
             </button>
           )}

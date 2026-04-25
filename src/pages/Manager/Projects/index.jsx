@@ -481,10 +481,52 @@ export default function Projects() {
     setInfoDetail(null);
     setInfoLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/api/projects/${project.id}`, {
-        headers: getAuthHeaders(),
-      });
-      const raw = res.data?.project || res.data || {};
+      const [projRes, tasksRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/api/projects/${project.id}`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/tasks/project/${project.id}`, { headers: getAuthHeaders() }),
+      ]);
+
+      const raw = projRes.status === "fulfilled"
+        ? (projRes.value.data?.project || projRes.value.data || {})
+        : {};
+
+      // Lấy annotators/reviewer từ tasks (đáng tin hơn project object)
+      if (tasksRes.status === "fulfilled") {
+        const tasks = Array.isArray(tasksRes.value.data)
+          ? tasksRes.value.data
+          : tasksRes.value.data?.data || tasksRes.value.data?.tasks || [];
+
+        const annotatorMap = new Map(); // id → object
+        let reviewerObj = null;
+
+        tasks.forEach((t) => {
+          // Annotator
+          const annObj = t.annotatorId || t.annotator || null;
+          if (annObj) {
+            const aid = annObj?.id || annObj?._id || (typeof annObj === "string" ? annObj : null);
+            if (aid && !annotatorMap.has(String(aid))) {
+              annotatorMap.set(String(aid), typeof annObj === "object" ? annObj : { id: annObj });
+            }
+          }
+          // Reviewer từ reviewers array
+          const reviewers = t.reviewers || [];
+          reviewers.forEach((rv) => {
+            if (!reviewerObj) {
+              const rvObj = rv?.reviewerId;
+              if (rvObj) reviewerObj = typeof rvObj === "object" ? rvObj : { id: rvObj };
+            }
+          });
+          // Reviewer fallback
+          if (!reviewerObj) {
+            const rvFb = t.reviewerId || t.reviewer_id || t.reviewer;
+            if (rvFb) reviewerObj = typeof rvFb === "object" ? rvFb : { id: rvFb };
+          }
+        });
+
+        if (annotatorMap.size > 0) raw._taskAnnotators = Array.from(annotatorMap.values());
+        if (reviewerObj) raw._taskReviewer = reviewerObj;
+      }
+
       setInfoDetail(raw);
     } catch {
       // fallback to basic project data
@@ -915,14 +957,17 @@ export default function Projects() {
               (d) => d.id === (p.dataset_id || p.datasetId || p.dataset?.id),
             )?.name ||
             "N/A";
-          const rv = p.reviewer || p.reviewer_id || p.reviewerId || null;
+          // Ưu tiên dùng dữ liệu extract từ tasks (đáng tin hơn)
+          const rv = p._taskReviewer || p.reviewer || p.reviewer_id || p.reviewerId || null;
           const rvName = rv?.fullName || rv?.full_name || rv?.username || null;
           const rvEmail = rv?.email || null;
-          const annotators = Array.isArray(p.annotators)
-            ? p.annotators
-            : Array.isArray(p.annotator_ids)
-              ? p.annotator_ids
-              : [];
+          const annotators = (p._taskAnnotators && p._taskAnnotators.length > 0)
+            ? p._taskAnnotators
+            : Array.isArray(p.annotators) && p.annotators.length > 0
+              ? p.annotators
+              : Array.isArray(p.annotator_ids) ? p.annotator_ids : [];
+          const annotatorCount = annotators.length;
+          const reviewerCount = rv ? 1 : 0;
           const sampleRate =
             p.review_policy?.sample_rate != null
               ? `${Math.round(p.review_policy.sample_rate * 100)}%`
@@ -1068,14 +1113,14 @@ export default function Projects() {
                           color: "#60a5fa",
                         },
                         {
-                          val: annotators.length,
+                          val: annotatorCount,
                           label: "Annotators",
-                          color: "#a78bfa",
+                          color: annotatorCount > 0 ? "#a78bfa" : MUTED,
                         },
                         {
-                          val: rv ? 1 : 0,
+                          val: reviewerCount,
                           label: "Reviewer",
-                          color: rv ? "#4ade80" : MUTED,
+                          color: reviewerCount > 0 ? "#4ade80" : MUTED,
                         },
                         ...(sampleRate
                           ? [

@@ -164,7 +164,7 @@ const ReviewerProjectDetail = () => {
     );
   }
 
-  const overdue       = project?.deadline && new Date(project.deadline) < new Date();
+  const overdue       = project?.deadline && new Date(project.deadline) < new Date() && project?.status !== 'completed';
   const guideline     = project?.guidelines || '';
   const sampleRate    = project?.review_policy?.sample_rate != null
     ? Math.round(project.review_policy.sample_rate * 100)
@@ -209,21 +209,32 @@ const ReviewerProjectDetail = () => {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold text-gray-100">{project?.name}</h1>
-                {project?.status === 'completed' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
-                    ✓ Đã hoàn thành
-                  </span>
-                )}
-                {project?.status === 'waiting_rework' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-500 border border-yellow-500/20">
-                    ↩ Làm lại (Rework)
-                  </span>
-                )}
-                {project?.status === 'in_review' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-400 border border-blue-500/20">
-                    ▶ Đang review
-                  </span>
-                )}
+                {(() => {
+                  // "Đã hoàn thành" chỉ khi đã review đủ số lượng yêu cầu (reviewed >= targetCount > 0)
+                  const isReallyCompleted = project?.status === 'completed'
+                    && reviewed >= targetCount
+                    && targetCount > 0;
+
+                  if (isReallyCompleted)
+                    return (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
+                        ✓ Đã hoàn thành
+                      </span>
+                    );
+                  if (project?.status === 'waiting_rework')
+                    return (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-500 border border-yellow-500/20">
+                        ↩ Làm lại (Rework)
+                      </span>
+                    );
+                  if (project?.status === 'in_review' || project?.status === 'completed')
+                    return (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-400 border border-blue-500/20">
+                        ▶ Đang review
+                      </span>
+                    );
+                  return null;
+                })()}
               </div>
               {project?.description && (
                 <p className="mt-1 text-sm text-gray-400">{project.description}</p>
@@ -338,9 +349,9 @@ const ReviewerProjectDetail = () => {
             </div>
             <button
               onClick={() => navigate(`/reviewer/workspace/${projectId}`)}
-              disabled={!hasSubmissions}
+              disabled={!hasSubmissions || overdue}
               className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
-                hasSubmissions
+                hasSubmissions && !overdue
                   ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20'
                   : 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
               }`}
@@ -348,10 +359,12 @@ const ReviewerProjectDetail = () => {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               </svg>
-              {!hasSubmissions
-                ? 'Chưa có bài nộp'
-                : pendingDisplay > 0
-                  ? `Vào review (${pendingDisplay} task)`
+              {overdue
+                ? 'Project đã quá hạn'
+                : !hasSubmissions
+                  ? 'Chưa có bài nộp'
+                  : pendingDisplay > 0
+                    ? `Vào review (${pendingDisplay} task)`
                   : 'Xem lại'}
             </button>
           </div>

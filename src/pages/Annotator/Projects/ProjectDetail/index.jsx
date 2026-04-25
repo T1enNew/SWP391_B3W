@@ -104,6 +104,7 @@ const ProjectDetail = () => {
   };
 
   const handleStart = async () => {
+    if (isOverdue) return;
     try {
       const res = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
         headers: getAuthHeaders(),
@@ -167,7 +168,12 @@ const ProjectDetail = () => {
   const totalApproved  = tasks.filter(t => t.status === 'approved').length;
   const totalLabeled   = tasks.filter(t => ['in_progress', 'submitted', 'resubmitted', 'approved', 'completed'].includes(t.status)).length;
   const overallProgress = totalItems > 0 ? Math.round((totalLabeled / totalItems) * 100) : 0;
-  const overdue = project?.deadline && new Date(project.deadline) < new Date();
+  // isOverdue: chỉ dựa vào deadline — dùng để block truy cập
+  const isOverdue = !!(project?.deadline && new Date(project.deadline) < new Date());
+  // allTasksApproved: tất cả task đã được reviewer approve (thực sự hoàn thành)
+  const allTasksApproved = tasks.length > 0 && tasks.every(t => t.status === 'approved');
+  // overdue: dùng cho badge hiển thị — không hiện "Quá hạn" nếu đã xong thật sự
+  const overdue = isOverdue && !allTasksApproved;
 
   const alreadySubmitted = tasks.length > 0 && tasks.every(t => ['submitted', 'resubmitted', 'approved'].includes(t.status));
   const canSubmitProject = totalItems > 0 && !alreadySubmitted && totalLabeled === totalItems;
@@ -458,9 +464,9 @@ const ProjectDetail = () => {
         <div className="flex justify-center pb-4">
           <button
             onClick={handleStart}
-            disabled={totalItems === 0}
+            disabled={totalItems === 0 || isOverdue}
             className={`inline-flex items-center gap-2 rounded-xl px-8 py-3 text-base font-bold transition-all shadow-lg ${
-              totalItems === 0
+              totalItems === 0 || isOverdue
                 ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30'
                 : canContinue
                   ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/20'
@@ -470,11 +476,13 @@ const ProjectDetail = () => {
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
             </svg>
-            {totalItems === 0
-              ? 'Chưa có task'
-              : canContinue
-                ? 'Bắt đầu làm việc'
-                : 'Xem lại bài đã nộp'}
+            {isOverdue
+              ? 'Project đã quá hạn'
+              : totalItems === 0
+                ? 'Chưa có task'
+                : canContinue
+                  ? 'Bắt đầu làm việc'
+                  : 'Xem lại bài đã nộp'}
           </button>
         </div>
 
