@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import { getAuthHeaders } from '../../../utils/auth';
 import { getLabelsWithFallback } from '../../../services/LabelService';
 import { getTopics } from '../../../services/TopicService';
 import CreateProjectSection from './CreateProjectSection';
@@ -22,10 +23,6 @@ import CreateProjectTopicLabelPicker from './CreateProjectTopicLabelPicker';
 const BG = '#080f1e', PANEL = '#0f1a2e', BORDER = '#1e2d47';
 const PRIMARY = '#3b82f6', TEXT = '#e2e8f0', MUTED = '#64748b';
 
-const getAuthHeaders = () => {
-  const t = sessionStorage.getItem('token') || '';
-  return t ? { Authorization: `Bearer ${t}` } : {};
-};
 const coerceId    = o => o?._id || o?.id || '';
 const normalizeUser = u => ({
   ...u, id: coerceId(u) || u?.user_id,
@@ -71,19 +68,20 @@ export default function CreateProject() {
     (async () => {
       setLoading(true);
       try {
-        const [dsRes, userRes, labelsRes, topicsRes] = await Promise.allSettled([
-          axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
-          axios.get(`${API_URL}/api/users`,    { headers: getAuthHeaders() }),
+        const headers = getAuthHeaders();
+        const [dsRes, annoRes, revRes, labelsRes, topicsRes] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/datasets`, { headers }),
+          axios.get(`${API_URL}/api/users?role=annotator&is_active=true&limit=200`, { headers }),
+          axios.get(`${API_URL}/api/users?role=reviewer&is_active=true&limit=200`,  { headers }),
           getLabelsWithFallback(),
           getTopics(),
         ]);
         if (dsRes.status === 'fulfilled')
           setDatasets(getArray(dsRes.value.data));
-        if (userRes.status === 'fulfilled') {
-          const users = getArray(userRes.value.data).map(normalizeUser);
-          setAnnotators(users.filter(u => u.role === 'annotator' && u.is_active !== false));
-          setReviewers(users.filter(u => u.role === 'reviewer'   && u.is_active !== false));
-        }
+        if (annoRes.status === 'fulfilled')
+          setAnnotators(getArray(annoRes.value.data).map(normalizeUser));
+        if (revRes.status === 'fulfilled')
+          setReviewers(getArray(revRes.value.data).map(normalizeUser));
         if (labelsRes.status === 'fulfilled') {
           setMasterLabels(labelsRes.value);
         }
@@ -137,6 +135,8 @@ export default function CreateProject() {
         export_format: 'JSON',
         review_policy: { mode: form.sampleRate < 100 ? 'sample' : 'full', sample_rate: form.sampleRate / 100, reviewers_per_item: 1 },
         dataset_id: selectedDatasetId,
+        annotator_ids: selectedAnnotators,
+        ...(selectedReviewer ? { reviewer_id: selectedReviewer } : {}),
       };
       const res = await axios.post(`${API_URL}/api/projects`, payload, { headers: getAuthHeaders() });
       const project = res.data?.project || res.data;
@@ -153,12 +153,18 @@ export default function CreateProject() {
         };
         await axios.post(`${API_URL}/api/tasks/assign`, assignPayload, { headers: getAuthHeaders() });
         showToast('Tạo project và phân công task thành công!');
+        setTimeout(() => navigate(`/manager/projects/${projectId}`), 900);
       } catch (assignErr) {
-        const assignMsg = assignErr?.response?.data?.message || 'Không thể phân công task';
-        showToast(`Project đã tạo nhưng phân công task thất bại: ${assignMsg}`, 'warning');
+        const status = assignErr?.response?.status;
+        const assignMsg = assignErr?.response?.data?.error || assignErr?.response?.data?.message || assignErr.message || '';
+        // 500 = backend RLS / server error → project đã tạo, chuyển sang detail để manager retry Assign Tasks
+        if (status === 500 || !status) {
+          showToast('Project đã tạo! Phân công task thất bại do lỗi server — vào project và bấm "Assign Tasks" để thử lại.', 'warning');
+        } else {
+          showToast(`Project đã tạo nhưng phân công task thất bại: ${assignMsg}`, 'warning');
+        }
+        setTimeout(() => navigate(`/manager/projects/${projectId}`), 2500);
       }
-
-      setTimeout(() => navigate(`/manager/projects/${projectId}`), 900);
     } catch (e) {
       let errorMsg = 'Tạo project thất bại';
       const data = e?.response?.data;

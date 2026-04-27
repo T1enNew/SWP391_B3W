@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import { getAuthHeaders } from '../../../utils/auth';
 import { normalizeProject } from '../../../utils/taskAdapter';
 
 const fmtDate = (d) => {
@@ -153,11 +154,10 @@ const AnnotatorProjectList = () => {
     setLoading(true);
     setError('');
     try {
-      const token = sessionStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const headers = getAuthHeaders();
       const [projRes, tasksRes] = await Promise.all([
-        axios.get(`${API_URL}/api/projects`, { headers }),
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers }),
+        axios.get(`${API_URL}/api/projects?limit=100`, { headers }),
+        axios.get(`${API_URL}/api/tasks/my-tasks?limit=500`, { headers }),
       ]);
       const rawProjects = getArray(projRes.data).map(normalizeProject);
       const allTasks = getArray(tasksRes.data);

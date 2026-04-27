@@ -65,7 +65,7 @@ const ManagerProjectDetail = () => {
         const pData = projectRes.data?.project || projectRes.data || {};
         setProject(normalizeProject(pData));
 
-        const datasetId = pData?.dataset?.id || pData?.dataset?._id || pData?.dataset_id || pData?.datasetId || null;
+        const datasetId = (pData?.dataset?.id || pData?.dataset?._id) || pData?.dataset_id || pData?.datasetId || (typeof pData?.dataset === 'string' ? pData.dataset : null);
 
         const [datasetsRes, tasksRes] = await Promise.allSettled([
           datasetId
@@ -182,6 +182,13 @@ const ManagerProjectDetail = () => {
 
       const approvedAt = task.reviewed_at || task.updated_at || null;
 
+      const reviewers = (task.reviewers || [])
+        .filter(rv => rv.status === 'approved')
+        .map(rv => ({
+          name: rv.reviewerId?.fullName || rv.reviewerId?.full_name || rv.reviewerId?.username || 'Reviewer',
+          approvedAt: rv.reviewed_at || task.reviewed_at || null
+        }));
+
       if (!map.has(key)) {
         map.set(key, {
           key, dataItem,
@@ -192,11 +199,16 @@ const ManagerProjectDetail = () => {
           approvedAt,
           annotators: [annotatorName],
           annotatorLabels: [{ name: annotatorName, labels, annotations, isPrimary }],
+          reviewers, // Added reviewer info
         });
       } else {
         const entry = map.get(key);
         if (!entry.annotators.includes(annotatorName)) entry.annotators.push(annotatorName);
         entry.annotatorLabels.push({ name: annotatorName, labels, annotations, isPrimary });
+        // Merge unique reviewers
+        reviewers.forEach(r => {
+          if (!entry.reviewers.some(er => er.name === r.name)) entry.reviewers.push(r);
+        });
       }
     });
     return Array.from(map.values());
@@ -237,7 +249,11 @@ const ManagerProjectDetail = () => {
   }, [selectedApprovedItemKey]);
 
   const handleReassign = async () => {
-    if (!project || !datasets[0]) return;
+    if (!project) return;
+    if (!datasets[0]) {
+      setToast({ open: true, msg: 'Không tìm thấy dataset của project — vui lòng tải lại trang', severity: 'error' });
+      return;
+    }
 
     // GET /api/projects/:id không trả về annotators → fallback lấy từ tasks đã load
     let annotatorIds = (project.annotators || []).map(a => a?.id || a?._id || a).filter(Boolean);
@@ -261,7 +277,7 @@ const ManagerProjectDetail = () => {
     }
 
     if (!annotatorIds.length) {
-      setToast({ open: true, msg: 'Project chưa có annotator để phân công', severity: 'warning' });
+      setToast({ open: true, msg: 'Project chưa có annotator — không thể phân công. Hãy xóa project này và tạo lại với annotator được chọn.', severity: 'warning' });
       return;
     }
     setAssignLoading(true);
@@ -274,9 +290,29 @@ const ManagerProjectDetail = () => {
       };
       await axios.post(`${API_URL}/api/tasks/assign`, assignPayload, { headers: getAuthHeaders() });
       setToast({ open: true, msg: 'Phân công task thành công!', severity: 'success' });
+      
+      // Reload data to reflect changes
+      const [pRes, tRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects/${id}`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() })
+      ]);
+      const pData = pRes.data?.project || pRes.data || {};
+      setProject(normalizeProject(pData));
+      const raw = Array.isArray(tRes.data) ? tRes.data : tRes.data?.data || tRes.data?.tasks || [];
+      setTasks(raw.map(normalizeTask));
+      
     } catch (e) {
       const msg = e?.response?.data?.error || e?.response?.data?.message || 'Phân công task thất bại';
-      setToast({ open: true, msg, severity: 'error' });
+      if (msg.includes('No unassigned items left') || msg.includes('no unassigned items')) {
+        // Thông báo chi tiết hơn để user hiểu đây không phải lỗi hệ thống mà là do dữ liệu đã hết
+        setToast({ 
+          open: true, 
+          msg: 'Dự án đã được phân công hoàn tất! Toàn bộ dữ liệu trong dataset đã có người phụ trách. Không còn mục nào chưa gán để chia thêm cho annotator mới.', 
+          severity: 'info' 
+        });
+      } else {
+        setToast({ open: true, msg, severity: 'error' });
+      }
     } finally {
       setAssignLoading(false);
     }

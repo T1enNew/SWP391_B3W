@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { normalizeTask } from '../../../utils/taskAdapter';
+import { getAuthHeaders } from '../../../utils/auth';
 import ImageAnnotator from '../../../components/ImageAnnotator';
 import AudioAnnotator from '../../../components/AudioAnnotator';
 import {
@@ -204,7 +205,8 @@ const AnnotatorTask = () => {
       setSelectedTextRange(null);
       setShowLabelDropdown(false);
 
-      const response = await axios.get(`${API_URL}/api/tasks/${id}`);
+      const headers = getAuthHeaders();
+      const response = await axios.get(`${API_URL}/api/tasks/${id}`, { headers });
       const taskData = normalizeTask(response.data);
 
       // Fetch signed URL to replace storageUrl (Supabase public URLs may return 400)
@@ -215,7 +217,8 @@ const AnnotatorTask = () => {
       if (di && datasetId && dataItemId) {
         try {
           const signedRes = await axios.get(
-            `${API_URL}/api/datasets/${datasetId}/signed-url/${dataItemId}`
+            `${API_URL}/api/datasets/${datasetId}/signed-url/${dataItemId}`,
+            { headers }
           );
           const url = signedRes.data?.signedUrl || signedRes.data?.signed_url ||
             signedRes.data?.url || signedRes.data?.data?.signedUrl || '';
@@ -228,9 +231,9 @@ const AnnotatorTask = () => {
         const projectId = taskData.projectId?.id || taskData.project?.id || (typeof taskData.projectId === 'string' ? taskData.projectId : null);
         if (projectId) {
           try {
-            const projRes = await axios.get(`${API_URL}/api/projects/${projectId}`);
+            const projRes = await axios.get(`${API_URL}/api/projects/${projectId}`, { headers });
             const pData = projRes.data?.project || projRes.data || {};
-            const rawLabels = pData.labels || pData.label_ids || pData.labelsets || pData.labelIds || [];
+            const rawLabels = pData.label_sets || pData.labelSets || pData.labels || pData.label_ids || pData.labelsets || pData.labelIds || [];
             if (Array.isArray(rawLabels) && rawLabels.length > 0) {
               taskData.availableLabels = rawLabels.map((l) => ({
                 id: l._id || l.id || l,
@@ -278,7 +281,8 @@ const AnnotatorTask = () => {
 
       if (taskData.dataset_id || taskData.datasetId) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { dataset_id: taskData.dataset_id || taskData.datasetId?.id || taskData.datasetId },
+          params: { dataset_id: taskData.dataset_id || taskData.datasetId?.id || taskData.datasetId, limit: 500 },
+          headers,
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);
@@ -386,7 +390,7 @@ const AnnotatorTask = () => {
 
       await axios.put(`${API_URL}/api/tasks/${id}/save`, {
         annotation_data: labelsPayload,
-      });
+      }, { headers: getAuthHeaders() });
       setMessage('Đã lưu thành công!');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -418,7 +422,7 @@ const AnnotatorTask = () => {
     try {
       await handleSave();
 
-      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
+      await axios.post(`${API_URL}/api/tasks/${id}/submit`, {}, { headers: getAuthHeaders() });
 
       const updatedBatchTasks = batchTasks.map((t) =>
         t.id === id ? { ...t, status: 'submitted' } : t
@@ -495,7 +499,7 @@ const AnnotatorTask = () => {
     try {
       // Submit each task individually
       await Promise.all(
-        batchTasks.map((t) => axios.post(`${API_URL}/api/tasks/${t.id}/submit`))
+        batchTasks.map((t) => axios.post(`${API_URL}/api/tasks/${t.id}/submit`, {}, { headers: getAuthHeaders() }))
       );
       alert('Nộp bài thành công! Đang quay về trang dashboard.');
       navigate('/annotator/tasks');
@@ -513,10 +517,10 @@ const AnnotatorTask = () => {
     if (task.status !== 'completed' && task.status !== 'submitted' && task.status !== 'resubmitted') {
       try {
         if (task.status === 'assigned' || task.status === 'rejected') {
-          await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+          await axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() });
         }
         await handleSave();
-        await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+        await axios.post(`${API_URL}/api/tasks/${task.id}/submit`, {}, { headers: getAuthHeaders() });
         setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
         setBatchTasks((list) =>
           list.map((t) => (t.id === task.id ? { ...t, status: 'submitted' } : t))
@@ -537,10 +541,10 @@ const AnnotatorTask = () => {
     setSaving(true);
     try {
       if (task.status === 'assigned' || task.status === 'rejected') {
-        await axios.put(`${API_URL}/api/tasks/${task.id}/start`);
+        await axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() });
       }
       await handleSave();
-      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`);
+      await axios.post(`${API_URL}/api/tasks/${task.id}/submit`, {}, { headers: getAuthHeaders() });
       setShowSubmitConfirm(false);
       navigate('/annotator/tasks', { replace: true });
     } catch (error) {
@@ -561,10 +565,9 @@ const AnnotatorTask = () => {
       task.status !== 'approved'
     ) {
       try {
-        await axios.put(`${API_URL}/api/tasks/${task.id}/label`, {
-          labels,
-          status: 'in_progress',
-        });
+        await axios.put(`${API_URL}/api/tasks/${task.id}/save`, {
+          annotation_data: labels,
+        }, { headers: getAuthHeaders() });
       } catch (error) {
         console.error('Error auto-saving before navigation:', error);
       }

@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import { getAuthHeaders } from '../../../utils/auth';
 import { normalizeProject } from '../../../utils/taskAdapter';
 import { useAuth } from '../../../context/AuthContext';
-
-const getAuthToken = () => sessionStorage.getItem('token');
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -95,9 +94,9 @@ const AnnotatorOverview = () => {
     setLoading(true);
     setError('');
     try {
-      const headers = { Authorization: `Bearer ${getAuthToken()}` };
+      const headers = getAuthHeaders();
       const [tasksRes, projRes] = await Promise.all([
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers }).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers, params: { limit: 500 } }).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/api/projects`, { headers, params: { limit: 100 } }).catch(() => ({ data: [] })),
       ]);
       setTasks(getArray(tasksRes.data));

@@ -7,17 +7,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API_URL } from "../../../../config/api";
 import { getArray } from "../../../../utils/api";
+import { getAuthHeaders } from "../../../../utils/auth";
 import {
   normalizeProject,
   computeTaskStats,
   getDisplayStatus,
   OVERDUE_STATUSES,
 } from "../projectStatusUtils";
-
-const getAuthHeaders = () => {
-  const token = sessionStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
 
 // Hook chính — dùng ở trang Projects/index.jsx
 // Trả về: danh sách project, dataset, trạng thái loading, taskStatsMap (đếm task theo project),

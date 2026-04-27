@@ -36,22 +36,14 @@ import {
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_URL } from "../../../config/api";
+import { getAuthHeaders } from "../../../utils/auth";
 import { getCfg, getDisplayStatus, fmtDateTime, getDeadlineState, OVERDUE_STATUSES } from "./projectStatusUtils";
 import { useProjects } from "./hooks/useProjects";
 import ProjectInfoListDialog from "./ProjectInfoListDialog";
 
 // Projects/index.jsx
-// Trang danh sách Projects của Manager.
-// Hiển thị các project dưới dạng card, cho phép lọc theo status, tìm kiếm,
-// xem thông tin chi tiết (popup), và xóa project.
-
 const BG = "#080f1e", PANEL = "#0d1829", BORDER = "#1e2d47";
 const TEXT = "#e2e8f0", MUTED = "#64748b", PRIMARY = "#3b82f6";
-
-const getAuthHeaders = () => {
-  const token = sessionStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
 
 // Ô thống kê nhỏ ở đầu trang (Tất cả / Active / Completed / Draft / Overdue...)
 // Khi click → set statusFilter để lọc danh sách bên dưới
