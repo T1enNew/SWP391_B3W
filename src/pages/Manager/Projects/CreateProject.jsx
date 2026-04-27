@@ -119,6 +119,9 @@ export default function CreateProject() {
     if (!selectedAnnotators.length || !selectedReviewer) {
       showToast('Vui lòng chọn ít nhất 1 Annotator và 1 Reviewer', 'warning'); return;
     }
+    if (!selectedTopicId || selectedLabelsetIds.length === 0) {
+      showToast('Vui lòng chọn 1 Topic và ít nhất 1 Nhãn', 'warning'); return;
+    }
     // Validate: 1% là mức tối thiểu (phải review ít nhất 1 task), 100% là tối đa (review tất cả)
     if (form.sampleRate < 1 || form.sampleRate > 100) {
       showToast('Sample Rate phải nằm trong khoảng từ 1% đến 100%', 'warning'); return;
@@ -136,6 +139,8 @@ export default function CreateProject() {
         review_policy: { mode: form.sampleRate < 100 ? 'sample' : 'full', sample_rate: form.sampleRate / 100, reviewers_per_item: 1 },
         dataset_id: selectedDatasetId,
         annotator_ids: selectedAnnotators,
+        topic_id: selectedTopicId,
+        label_ids: selectedLabelsetIds,
         ...(selectedReviewer ? { reviewer_id: selectedReviewer } : {}),
       };
       const res = await axios.post(`${API_URL}/api/projects`, payload, { headers: getAuthHeaders() });
