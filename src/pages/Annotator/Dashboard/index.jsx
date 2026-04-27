@@ -121,12 +121,20 @@ const AnnotatorOverview = () => {
   const rejected   = tasks.filter(t => t.status === 'rejected').length;
 
   // "Cần xử lý": rejected & revised ưu tiên cao, rồi in_progress
+  // Không hiển thị task thuộc project đã quá hạn
   const actionTasks = useMemo(() => {
     const priority = ['rejected', 'revised', 'in_progress'];
+    const now = new Date();
     return tasks
-      .filter(t => priority.includes(t.status))
+      .filter(t => {
+        if (!priority.includes(t.status)) return false;
+        const pid = getTaskProjId(t);
+        const proj = projects.find(p => String(p.id || p.projectId) === String(pid));
+        if (proj?.deadline && new Date(proj.deadline) < now) return false;
+        return true;
+      })
       .sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status));
-  }, [tasks]);
+  }, [tasks, projects]);
 
   // Projects with per-project stats
   const projectsWithStats = useMemo(() => {
@@ -139,7 +147,8 @@ const AnnotatorOverview = () => {
       const pRejected  = pTasks.filter(t => t.status === 'rejected').length;
       const pSubmitted = pTasks.filter(t => ['submitted','resubmitted'].includes(t.status)).length;
       const pPct       = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;
-      const pOverdue   = p.deadline && new Date(p.deadline) < new Date();
+      // Chỉ coi là quá hạn nếu deadline qua mà chưa nộp hết hoặc còn task bị reject
+      const pOverdue   = p.deadline && new Date(p.deadline) < new Date() && (pPct < 100 || pRejected > 0);
       return { ...p, pTotal, pDone, pApproved, pRejected, pSubmitted, pPct, pOverdue };
     }).filter(p => p.pTotal > 0).sort((a, b) => {
       const da = a.deadline ? new Date(a.deadline).getTime() : 0;

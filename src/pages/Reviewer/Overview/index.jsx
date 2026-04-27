@@ -38,7 +38,7 @@ const getGreeting = () => {
 };
 
 const ProjectStatusBadge = ({ project }) => {
-  const overdue = project.deadline && new Date(project.deadline) < new Date();
+  const overdue = project.deadline && new Date(project.deadline) < new Date() && project.status !== 'completed';
   if (project.status === 'completed')
     return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">✓ Hoàn thành</span>;
   if (project.status === 'waiting_rework')
@@ -159,12 +159,17 @@ const ReviewerOverview = () => {
   const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
 
   // Pending queue grouped by item
+  // Không hiển thị task từ project đã quá hạn
   const queueItems = useMemo(() => {
+    const now = new Date();
     const itemMap = {};
     pendingTasks.forEach(task => {
+      const pid = task.project?.id || task.projectId?.id || (typeof task.projectId === 'string' ? task.projectId : null);
+      const proj = allProjects.find(p => String(p.id || p._id) === String(pid));
+      if (proj?.deadline && new Date(proj.deadline) < now) return;
+
       const di  = task.dataItem || task.data_item || {};
       const key = di.filename || di.original_name || task.id;
-      const pid = task.project?.id || task.projectId?.id || (typeof task.projectId === 'string' ? task.projectId : null);
       if (!itemMap[key]) {
         itemMap[key] = {
           itemId:      key,
@@ -182,7 +187,7 @@ const ReviewerOverview = () => {
       }
     });
     return Object.values(itemMap);
-  }, [pendingTasks]);
+  }, [pendingTasks, allProjects]);
 
   // Projects with submission counts
   const projectsWithStats = useMemo(() => {
@@ -406,7 +411,8 @@ const ReviewerOverview = () => {
                   <div className="divide-y divide-gray-700/40 flex-1">
                     {projSlice.map((p) => {
                       const pid = p.id || p._id;
-                      const overdue = p.deadline && new Date(p.deadline) < new Date();
+                      // Chỉ coi là quá hạn nếu deadline qua mà project chưa hoàn thành
+                      const overdue = p.deadline && new Date(p.deadline) < new Date() && p.status !== 'completed';
                       return (
                         <div
                           key={pid}

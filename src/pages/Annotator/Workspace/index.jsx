@@ -378,8 +378,9 @@ const handleSave = useCallback(async () => {
         const applied = res.data?.applied;
         const suggestions = res.data?.suggestions || [];
         if (applied || suggestions.length > 0) {
-          if (!applied && suggestions.length > 0) {
-            // Fallback: backend didn't auto-save, save manually with placeholder bboxes
+          if (suggestions.length > 0) {
+            // Backend saves to ai_suggestion but frontend reads annotation_data.objects,
+            // so always persist suggestions as objects for rendering
             const count = suggestions.length;
             const objects = suggestions.map((s, idx) => {
               const colW = 90 / count;
