@@ -95,8 +95,9 @@ const ReviewerProjectDetail = () => {
     try {
       const headers = { Authorization: `Bearer ${getAuthToken()}` };
 
-      // Auto-approve ALL remaining pending submissions in this project
-      // This ensures 100% approval rate before calling project approve
+      // Auto-approve toàn bộ task pending còn lại trong project.
+      // Lý do: reviewer chỉ review một phần (sample), phần còn lại cần được approve tự động
+      // trước khi gọi project approve — nếu không backend sẽ báo còn task chưa xử lý.
       const pendingRes = await axios.get(`${API_URL}/api/reviews/pending`, {
         headers,
         params: { limit: 1000 },
@@ -120,7 +121,7 @@ const ReviewerProjectDetail = () => {
         }
       }
 
-      // Approve the project (all tasks approved → backend approval rate = 100%)
+      // Sau khi auto-approve xong → gọi project approve để chuyển status → "completed"
       await axios.post(
         `${API_URL}/api/projects/${projectId}/approve`,
         { comment: reviewComment },
@@ -166,24 +167,51 @@ const ReviewerProjectDetail = () => {
 
   const overdue       = project?.deadline && new Date(project.deadline) < new Date() && project?.status !== 'completed';
   const guideline     = project?.guidelines || '';
+
+  // Backend lưu sample_rate dạng thập phân (0.0–1.0), nhân 100 để hiển thị dạng phần trăm.
+  // null = project không có review_policy (tạo từ phiên bản cũ) → coi như review 100%.
   const sampleRate    = project?.review_policy?.sample_rate != null
     ? Math.round(project.review_policy.sample_rate * 100)
     : null;
-  // project_total = tổng task thực của project (không phải chỉ submitted)
+
+  // project_total = tổng số task thực của project (bao gồm cả task chưa submitted).
+  // Dùng để tính targetCount chính xác, không chỉ tính trên phần đã nộp.
   const projectTotal    = stats?.project_total || stats?.total || 0;
-  // How many tasks the reviewer is required to review based on sample rate
+
+  // Số task reviewer BẮT BUỘC phải review để đủ sample.
+  // Công thức: ceil(tổng task × sample%) để luôn làm tròn lên, tối thiểu 1.
+  // Ví dụ: 100 task, sample 30% → ceil(100 × 0.30) = 30 task phải review.
+  // Nếu không có sample rate → phải review toàn bộ số task đã submitted (stats.total).
   const targetCount     = (sampleRate !== null && projectTotal > 0)
     ? Math.max(1, Math.ceil(projectTotal * sampleRate / 100))
     : (stats?.total ?? 0);
-  // reviewedRaw = tổng đã review theo backend (bao gồm cả auto-approve)
+
+  // reviewedRaw = tổng task đã có kết quả (approved + rejected) từ backend.
+  // Bao gồm cả các task được auto-approve khi reviewer bấm "Approve Project".
   const reviewedRaw     = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
-  // reviewed chỉ tính trong phạm vi sample (cap ở targetCount)
+
+  // reviewed = số task đã xử lý nhưng giới hạn trong phạm vi sample (cap tại targetCount).
+  // Không để reviewed vượt quá targetCount vì progress bar sẽ > 100%.
+  // Nếu không có sample rate → không cap, đếm tất cả.
   const reviewed        = sampleRate !== null ? Math.min(reviewedRaw, targetCount) : reviewedRaw;
+
+  // Số task còn lại cần review trước khi đủ sample. Không bao giờ âm.
   const pendingDisplay  = Math.max(0, targetCount - reviewed);
+
+  // % tiến độ review: reviewed/targetCount, cap tại 100% để tránh overflow progress bar.
   const progressPct     = targetCount > 0 ? Math.min(100, Math.round((reviewed / targetCount) * 100)) : 0;
-  // Tỷ lệ approve = dựa trên tổng thực tế (reviewedRaw) vì backend tính đúng
+
+  // Tỷ lệ approve tính trên reviewedRaw (không cap) vì phản ánh chất lượng thực tế của annotator.
+  // Ví dụ: đã review 15 task, 12 approve, 3 reject → approvalRate = 80%.
   const approvalRate    = reviewedRaw > 0 ? Math.round(((stats?.approved ?? 0) / reviewedRaw) * 100) : 0;
+
+  // Reviewer có thể bấm "Approve Project" khi:
+  //   1. Có ít nhất 1 task đã submitted (stats.total > 0)
+  //   2. Đã review đủ sample (reviewed >= targetCount)
+  //   3. Project chưa ở trạng thái "completed" hoặc "waiting_rework"
   const canFinalize     = (stats?.total ?? 0) > 0 && reviewed >= targetCount && !['completed', 'waiting_rework'].includes(project?.status);
+
+  // Cờ kiểm tra annotator đã nộp bài chưa — nếu chưa thì disable nút vào workspace.
   const hasSubmissions  = (stats?.total ?? 0) > 0;
 
   return (
@@ -210,7 +238,9 @@ const ReviewerProjectDetail = () => {
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold text-gray-100">{project?.name}</h1>
                 {(() => {
-                  // "Đã hoàn thành" chỉ khi đã review đủ số lượng yêu cầu (reviewed >= targetCount > 0)
+                  // Badge "Đã hoàn thành" chỉ hiện khi status = completed VÀ đã review đủ sample.
+                  // Tránh trường hợp project = completed nhưng reviewer chưa đủ targetCount
+                  // (có thể xảy ra nếu manager approve thủ công từ phía backend).
                   const isReallyCompleted = project?.status === 'completed'
                     && reviewed >= targetCount
                     && targetCount > 0;
@@ -286,6 +316,8 @@ const ReviewerProjectDetail = () => {
             </div>
           </div>
 
+          {/* Banner sample rate: chỉ hiện khi project có cấu hình sample (không phải review full).
+              Giúp reviewer biết rõ mình chỉ cần review bao nhiêu task, không phải toàn bộ. */}
           {sampleRate !== null && (
             <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-500/5 border border-violet-500/20 px-4 py-2.5">
               <svg className="w-4 h-4 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

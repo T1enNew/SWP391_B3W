@@ -12,11 +12,12 @@ import {
 } from '@mui/icons-material';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
-import { getLabels } from '../../../services/LabelService';
+import { getLabelsWithFallback } from '../../../services/LabelService';
+import { getTopics } from '../../../services/TopicService';
 import CreateProjectSection from './CreateProjectSection';
 import CreateProjectUserList from './CreateProjectUserList';
 import CreateProjectDatasetPicker from './CreateProjectDatasetPicker';
-import CreateProjectLabelPicker from './CreateProjectLabelPicker';
+import CreateProjectTopicLabelPicker from './CreateProjectTopicLabelPicker';
 
 const BG = '#080f1e', PANEL = '#0f1a2e', BORDER = '#1e2d47';
 const PRIMARY = '#3b82f6', TEXT = '#e2e8f0', MUTED = '#64748b';
@@ -51,10 +52,14 @@ export default function CreateProject() {
   const [annotators, setAnnotators]     = useState([]);
   const [reviewers, setReviewers]       = useState([]);
   const [masterLabels, setMasterLabels] = useState([]);
+  const [topics, setTopics]             = useState([]);
 
+  // sampleRate mặc định 100% = reviewer phải xem tất cả task (mode: "full").
+  // Khi manager đặt < 100%, chỉ một phần ngẫu nhiên được review (mode: "sample").
   const [form, setForm] = useState({ name: '', description: '', guidelines: '', deadline: '', sampleRate: 100 });
   const [selectedDatasetId, setSelectedDatasetId]     = useState('');
   const [selectedLabelsetIds, setSelectedLabelsetIds] = useState([]);
+  const [selectedTopicId, setSelectedTopicId]         = useState('');
   const [selectedAnnotators, setSelectedAnnotators]   = useState([]);
   const [selectedReviewer, setSelectedReviewer]       = useState('');
   const [annoSearch, setAnnoSearch] = useState('');
@@ -66,10 +71,11 @@ export default function CreateProject() {
     (async () => {
       setLoading(true);
       try {
-        const [dsRes, userRes, labelsRes] = await Promise.allSettled([
+        const [dsRes, userRes, labelsRes, topicsRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
           axios.get(`${API_URL}/api/users`,    { headers: getAuthHeaders() }),
-          getLabels(),
+          getLabelsWithFallback(),
+          getTopics(),
         ]);
         if (dsRes.status === 'fulfilled')
           setDatasets(getArray(dsRes.value.data));
@@ -79,8 +85,10 @@ export default function CreateProject() {
           setReviewers(users.filter(u => u.role === 'reviewer'   && u.is_active !== false));
         }
         if (labelsRes.status === 'fulfilled') {
-          const data = labelsRes.value;
-          setMasterLabels(Array.isArray(data) ? data : (data?.labels || data?.data || []));
+          setMasterLabels(labelsRes.value);
+        }
+        if (topicsRes.status === 'fulfilled') {
+          setTopics(getArray(topicsRes.value));
         }
       } catch (e) {
         setError(e?.response?.data?.message || e.message || 'Không tải được dữ liệu');
@@ -101,6 +109,10 @@ export default function CreateProject() {
   const toggleAnnotator = id => setSelectedAnnotators(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleReviewer  = id => setSelectedReviewer(prev => prev === id ? '' : id);
   const toggleLabel     = id => setSelectedLabelsetIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const handleTopicChange = (topicId) => {
+    setSelectedTopicId(topicId);
+    setSelectedLabelsetIds([]);
+  };
 
   const handleCreate = async () => {
     if (!form.name.trim() || !form.deadline || !selectedDatasetId) {
@@ -109,11 +121,15 @@ export default function CreateProject() {
     if (!selectedAnnotators.length || !selectedReviewer) {
       showToast('Vui lòng chọn ít nhất 1 Annotator và 1 Reviewer', 'warning'); return;
     }
+    // Validate: 1% là mức tối thiểu (phải review ít nhất 1 task), 100% là tối đa (review tất cả)
     if (form.sampleRate < 1 || form.sampleRate > 100) {
       showToast('Sample Rate phải nằm trong khoảng từ 1% đến 100%', 'warning'); return;
     }
     setSaving(true); setError('');
     try {
+      // Không gửi annotator_ids/reviewer_id ở bước tạo project:
+      // backend POST /api/projects cố insert tasks ngay trong handler → RLS Supabase chặn → 500.
+      // Task assignment sẽ được gọi riêng qua POST /api/tasks/assign bên dưới.
       const payload = {
         name: form.name.trim(), description: form.description.trim(),
         guidelines: form.guidelines.trim() || 'No guidelines',
@@ -121,9 +137,6 @@ export default function CreateProject() {
         export_format: 'JSON',
         review_policy: { mode: form.sampleRate < 100 ? 'sample' : 'full', sample_rate: form.sampleRate / 100, reviewers_per_item: 1 },
         dataset_id: selectedDatasetId,
-        annotator_ids: selectedAnnotators,
-        reviewer_id: selectedReviewer,
-        label_ids: selectedLabelsetIds,
       };
       const res = await axios.post(`${API_URL}/api/projects`, payload, { headers: getAuthHeaders() });
       const project = res.data?.project || res.data;
@@ -210,6 +223,8 @@ export default function CreateProject() {
                       onChange={e => setForm(p => ({ ...p, sampleRate: e.target.value ? Number(e.target.value) : '' }))}
                       placeholder="VD: 10" sx={{ ...inputSx, flex: 1 }} />
                   </Box>
+                  {/* Chỉ hiện cảnh báo khi sample rate < 100%: nhắc manager biết annotator vẫn làm full,
+                      chỉ reviewer được giảm tải. Nếu = 100% thì không cần thông báo thêm. */}
                   {form.sampleRate < 100 && form.sampleRate > 0 && (
                     <Typography sx={{ color: '#fbbf24', fontSize: 13, mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                       <CheckCircleIcon sx={{ fontSize: 16 }} />
@@ -224,9 +239,16 @@ export default function CreateProject() {
                 <CreateProjectDatasetPicker datasets={datasets} selected={selectedDatasetId} onSelect={setSelectedDatasetId} />
               </CreateProjectSection>
 
-              <CreateProjectSection icon={<LabelIcon />} title="Chọn nhãn"
-                subtitle={`${selectedLabelsetIds.length} nhãn được chọn`}>
-                <CreateProjectLabelPicker labels={masterLabels} selected={selectedLabelsetIds} onToggle={toggleLabel} />
+              <CreateProjectSection icon={<LabelIcon />} title="Chọn nhãn theo Topic"
+                subtitle={selectedLabelsetIds.length ? `${selectedLabelsetIds.length} nhãn được chọn` : 'Chọn topic → chọn nhãn'}>
+                <CreateProjectTopicLabelPicker
+                  topics={topics}
+                  labels={masterLabels}
+                  selectedTopicId={selectedTopicId}
+                  onTopicChange={handleTopicChange}
+                  selected={selectedLabelsetIds}
+                  onToggle={toggleLabel}
+                />
               </CreateProjectSection>
             </Stack>
           </Grid>
@@ -256,6 +278,7 @@ export default function CreateProject() {
                     {[
                       { label: 'Project name', value: form.name || '—' },
                       { label: 'Dataset',      value: datasets.find(d => coerceId(d) === selectedDatasetId)?.name || '—' },
+                      { label: 'Topic',        value: topics.find(t => t.id === selectedTopicId)?.name || '—' },
                       { label: 'Labels',       value: selectedLabelsetIds.length ? `${selectedLabelsetIds.length} nhãn` : '—' },
                       { label: 'Annotators',   value: selectedAnnotators.length  ? `${selectedAnnotators.length} người` : '—' },
                       { label: 'Reviewer',     value: selectedReviewer ? '1 người' : '—' },

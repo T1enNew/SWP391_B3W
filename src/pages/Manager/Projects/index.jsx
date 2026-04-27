@@ -244,7 +244,7 @@ export default function Projects() {
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
         p.dataset_name.toLowerCase().includes(q);
-      const ds = getDisplayStatus(p, taskStatsMap[p.id] || null);
+      const ds = getDisplayStatus(p, taskStatsMap[p.id || p._id ] || null);
       const okStatus =
         statusFilter === "all" ||
         statusFilter === ds ||

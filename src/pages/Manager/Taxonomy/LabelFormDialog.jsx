@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, InputAdornment, Stack, TextField, Typography,
+  DialogTitle, InputAdornment, MenuItem, Select, FormControl, InputLabel,
+  Stack, TextField, Typography,
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Label as LabelIcon } from '@mui/icons-material';
 
@@ -31,8 +32,8 @@ const hexToRgb = (hex = '#3b82f6') => {
   return `${r},${g},${b}`;
 };
 
-const LabelFormDialog = ({ open, initial, onClose, onSave, saving }) => {
-  const [form, setForm] = useState({ name: '', color: '#3b82f6', description: '', shortcut: '' });
+const LabelFormDialog = ({ open, initial, onClose, onSave, saving, topics = [], prefillTopicId = '' }) => {
+  const [form, setForm] = useState({ name: '', color: '#3b82f6', description: '', shortcut: '', topic_id: '' });
 
   useEffect(() => {
     if (open) {
@@ -41,9 +42,16 @@ const LabelFormDialog = ({ open, initial, onClose, onSave, saving }) => {
         color: initial.color || '#3b82f6',
         description: initial.description || '',
         shortcut: initial.shortcut || '',
-      } : { name: '', color: COLORS[Math.floor(Math.random() * COLORS.length)], description: '', shortcut: '' });
+        topic_id: initial.topic_id || initial.topic?.id || '',
+      } : {
+        name: '',
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        description: '',
+        shortcut: '',
+        topic_id: prefillTopicId,   // Điền sẵn topic khi bấm "+" trên chip topic
+      });
     }
-  }, [open, initial]);
+  }, [open, initial, prefillTopicId]);
 
   const rgb = hexToRgb(form.color);
 
@@ -119,6 +127,28 @@ const LabelFormDialog = ({ open, initial, onClose, onSave, saving }) => {
               ))}
             </Box>
           </Box>
+
+          {topics.length > 0 && (
+            <FormControl fullWidth sx={inputSx}>
+              <InputLabel>Topic (tuỳ chọn)</InputLabel>
+              <Select value={form.topic_id} label="Topic (tuỳ chọn)"
+                onChange={e => setForm(p => ({ ...p, topic_id: e.target.value }))}
+                sx={{ bgcolor: '#08121f', color: TEXT, borderRadius: '10px',
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: BORDER },
+                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#2d4060' },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: PRIMARY },
+                  '& .MuiSvgIcon-root': { color: MUTED },
+                }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', border: `1px solid ${BORDER}`, color: TEXT } } }}>
+                <MenuItem value=""><em style={{ color: MUTED }}>Không chọn</em></MenuItem>
+                {topics.map(t => (
+                  <MenuItem key={t.id} value={t.id} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>
+                    {t.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
 
           <TextField fullWidth label="Phím tắt (tuỳ chọn)" value={form.shortcut}
             onChange={e => setForm(p => ({ ...p, shortcut: e.target.value.slice(0, 1).toUpperCase() }))}

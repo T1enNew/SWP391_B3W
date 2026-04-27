@@ -51,6 +51,10 @@ export function useDatasets() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [dsStatusMap, setDsStatusMap]         = useState({});
 
+  /* ── inline viewer (3-panel) ── */
+  const [viewerOpen, setViewerOpen]               = useState(false);
+  const [viewerInitialItem, setViewerInitialItem] = useState(null);
+
   // Index task theo itemId và tên file để tra cứu nhanh khi render từng item trong grid
   const tasksByItemId = useMemo(() => {
     const byId   = new Map();
@@ -282,6 +286,8 @@ export function useDatasets() {
 
   useEffect(() => {
     if (!selectedDs) return;
+    setViewerOpen(false);
+    setViewerInitialItem(null);
     fetchDatasetItems(selectedDs);
     const preloaded = dsStatusMap[String(coerceId(selectedDs))]?.tasks;
     if (preloaded?.length) setLinkedTasks(preloaded);
@@ -404,56 +410,12 @@ export function useDatasets() {
   };
 
   // Xử lý click vào 1 item trong dataset:
-  //   - Dataset đã hoàn thành (isComplete) → mở popup xem annotation của item đó
+  //   - Dataset đã hoàn thành (isComplete) → mở 3-panel inline viewer
   //   - Dataset chưa hoàn thành → navigate sang trang chi tiết item
   const handleItemClick = (item) => {
     if (isComplete) {
-      const itemId       = coerceId(item);
-      const itemFilename = item?.originalName || item?.original_name || item?.filename || '';
-
-      const matchingTasks = linkedTasks.filter(t => {
-        if (t.status !== 'approved') return false;
-        const di   = t.dataItem || t.data_item;
-        if (!di)   return false;
-        const diId = typeof di === 'string' ? di : (di?._id || di?.id || '');
-        if (itemId && diId && String(diId) === String(itemId)) return true;
-        const diName = typeof di === 'object' ? (di?.originalName || di?.original_name || di?.filename || '') : '';
-        if (itemFilename && diName) {
-          if (diName === itemFilename) return true;
-          const diBase   = diName.replace(/^\d+_/, '');
-          const itemBase = itemFilename.replace(/^\d+_/, '');
-          if (diBase === itemFilename || itemFilename === diBase || diBase === itemBase) return true;
-        }
-        return false;
-      });
-
-      const annotatorMap = new Map();
-      matchingTasks.forEach(task => {
-        const di  = task.dataItem || task.data_item || {};
-        const ann = task.annotatorId || task.annotator || {};
-        const name = typeof ann === 'string'
-          ? ann
-          : (ann?.fullName || ann?.full_name || ann?.name || ann?.username || 'Annotator');
-        const L   = task.labels || task.annotation_data || task.annotationData || {};
-        const raw = L?.bboxes || L?.objects || L?.spans || L?.segments || (Array.isArray(L) ? L : []);
-        const annotations = (Array.isArray(raw) ? raw : [raw]).map(x => ({
-          label: typeof x === 'string' ? x : (x?.label || x?.text || x?.name || 'unknown'),
-          bbox:  x?.bbox || x?.box || (x?.x !== undefined ? [x.x, x.y, x.x + (x.width || 0), x.y + (x.height || 0)] : null),
-          start: x?.start, end: x?.end,
-        })).filter(a => a.label && a.label !== 'unknown');
-        const directLabels = Array.isArray(L?.labels) ? L.labels : (L?.label ? [L.label] : []);
-        const labels = [...new Set([...annotations.map(a => a.label), ...directLabels])];
-        if (!annotatorMap.has(name))
-          annotatorMap.set(name, { name, labels, annotations, isPrimary: false });
-      });
-
-      const diObj  = typeof (matchingTasks[0]?.dataItem || matchingTasks[0]?.data_item) === 'object'
-        ? (matchingTasks[0]?.dataItem || matchingTasks[0]?.data_item || {}) : {};
-      const fileUrl = buildImageUrl(Object.keys(diObj).length ? diObj : item);
-
-      const approvedAt = matchingTasks[0]?.reviewed_at || matchingTasks[0]?.updated_at || null;
-      setDetailItem({ fileName: itemFilename, fileUrl, itemId, mediaType: 'image', approvedAt, annotatorLabels: [...annotatorMap.values()] });
-      setDetailDialogOpen(true);
+      setViewerInitialItem(item);
+      setViewerOpen(true);
     } else {
       navigate(
         `/manager/datasets/${coerceId(selectedDs)}/items/${encodeURIComponent(item.id || item._id || item.path || '')}`,
@@ -511,6 +473,7 @@ export function useDatasets() {
     selectedDs, setSelectedDs, dsItems, itemsLoading,
     uploading, uploadProgress, linkedTasks, deleteTarget, setDeleteTarget, deleting,
     infoDs, setInfoDs, deletingItemId, detailItem, detailDialogOpen, setDetailDialogOpen, setDetailItem,
+    viewerOpen, setViewerOpen, viewerInitialItem,
     dsStatusMap, fileInputRef,
     /* computed */
     filtered, isComplete, dsStats, approvedItemsMap, getTasksForItem,
