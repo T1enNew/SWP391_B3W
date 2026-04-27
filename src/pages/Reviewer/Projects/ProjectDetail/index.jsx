@@ -65,14 +65,15 @@ const ReviewerProjectDetail = () => {
       const projectTotal = projData?.total_tasks || projData?.totalTasks || 0;
 
       const s = statsRes.data;
-      if (s && (s.total ?? 0) > 0) {
+      const sTotal = (s?.total ?? 0) + (s?.pending ?? 0) + (s?.approved ?? 0) + (s?.rejected ?? 0);
+      if (s && sTotal > 0) {
+        const computedTotal = (s.total ?? 0) || ((s.pending ?? 0) + (s.approved ?? 0) + (s.rejected ?? 0));
         setStats({
-          total: s.total ?? 0,
-          project_total: projectTotal || s.total,
+          total: computedTotal,
+          project_total: projectTotal || computedTotal,
           approved: s.approved ?? 0,
           rejected: s.rejected ?? 0,
-          pending:
-            s.pending ?? (s.total ?? 0) - (s.approved ?? 0) - (s.rejected ?? 0),
+          pending: s.pending ?? computedTotal - (s.approved ?? 0) - (s.rejected ?? 0),
           approval_rate: s.approval_rate ?? 0,
         });
       } else {
@@ -215,10 +216,8 @@ const ReviewerProjectDetail = () => {
     );
   }
 
-  const overdue =
-    project?.deadline &&
-    new Date(project.deadline) < new Date() &&
-    project?.status !== "completed";
+  const deadlinePassed = !!project?.deadline && new Date(project.deadline) < new Date();
+  const overdue = deadlinePassed && project?.status !== "completed";
   const guideline = project?.guidelines || "";
   const sampleRate =
     project?.review_policy?.sample_rate != null
@@ -250,7 +249,9 @@ const ReviewerProjectDetail = () => {
     (stats?.total ?? 0) > 0 &&
     reviewed >= targetCount &&
     !["completed", "waiting_rework"].includes(project?.status);
-  const hasSubmissions = (stats?.total ?? 0) > 0;
+  const hasSubmissions = (stats?.total ?? 0) > 0 || (stats?.pending ?? 0) > 0;
+  // deadline đã qua + còn pending = reviewer chưa chấm kịp (bất kể project.status)
+  const reviewerAtFault = deadlinePassed && pendingDisplay > 0;
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
@@ -487,11 +488,15 @@ const ReviewerProjectDetail = () => {
                 Bắt đầu Review
               </h2>
               <p className="text-sm text-gray-400 mt-0.5">
-                {!hasSubmissions
-                  ? "Annotator chưa nộp bài, chưa có gì để review"
-                  : pendingDisplay > 0
-                    ? `Còn ${pendingDisplay} task cần review`
-                    : "Đã đủ sample — có thể finalize project"}
+                {reviewerAtFault
+                  ? `Project quá hạn — còn ${pendingDisplay} task chưa được review`
+                  : overdue
+                    ? "Project đã quá hạn, không thể tiếp tục review"
+                    : !hasSubmissions
+                      ? "Annotator chưa nộp bài, chưa có gì để review"
+                      : pendingDisplay > 0
+                        ? `Còn ${pendingDisplay} task cần review`
+                        : "Đã đủ sample — có thể finalize project"}
               </p>
             </div>
             <button
@@ -503,18 +508,8 @@ const ReviewerProjectDetail = () => {
                   : "bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600/30"
               }`}
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                />
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               </svg>
               {overdue
                 ? "Project đã quá hạn"
@@ -526,27 +521,30 @@ const ReviewerProjectDetail = () => {
             </button>
           </div>
 
-          {!hasSubmissions && (
-            <div className="rounded-xl border border-gray-700/60 bg-gray-900/40 p-8 text-center">
-              <svg
-                className="mx-auto w-10 h-10 text-gray-600 mb-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
+          {/* Quá hạn do reviewer chưa chấm */}
+          {reviewerAtFault && (
+            <div className="rounded-xl border border-rose-700/40 bg-rose-500/5 p-5 flex items-start gap-3">
+              <svg className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
-              <p className="text-gray-400 text-sm font-medium">
-                Đang chờ annotator nộp bài
-              </p>
+              <div>
+                <p className="text-sm font-semibold text-rose-400">Reviewer chưa hoàn thành review trước deadline</p>
+                <p className="text-xs text-rose-400/70 mt-1">
+                  Annotator đã nộp bài đầy đủ nhưng còn <span className="font-semibold">{pendingDisplay} task</span> chưa được review. Project quá hạn do reviewer chưa chấm kịp.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Annotator chưa nộp bài */}
+          {!reviewerAtFault && !overdue && !hasSubmissions && (
+            <div className="rounded-xl border border-gray-700/60 bg-gray-900/40 p-8 text-center">
+              <svg className="mx-auto w-10 h-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-gray-400 text-sm font-medium">Đang chờ annotator nộp bài</p>
               <p className="text-gray-600 text-xs mt-1">
-                Khi annotator hoàn thành và nộp bài, bạn sẽ thấy các task cần
-                review tại đây.
+                Khi annotator hoàn thành và nộp bài, bạn sẽ thấy các task cần review tại đây.
               </p>
             </div>
           )}

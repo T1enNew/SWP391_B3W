@@ -28,17 +28,20 @@ const fmtDateTime = (d) => {
 };
 
 const getProjectStatus = (stats, deadline) => {
-  const overdue = deadline && new Date(deadline) < new Date();
-  if (!stats || stats.total === 0)
+  const deadlinePassed = deadline && new Date(deadline) < new Date();
+  if (!stats || stats.total === 0) {
+    if (deadlinePassed)
+      return { label: "Quá hạn", color: "bg-rose-500/15 text-rose-400 border border-rose-500/30", icon: "⚠" };
     return { label: "Chưa có bài để review", color: "bg-gray-600 text-gray-300", icon: "○" };
+  }
   const targetCount = stats.targetCount ?? stats.total;
   const pendingDisplay = stats.pendingDisplay ?? stats.pending;
   if (stats.reviewed >= targetCount)
     return { label: "Đã review xong", color: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30", icon: "✓" };
+  if (deadlinePassed && pendingDisplay > 0)
+    return { label: "Reviewer chưa chấm kịp", color: "bg-rose-500/15 text-rose-400 border border-rose-500/30", icon: "⚠" };
   if (pendingDisplay > 0)
     return { label: "Đang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
-  if (overdue)
-    return { label: "Quá hạn", color: "bg-rose-500/15 text-rose-400 border border-rose-500/30", icon: "⚠" };
   return { label: "Đang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
 };
 
@@ -54,7 +57,9 @@ const StatusBadge = ({ stats, deadline }) => {
 
 const ProjectCard = ({ project, onOpen }) => {
   const stats = project.stats || {};
-  const overdue = project.deadline && new Date(project.deadline) < new Date();
+  const targetCount = stats.targetCount ?? stats.total ?? 0;
+  const isDone = stats.total > 0 && stats.reviewed >= targetCount;
+  const overdue = project.deadline && new Date(project.deadline) < new Date() && !isDone;
   const sampleRate = project.review_policy?.sample_rate != null
     ? Math.round(project.review_policy.sample_rate * 100)
     : null;
@@ -278,20 +283,22 @@ const ReviewerProjectList = () => {
     }
     if (filter === "all") return true;
     const s = p.stats || {};
-    const overdue = p.deadline && new Date(p.deadline) < new Date();
+    const pDone = s.total > 0 && s.reviewed >= (s.targetCount ?? s.total);
+    const overdue = p.deadline && new Date(p.deadline) < new Date() && !pDone;
     if (filter === "pending")      return (s.pendingDisplay ?? s.pending ?? 0) > 0;
-    if (filter === "reviewed")     return s.reviewed >= (s.targetCount ?? s.total) && s.total > 0;
+    if (filter === "reviewed")     return pDone;
     if (filter === "has_rejected") return false;
     if (filter === "overdue")      return overdue;
     return true;
   });
 
+  const isProjectDone = (p) => (p.stats?.total ?? 0) > 0 && (p.stats?.reviewed ?? 0) >= (p.stats?.targetCount ?? p.stats?.total ?? 0);
   const counts = {
     all:          projects.length,
     pending:      projects.filter((p) => (p.stats?.pendingDisplay ?? p.stats?.pending ?? 0) > 0).length,
-    reviewed:     projects.filter((p) => p.stats?.reviewed >= (p.stats?.targetCount ?? p.stats?.total) && p.stats?.total > 0).length,
+    reviewed:     projects.filter(isProjectDone).length,
     has_rejected: 0,
-    overdue:      projects.filter((p) => p.deadline && new Date(p.deadline) < new Date()).length,
+    overdue:      projects.filter((p) => p.deadline && new Date(p.deadline) < new Date() && !isProjectDone(p)).length,
   };
 
   const filterTabs = [

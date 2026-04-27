@@ -5,25 +5,10 @@ import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
 import { normalizeProject } from '../../../utils/taskAdapter';
 import { useAuth } from '../../../context/AuthContext';
-
-const getAuthToken = () => sessionStorage.getItem('token');
-
-const fmtDate = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
-
-const fmtDateTime = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-};
-
-const getGreeting = () => {
-  const h = new Date().getHours();
-  if (h < 12) return 'Chào buổi sáng';
-  if (h < 18) return 'Chào buổi chiều';
-  return 'Chào buổi tối';
-};
+import { getAuthToken } from '../../../utils/auth';
+import { fmtDate, fmtDateTime, getGreeting } from '../../../utils/dateUtils';
+import StatCard from '../../../components/shared/StatCard';
+import MiniPager from '../../../components/shared/MiniPager';
 
 const getTaskProjId = (t) =>
   t.projectId?.id || t.project?.id ||
@@ -40,41 +25,6 @@ const ProjectStatusBadge = ({ pct, rejected }) => {
   return <span className="inline-flex items-center gap-1 rounded-full bg-gray-700 px-2 py-0.5 text-[11px] font-semibold text-gray-400">○ Chưa bắt đầu</span>;
 };
 
-const MiniPager = ({ page, totalPages, onChange, totalItems, pageSize }) => {
-  if (totalPages <= 1) return null;
-  const start = (page - 1) * pageSize + 1;
-  const end   = Math.min(page * pageSize, totalItems);
-  return (
-    <div className="flex items-center justify-between px-5 py-2.5 border-t border-gray-700/60 bg-gray-900/30">
-      <span className="text-[11px] text-gray-500">{start}–{end} / {totalItems}</span>
-      <div className="flex items-center gap-1">
-        <button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1}
-          className="flex h-6 w-6 items-center justify-center rounded border border-gray-700 bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-all text-xs">‹</button>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-          <button key={p} onClick={() => onChange(p)}
-            className={`h-6 w-6 rounded border text-xs font-medium transition-all ${p === page ? 'border-blue-500/50 bg-blue-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-400 hover:text-white'}`}>
-            {p}
-          </button>
-        ))}
-        <button onClick={() => onChange(Math.min(totalPages, page + 1))} disabled={page === totalPages}
-          className="flex h-6 w-6 items-center justify-center rounded border border-gray-700 bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-all text-xs">›</button>
-      </div>
-    </div>
-  );
-};
-
-const StatCard = ({ icon, label, value, sub, colorClass, bgClass, borderClass }) => (
-  <div className={`rounded-2xl border p-5 flex items-center gap-4 ${bgClass} ${borderClass}`}>
-    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${colorClass}`}>
-      {icon}
-    </div>
-    <div className="min-w-0">
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className="text-2xl font-bold text-gray-100 leading-tight">{value}</p>
-      {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
-    </div>
-  </div>
-);
 
 const AnnotatorOverview = () => {
   const navigate = useNavigate();

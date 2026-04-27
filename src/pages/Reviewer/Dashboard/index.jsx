@@ -4,6 +4,9 @@ import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getAuthToken, stringToColor } from '../../../utils/reviewerUtils';
 import { getArray } from '../../../utils/api';
+import { fmtDate, fmtDateTime, getGreeting } from '../../../utils/dateUtils';
+import StatCard from '../../../components/shared/StatCard';
+import MiniPager from '../../../components/shared/MiniPager';
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -20,82 +23,24 @@ const getReviewerName = () => {
   }
 };
 
-const fmtDate = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const getProjectStatus = (stats, deadline) => {
+  const deadlinePassed = deadline && new Date(deadline) < new Date();
+  if (!stats || stats.total === 0) {
+    if (deadlinePassed)
+      return { label: 'Quá hạn', color: 'bg-rose-500/10 border border-rose-500/30 text-rose-400', dot: 'bg-rose-400' };
+    return { label: 'Chưa có bài để review', color: 'bg-gray-700 text-gray-400', dot: 'bg-gray-500' };
+  }
+  const targetCount = stats.targetCount ?? stats.total;
+  const pendingDisplay = stats.pendingDisplay ?? stats.pending;
+  if (stats.reviewed >= targetCount)
+    return { label: 'Đã review xong', color: 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400', dot: 'bg-emerald-400' };
+  if (deadlinePassed && pendingDisplay > 0)
+    return { label: 'Reviewer chưa chấm kịp', color: 'bg-rose-500/10 border border-rose-500/30 text-rose-400', dot: 'bg-rose-400' };
+  if (pendingDisplay > 0)
+    return { label: 'Đang review', color: 'bg-blue-500/10 border border-blue-500/30 text-blue-400', dot: 'bg-blue-400' };
+  return { label: 'Đang review', color: 'bg-blue-500/10 border border-blue-500/30 text-blue-400', dot: 'bg-blue-400' };
 };
 
-const fmtDateTime = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-};
-
-const getGreeting = () => {
-  const h = new Date().getHours();
-  if (h < 12) return 'Chào buổi sáng';
-  if (h < 18) return 'Chào buổi chiều';
-  return 'Chào buổi tối';
-};
-
-const ProjectStatusBadge = ({ project }) => {
-  const overdue = project.deadline && new Date(project.deadline) < new Date() && project.status !== 'completed';
-  if (project.status === 'completed')
-    return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">✓ Hoàn thành</span>;
-  if (project.status === 'waiting_rework')
-    return <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-400">↩ Rework</span>;
-  if (project.status === 'in_review')
-    return <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 text-[11px] font-semibold text-blue-400">▶ Đang review</span>;
-  if (overdue)
-    return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 text-[11px] font-semibold text-rose-400">⚠ Quá hạn</span>;
-  return <span className="inline-flex items-center gap-1 rounded-full bg-gray-700 px-2 py-0.5 text-[11px] font-semibold text-gray-400">○ Chờ nộp bài</span>;
-};
-
-const MiniPager = ({ page, totalPages, onChange, totalItems, pageSize }) => {
-  if (totalPages <= 1) return null;
-  const start = (page - 1) * pageSize + 1;
-  const end   = Math.min(page * pageSize, totalItems);
-  return (
-    <div className="flex items-center justify-between px-5 py-2.5 border-t border-gray-700/60 bg-gray-900/30">
-      <span className="text-[11px] text-gray-500">{start}–{end} / {totalItems}</span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(Math.max(1, page - 1))}
-          disabled={page === 1}
-          className="flex h-6 w-6 items-center justify-center rounded border border-gray-700 bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-all text-xs"
-        >‹</button>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={`h-6 w-6 rounded border text-xs font-medium transition-all ${
-              p === page
-                ? 'border-violet-500/50 bg-violet-600 text-white'
-                : 'border-gray-700 bg-gray-800 text-gray-400 hover:text-white'
-            }`}
-          >{p}</button>
-        ))}
-        <button
-          onClick={() => onChange(Math.min(totalPages, page + 1))}
-          disabled={page === totalPages}
-          className="flex h-6 w-6 items-center justify-center rounded border border-gray-700 bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-all text-xs"
-        >›</button>
-      </div>
-    </div>
-  );
-};
-
-const StatCard = ({ icon, label, value, sub, colorClass, bgClass, borderClass }) => (
-  <div className={`rounded-2xl border p-5 flex items-center gap-4 ${bgClass} ${borderClass}`}>
-    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${colorClass}`}>
-      {icon}
-    </div>
-    <div className="min-w-0">
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className="text-2xl font-bold text-gray-100 leading-tight">{value}</p>
-      {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
-    </div>
-  </div>
-);
 
 const ReviewerOverview = () => {
   const navigate = useNavigate();
@@ -189,19 +134,77 @@ const ReviewerOverview = () => {
     return Object.values(itemMap);
   }, [pendingTasks, allProjects]);
 
-  // Projects with submission counts
+  // Projects with full review stats (đồng bộ với trang /reviewer/tasks)
   const projectsWithStats = useMemo(() => {
-    const statsMap = {};
+    const projMap = {};
+    allProjects.forEach(p => {
+      const pid = p.id || p._id;
+      if (!pid) return;
+      projMap[pid] = {
+        ...p,
+        stats: {
+          total: 0,
+          project_total: p.total_tasks || p.totalTasks || 0,
+          pending: 0,
+          reviewed: 0,
+          approved: 0,
+          rejected: 0,
+        },
+      };
+    });
+
     pendingTasks.forEach(t => {
       const pid = t.project?.id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
-      if (!pid) return;
-      statsMap[pid] = (statsMap[pid] || 0) + 1;
+      if (!pid || !projMap[pid]) return;
+      projMap[pid].stats.total += 1;
+      projMap[pid].stats.pending += 1;
     });
-    return allProjects.map(p => ({
-      ...p,
-      pendingCount: statsMap[p.id || p._id] || 0,
-    })).sort((a, b) => b.pendingCount - a.pendingCount);
-  }, [allProjects, pendingTasks]);
+
+    reviewedTasks.forEach(t => {
+      const pid = t.project?.id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
+      if (!pid || !projMap[pid]) return;
+      const wasPending = pendingTasks.some(pt => (pt.id || pt._id) === (t.id || t._id));
+      if (!wasPending) projMap[pid].stats.total += 1;
+      projMap[pid].stats.reviewed += 1;
+      if (t.status === 'approved') projMap[pid].stats.approved += 1;
+      else if (t.status === 'rejected') projMap[pid].stats.rejected += 1;
+    });
+
+    return Object.values(projMap).map(p => {
+      const rawRate = p.review_policy?.sample_rate;
+      const projectTotal = p.stats.project_total || p.stats.total;
+      const targetCount = (rawRate != null && rawRate < 1 && projectTotal > 0)
+        ? Math.max(1, Math.ceil(projectTotal * rawRate))
+        : p.stats.total;
+      const pendingDisplay = Math.max(0, targetCount - p.stats.reviewed);
+      return { ...p, stats: { ...p.stats, targetCount, pendingDisplay } };
+    }).sort((a, b) => {
+      const now = Date.now();
+      const aOverdue = a.deadline && new Date(a.deadline).getTime() < now;
+      const bOverdue = b.deadline && new Date(b.deadline).getTime() < now;
+      const aPending = (a.stats.pendingDisplay ?? 0) > 0;
+      const bPending = (b.stats.pendingDisplay ?? 0) > 0;
+      const aDone = a.stats.reviewed >= (a.stats.targetCount ?? a.stats.total) && a.stats.total > 0;
+      const bDone = b.stats.reviewed >= (b.stats.targetCount ?? b.stats.total) && b.stats.total > 0;
+      const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+      const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+
+      // Nhóm: 0 = có pending chưa hết hạn, 1 = không pending chưa xong chưa hết hạn,
+      //        2 = đã xong, 3 = quá hạn
+      const getGroup = (pending, done, overdue) => {
+        if (overdue) return 3;
+        if (done) return 2;
+        if (pending) return 0;
+        return 1;
+      };
+      const aGroup = getGroup(aPending, aDone, aOverdue);
+      const bGroup = getGroup(bPending, bDone, bOverdue);
+      if (aGroup !== bGroup) return aGroup - bGroup;
+
+      // Cùng nhóm → deadline gần nhất lên đầu
+      return aDeadline - bDeadline;
+    });
+  }, [allProjects, pendingTasks, reviewedTasks]);
 
   const handleReview = (item) => {
     if (!item.projectId) return;
@@ -374,6 +377,7 @@ const ReviewerOverview = () => {
                     onChange={setQueuePage}
                     totalItems={queueItems.length}
                     pageSize={QUEUE_PAGE_SIZE}
+                    accentColor="border-violet-500/50 bg-violet-600"
                   />
                 </>
               );
@@ -411,29 +415,27 @@ const ReviewerOverview = () => {
                   <div className="divide-y divide-gray-700/40 flex-1">
                     {projSlice.map((p) => {
                       const pid = p.id || p._id;
-                      // Chỉ coi là quá hạn nếu deadline qua mà project chưa hoàn thành
-                      const overdue = p.deadline && new Date(p.deadline) < new Date() && p.status !== 'completed';
+                      const overdue = p.deadline && new Date(p.deadline) < new Date();
+                      const pStatus = getProjectStatus(p.stats, p.deadline);
+                      const pendingDisplay = p.stats?.pendingDisplay ?? 0;
                       return (
                         <div
                           key={pid}
                           className="flex items-start gap-3 px-5 py-3.5 hover:bg-gray-700/30 transition-colors cursor-pointer group"
                           onClick={() => navigate(`/reviewer/projects/${pid}`)}
                         >
-                          <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
-                            p.status === 'completed' ? 'bg-emerald-400' :
-                            p.status === 'in_review' ? 'bg-blue-400' :
-                            p.status === 'waiting_rework' ? 'bg-amber-400' :
-                            overdue ? 'bg-rose-400' : 'bg-gray-500'
-                          }`} />
+                          <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${pStatus.dot}`} />
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-200 truncate group-hover:text-violet-300 transition-colors">
                               {p.name}
                             </p>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <ProjectStatusBadge project={p} />
-                              {p.pendingCount > 0 && (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${pStatus.color}`}>
+                                {pStatus.label}
+                              </span>
+                              {pendingDisplay > 0 && (
                                 <span className="inline-flex items-center rounded-full bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-                                  {p.pendingCount} chờ duyệt
+                                  {pendingDisplay} chờ duyệt
                                 </span>
                               )}
                             </div>
@@ -456,6 +458,7 @@ const ReviewerOverview = () => {
                     onChange={setProjectPage}
                     totalItems={projectsWithStats.length}
                     pageSize={PROJECT_PAGE_SIZE}
+                    accentColor="border-violet-500/50 bg-violet-600"
                   />
                 </>
               );

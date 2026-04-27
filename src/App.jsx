@@ -23,7 +23,7 @@ import ReviewerProjectList from './pages/Reviewer/Projects';
 import ReviewerProjectDetailPage from './pages/Reviewer/Projects/ProjectDetail';
 import ReviewerWorkspace from './pages/Reviewer/Workspace';
 import ReviewerTask from './pages/Reviewer/Task';
-import ReviewerOverview from './pages/Reviewer/Overview';
+import ReviewerOverview from './pages/Reviewer/Dashboard';
 import ReviewerHistory from './pages/Reviewer/History';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
