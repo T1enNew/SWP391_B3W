@@ -28,7 +28,7 @@ import ReviewerHistory from './pages/Reviewer/History';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
-import AdminDatasets from './pages/Admin/Datasets';
+import AdminSystemSettings from './pages/Admin/SystemSettings';
 import LayoutTailwind from './components/LayoutTailwind';
 import ErrorBoundary from './components/ErrorBoundary';
 import LayoutAnnotator from './components/LayoutAnnotator';
@@ -71,10 +71,10 @@ function App() {
               <Route path='/manager/datasets/:id' element={<DatasetItemDetail />} />
               <Route path='/manager/datasets/:id/items/*' element={<DatasetItemDetail />} />
               <Route path='/manager/labels' element={<Labels />} />
-              <Route path='/admin/users' element={<AdminUsers />} />
-              <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
-              <Route path='/admin/datasets' element={<AdminDatasets />} />
               <Route path='/admin' element={<AdminDashboard />} />
+              <Route path='/admin/users' element={<AdminUsers />} />
+              <Route path='/admin/system-settings' element={<AdminSystemSettings />} />
+              <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
             </Route>
 
             <Route element={<PrivateRoute><LayoutAnnotator /></PrivateRoute>}>

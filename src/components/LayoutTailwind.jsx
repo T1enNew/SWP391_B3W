@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 const ROLE_DISPLAY = { manager: 'Manager', annotator: 'Annotator', reviewer: 'Reviewer', admin: 'Administrator' };
-const ROLE_DASHBOARD = { annotator: '/annotator', reviewer: '/reviewer' };
+const ROLE_DASHBOARD = { annotator: '/annotator', reviewer: '/reviewer', admin: '/admin' };
 
 const ROLE_MENU = {
   manager: [
@@ -33,12 +33,9 @@ const ROLE_MENU = {
     { text: 'History',      icon: <History size={18} />,       path: '/reviewer/history' },
   ],
   admin: [
-    { text: 'Projects',       icon: <FolderKanban size={18} />, path: '/manager/projects' },
-    { text: 'Datasets',       icon: <Database size={18} />,     path: '/manager/datasets' },
-    { text: 'Labels',         icon: <Tag size={18} />,          path: '/manager/labels' },
-    { text: 'Users',          icon: <Users size={18} />,        path: '/admin/users' },
-    { text: 'Activity Logs',  icon: <FileText size={18} />,     path: '/admin/activity-logs' },
-    { text: 'Datasets',       icon: <Database size={18} />,     path: '/admin/datasets' },
+    { text: 'Quản lý người dùng',        icon: <Users size={18} />,        path: '/admin/users' },
+    { text: 'Cấu hình hệ thống',         icon: <ClipboardList size={18} />, path: '/admin/system-settings' },
+    { text: 'Nhật ký hoạt động',         icon: <FileText size={18} />,     path: '/admin/activity-logs' },
   ],
 };
 

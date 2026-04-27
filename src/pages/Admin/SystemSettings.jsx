@@ -1,616 +1,390 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Box,
-  Typography,
-  Paper,
-  TextField,
-  Button,
-  Switch,
-  FormControlLabel,
-  Grid,
-  CircularProgress,
-  Alert,
-  Divider,
-  Tabs,
-  Tab,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Chip,
-} from '@mui/material';
-import { Save as SaveIcon, Refresh as RefreshIcon, Settings as SettingsIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { getAuthHeaders } from '../../utils/auth';
+import {
+  Settings, Save, RotateCcw, ChevronDown,
+  Globe, Bell, AlertTriangle,
+  CheckCircle2, ToggleLeft,
+} from 'lucide-react';
 
-const SystemSettings = () => {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [tabValue, setTabValue] = useState(0);
-  const [settings, setSettings] = useState({
-    email: {
-      enabled: false,
-      smtpHost: '',
-      smtpPort: 587,
-      smtpUser: '',
-      smtpPassword: '',
-      fromEmail: '',
-      fromName: 'Data Labeling System'
-    },
-    storage: {
-      maxFileSize: 10485760,
-      maxFilesPerDataset: 100,
-      allowedFileTypes: ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp'],
-      storageLimitPerProject: 1073741824
-    },
-    tasks: {
-      maxTasksPerAnnotator: 100,
-      autoAssignEnabled: false,
-      defaultTaskStatus: 'assigned'
-    },
-    review: {
-      requireReviewComments: true,
-      autoApproveAfterDays: 0,
-      maxRejectionsBeforeEscalation: 3
-    },
-    general: {
-      siteName: 'Team8-WDP',
-      maintenanceMode: false,
-      maintenanceMessage: 'System is under maintenance. Please check back later.',
-      allowRegistration: true,
-      defaultUserRole: 'annotator'
+/* ─── tiny atoms ─── */
+const Card = ({ className = '', children }) => (
+  <div className={`bg-slate-800/80 border border-slate-700 rounded-2xl p-6 ${className}`}>
+    {children}
+  </div>
+);
+
+const SectionTitle = ({ icon: Icon, children }) => (
+  <div className="flex items-center gap-2 mb-5">
+    <span className="p-1.5 bg-slate-700 rounded-lg text-slate-300">
+      <Icon size={16} />
+    </span>
+    <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-widest">{children}</h3>
+  </div>
+);
+
+const Divider = () => <hr className="border-slate-700 my-5" />;
+
+const Label = ({ children, hint }) => (
+  <div className="mb-1">
+    <span className="text-sm font-medium text-slate-300">{children}</span>
+    {hint && <span className="ml-2 text-xs text-slate-500">{hint}</span>}
+  </div>
+);
+
+const Input = ({ value, onChange, type = 'text', placeholder, min, max, step, className = '' }) => (
+  <input
+    type={type}
+    value={value}
+    onChange={onChange}
+    placeholder={placeholder}
+    min={min}
+    max={max}
+    step={step}
+    className={`w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-slate-200
+      placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+      transition ${className}`}
+  />
+);
+
+const SelectField = ({ value, onChange, children }) => (
+  <div className="relative">
+    <select
+      value={value}
+      onChange={onChange}
+      className="w-full appearance-none bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 pr-10
+        text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
+    >
+      {children}
+    </select>
+    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+  </div>
+);
+
+const Toggle = ({ checked, onChange, label, description }) => (
+  <div className="flex items-start justify-between gap-4 py-3">
+    <div>
+      <p className="text-sm font-medium text-slate-200">{label}</p>
+      {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none
+        ${checked ? 'bg-indigo-500' : 'bg-slate-600'}`}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200
+          ${checked ? 'translate-x-5' : 'translate-x-0'}`}
+      />
+    </button>
+  </div>
+);
+
+
+/* ─── tab definitions ─── */
+const TABS = [
+  { id: 0, label: 'Chung',     icon: Globe },
+  { id: 1, label: 'Thông báo', icon: Bell },
+];
+
+/* ─── map server response → UI state ─── */
+// Backend dùng snake_case: general_config.site_name, general_config.maintenance_mode
+const fromServer = (data) => ({
+  general: {
+    siteName:           data.general_config?.site_name       ?? data.general?.siteName        ?? 'LabelFlow Admin',
+    maintenanceMode:    data.general_config?.maintenance_mode ?? data.general?.maintenanceMode ?? false,
+    maintenanceMessage: 'Hệ thống đang bảo trì. Vui lòng quay lại sau.',
+    allowRegistration:  data.general?.allowRegistration ?? true,
+    defaultUserRole:    data.general?.defaultUserRole   ?? 'annotator',
+  },
+  notifications: {
+    emailEnabled:            !!(data.notifications?.emailOnTaskAssigned || data.notifications?.emailOnTaskRejected || data.notifications?.emailOnTaskReviewed),
+    notifyOnTaskAssigned:    data.notifications?.emailOnTaskAssigned  ?? false,
+    notifyOnTaskRejected:    data.notifications?.emailOnTaskRejected  ?? false,
+    notifyOnProjectApproved: data.notifications?.emailOnTaskReviewed  ?? false,
+  },
+});
+
+/* ─── map UI state → server payload ─── */
+// Ghi vào general_config (snake_case) để backend hiểu, KHÔNG thêm key "general" thừa
+const toServer = (ui, raw) => {
+  // Loại bỏ key "general" camelCase nếu có trong raw (tránh xung đột)
+  const { general: _drop, ...rest } = raw;
+  return {
+    ...rest,
+    general_config: {
+      ...(raw.general_config ?? {}),
+      site_name:        ui.general.siteName,
+      maintenance_mode: ui.general.maintenanceMode,
     },
     notifications: {
-      emailOnTaskAssigned: false,
-      emailOnTaskSubmitted: false,
-      emailOnTaskReviewed: false,
-      emailOnTaskRejected: true
-    }
-  });
+      ...(raw.notifications ?? {}),
+      emailOnTaskAssigned:  ui.notifications.emailEnabled && ui.notifications.notifyOnTaskAssigned,
+      emailOnTaskRejected:  ui.notifications.emailEnabled && ui.notifications.notifyOnTaskRejected,
+      emailOnTaskReviewed:  ui.notifications.emailEnabled && ui.notifications.notifyOnProjectApproved,
+      emailOnTaskSubmitted: raw.notifications?.emailOnTaskSubmitted ?? false,
+    },
+  };
+};
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+/* ═══════════════════════════════════════════
+   Main component
+═══════════════════════════════════════════ */
+const SystemSettings = () => {
+  const [activeTab, setActiveTab]   = useState(0);
+  const [settings,  setSettings]    = useState(fromServer({}));
+  const [rawData,   setRawData]     = useState({});
+  const [loading,   setLoading]     = useState(true);
+  const [saving,    setSaving]      = useState(false);
+  const [toast,     setToast]       = useState(null);
+
+  useEffect(() => { fetchSettings(); }, []);
+
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/settings`);
-      setSettings(response.data);
-    } catch (error) {
-      console.error('Error fetching settings:', error);
-      setMessage('Lỗi khi tải cấu hình: ' + (error.response?.data?.message || error.message));
+      const res = await axios.get(`${API_URL}/api/settings`, { headers: getAuthHeaders() });
+      setRawData(res.data);
+      setSettings(fromServer(res.data));
+    } catch {
+      // endpoint chưa có — dùng defaults
     } finally {
       setLoading(false);
     }
   };
 
+  const patch = (section, key, value) =>
+    setSettings(prev => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
+
   const handleSave = async () => {
     setSaving(true);
-    setMessage('');
     try {
-      await axios.put(`${API_URL}/api/settings`, settings);
-      setMessage('Đã lưu cấu hình thành công!');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      setMessage('Lỗi khi lưu cấu hình: ' + (error.response?.data?.message || error.message));
+      const payload = toServer(settings, rawData);
+      console.log('[Settings] PUT payload:', JSON.stringify(payload, null, 2));
+      await axios.put(`${API_URL}/api/settings`, payload, { headers: getAuthHeaders() });
+      setRawData(payload);
+      showToast('success', 'Đã lưu cấu hình thành công.');
+    } catch (err) {
+      const status   = err.response?.status;
+      const beMsg    = err.response?.data?.message || err.response?.data?.error;
+      const beData   = err.response?.data;
+      console.error('[Settings] PUT error', status, beData);
+      const display  = beMsg || (status ? `Lỗi server ${status}` : err.message);
+      showToast('error', `Lưu thất bại: ${display}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleReset = async () => {
-    if (window.confirm('Bạn có chắc muốn reset tất cả cấu hình về mặc định?')) {
-      try {
-        // Backend does not have reset endpoint — clear via a dummy PUT with empty values
-        await axios.put(`${API_URL}/api/settings`, {});
-        await fetchSettings();
-        setMessage('Đã reset cấu hình về mặc định!');
-        setTimeout(() => setMessage(''), 3000);
-      } catch (error) {
-        setMessage('Lỗi khi reset: ' + (error.response?.data?.message || error.message));
-      }
-    }
-  };
-
-  const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  const handleReset = () => {
+    if (!window.confirm('Bạn có chắc muốn đặt lại tất cả cấu hình về mặc định?')) return;
+    setSettings(fromServer({}));
+    showToast('success', 'Đã đặt lại về mặc định (chưa lưu).');
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
+      <div className="flex items-center justify-center h-96">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <SettingsIcon />
-          <Typography variant="h4">System Settings</Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 space-y-6">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-500/15 border border-indigo-500/30 rounded-xl">
+            <Settings size={22} className="text-indigo-400" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white">Cài đặt hệ thống</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Quản lý cấu hình toàn hệ thống LabelFlow Admin</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
             onClick={handleReset}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-600
+              text-slate-300 text-sm hover:bg-slate-700/60 transition"
           >
-            Reset về mặc định
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
+            <RotateCcw size={15} /> Đặt lại mặc định
+          </button>
+          <button
             onClick={handleSave}
             disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500
+              text-white text-sm font-medium transition disabled:opacity-50"
           >
-            Lưu cấu hình
-          </Button>
-        </Box>
-      </Box>
+            <Save size={15} />
+            {saving ? 'Đang lưu…' : 'Lưu cài đặt'}
+          </button>
+        </div>
+      </div>
 
-      {message && (
-        <Alert severity={message.includes('Lỗi') ? 'error' : 'success'} sx={{ mb: 2 }}>
-          {message}
-        </Alert>
+      {/* ── Toast ── */}
+      {toast && (
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm
+          ${toast.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}
+        >
+          {toast.type === 'success'
+            ? <CheckCircle2 size={16} />
+            : <AlertTriangle size={16} />}
+          {toast.msg}
+        </div>
       )}
 
-      <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 3 }}>
-        <Tab label="Cấu hình chung" />
-        <Tab label="Email" />
-        <Tab label="Storage & Files" />
-        <Tab label="Tasks" />
-        <Tab label="Review" />
-        <Tab label="Notifications" />
-      </Tabs>
+      {/* ── Tab bar ── */}
+      <div className="flex gap-1 bg-slate-800/60 border border-slate-700 rounded-2xl p-1 flex-wrap">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition flex-1 justify-center
+              ${activeTab === t.id
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}
+          >
+            <t.icon size={15} />
+            <span className="hidden sm:inline">{t.label}</span>
+          </button>
+        ))}
+      </div>
 
-      {/* General Settings */}
-      {tabValue === 0 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình chung hệ thống
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Tên hệ thống"
-                value={settings.general?.siteName || ''}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  general: { ...settings.general, siteName: e.target.value }
-                })}
-                margin="normal"
+      {/* ══════════════════════════════
+          Tab 0 — General Settings
+      ══════════════════════════════ */}
+      {activeTab === 0 && (
+        <Card>
+          <SectionTitle icon={Globe}>Cài đặt chung</SectionTitle>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <Label>Tên hệ thống</Label>
+              <Input
+                value={settings.general.siteName}
+                onChange={e => patch('general', 'siteName', e.target.value)}
+                placeholder="LabelFlow Admin"
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Role mặc định cho user mới</InputLabel>
-                <Select
-                  value={settings.general?.defaultUserRole || 'annotator'}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    general: { ...settings.general, defaultUserRole: e.target.value }
-                  })}
-                  label="Role mặc định cho user mới"
-                >
-                  <MenuItem value="annotator">Annotator</MenuItem>
-                  <MenuItem value="reviewer">Reviewer</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.general?.allowRegistration || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      general: { ...settings.general, allowRegistration: e.target.checked }
-                    })}
-                  />
-                }
-                label="Cho phép đăng ký tài khoản mới"
+            </div>
+            <div>
+              <Label>Vai trò mặc định cho người dùng mới</Label>
+              <SelectField
+                value={settings.general.defaultUserRole}
+                onChange={e => patch('general', 'defaultUserRole', e.target.value)}
+              >
+                <option value="annotator">Annotator</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="manager">Manager</option>
+              </SelectField>
+            </div>
+          </div>
+
+          <Divider />
+          <SectionTitle icon={ToggleLeft}>Bật / Tắt tính năng</SectionTitle>
+
+          <div className="divide-y divide-slate-700/50">
+            <Toggle
+              checked={settings.general.allowRegistration}
+              onChange={v => patch('general', 'allowRegistration', v)}
+              label="Cho phép đăng ký tài khoản"
+              description="Người dùng mới có thể tự đăng ký tài khoản trên hệ thống"
+            />
+            <Toggle
+              checked={settings.general.maintenanceMode}
+              onChange={v => patch('general', 'maintenanceMode', v)}
+              label="Chế độ bảo trì"
+              description="Khóa hệ thống với tất cả người dùng không phải Admin"
+            />
+          </div>
+
+          {settings.general.maintenanceMode && (
+            <div className="mt-4">
+              <Label>Thông báo bảo trì</Label>
+              <textarea
+                rows={3}
+                value={settings.general.maintenanceMessage}
+                onChange={e => patch('general', 'maintenanceMessage', e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-slate-200
+                  placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none transition"
               />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.general?.maintenanceMode || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      general: { ...settings.general, maintenanceMode: e.target.checked }
-                    })}
-                  />
-                }
-                label="Chế độ bảo trì (Maintenance Mode)"
-              />
-            </Grid>
-            {settings.general?.maintenanceMode && (
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="Thông báo bảo trì"
-                  value={settings.general?.maintenanceMessage || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    general: { ...settings.general, maintenanceMessage: e.target.value }
-                  })}
-                  margin="normal"
-                />
-              </Grid>
-            )}
-          </Grid>
-        </Paper>
+            </div>
+          )}
+        </Card>
       )}
 
-      {/* Email Settings */}
-      {tabValue === 1 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình Email (SMTP)
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.email?.enabled || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, enabled: e.target.checked }
-                    })}
-                  />
-                }
-                label="Bật gửi email"
-              />
-            </Grid>
-            {settings.email?.enabled && (
+      {/* ══════════════════════════════
+          Tab 1 — Notifications
+      ══════════════════════════════ */}
+      {activeTab === 1 && (
+        <Card>
+          <SectionTitle icon={Bell}>Thông báo qua Email</SectionTitle>
+          <div className="divide-y divide-slate-700/50">
+            <Toggle
+              checked={settings.notifications.emailEnabled}
+              onChange={v => patch('notifications', 'emailEnabled', v)}
+              label="Bật thông báo email"
+              description="Gửi email cảnh báo cho các sự kiện quan trọng trong quy trình"
+            />
+            {settings.notifications.emailEnabled && (
               <>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="SMTP Host"
-                    value={settings.email?.smtpHost || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, smtpHost: e.target.value }
-                    })}
-                    margin="normal"
-                    placeholder="smtp.gmail.com"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    type="number"
-                    label="SMTP Port"
-                    value={settings.email?.smtpPort || 587}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, smtpPort: parseInt(e.target.value) }
-                    })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="SMTP Username"
-                    value={settings.email?.smtpUser || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, smtpUser: e.target.value }
-                    })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    type="password"
-                    label="SMTP Password"
-                    value={settings.email?.smtpPassword || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, smtpPassword: e.target.value }
-                    })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    type="email"
-                    label="From Email"
-                    value={settings.email?.fromEmail || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, fromEmail: e.target.value }
-                    })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="From Name"
-                    value={settings.email?.fromName || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      email: { ...settings.email, fromName: e.target.value }
-                    })}
-                    margin="normal"
-                  />
-                </Grid>
+                <Toggle
+                  checked={settings.notifications.notifyOnTaskAssigned}
+                  onChange={v => patch('notifications', 'notifyOnTaskAssigned', v)}
+                  label="Thông báo: Nhiệm vụ được phân công"
+                  description="Gửi email cho annotator khi có nhiệm vụ mới được giao"
+                />
+                <Toggle
+                  checked={settings.notifications.notifyOnTaskRejected}
+                  onChange={v => patch('notifications', 'notifyOnTaskRejected', v)}
+                  label="Thông báo: Nhiệm vụ bị từ chối"
+                  description="Gửi email cho annotator khi bài nộp của họ bị từ chối"
+                />
+                <Toggle
+                  checked={settings.notifications.notifyOnProjectApproved}
+                  onChange={v => patch('notifications', 'notifyOnProjectApproved', v)}
+                  label="Thông báo: Dự án được phê duyệt"
+                  description="Gửi email cho manager khi dự án được phê duyệt hoàn toàn"
+                />
               </>
             )}
-          </Grid>
-        </Paper>
+          </div>
+        </Card>
       )}
 
-      {/* Storage Settings */}
-      {tabValue === 2 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình Storage & Files
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Max File Size (bytes)"
-                value={settings.storage?.maxFileSize || 10485760}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  storage: { ...settings.storage, maxFileSize: parseInt(e.target.value) }
-                })}
-                margin="normal"
-                helperText={`Hiện tại: ${formatBytes(settings.storage?.maxFileSize || 0)}`}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Max Files Per Dataset"
-                value={settings.storage?.maxFilesPerDataset || 100}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  storage: { ...settings.storage, maxFilesPerDataset: parseInt(e.target.value) }
-                })}
-                margin="normal"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Storage Limit Per Project (bytes)"
-                value={settings.storage?.storageLimitPerProject || 1073741824}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  storage: { ...settings.storage, storageLimitPerProject: parseInt(e.target.value) }
-                })}
-                margin="normal"
-                helperText={`Hiện tại: ${formatBytes(settings.storage?.storageLimitPerProject || 0)}`}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="subtitle2" gutterBottom>
-                Allowed File Types:
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                {(settings.storage?.allowedFileTypes || []).map((type, idx) => (
-                  <Chip key={idx} label={type} />
-                ))}
-              </Box>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-
-      {/* Tasks Settings */}
-      {tabValue === 3 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình Tasks
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Max Tasks Per Annotator"
-                value={settings.tasks?.maxTasksPerAnnotator || 100}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  tasks: { ...settings.tasks, maxTasksPerAnnotator: parseInt(e.target.value) }
-                })}
-                margin="normal"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Default Task Status</InputLabel>
-                <Select
-                  value={settings.tasks?.defaultTaskStatus || 'assigned'}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    tasks: { ...settings.tasks, defaultTaskStatus: e.target.value }
-                  })}
-                  label="Default Task Status"
-                >
-                  <MenuItem value="assigned">Assigned</MenuItem>
-                  <MenuItem value="in_progress">In Progress</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.tasks?.autoAssignEnabled || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      tasks: { ...settings.tasks, autoAssignEnabled: e.target.checked }
-                    })}
-                  />
-                }
-                label="Tự động phân công tasks (Auto Assign)"
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-
-      {/* Review Settings */}
-      {tabValue === 4 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình Review
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.review?.requireReviewComments || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      review: { ...settings.review, requireReviewComments: e.target.checked }
-                    })}
-                  />
-                }
-                label="Bắt buộc nhập comments khi reject"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Auto Approve After Days (0 = disabled)"
-                value={settings.review?.autoApproveAfterDays || 0}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  review: { ...settings.review, autoApproveAfterDays: parseInt(e.target.value) }
-                })}
-                margin="normal"
-                helperText="Tự động approve nếu không review sau X ngày"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Max Rejections Before Escalation"
-                value={settings.review?.maxRejectionsBeforeEscalation || 3}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  review: { ...settings.review, maxRejectionsBeforeEscalation: parseInt(e.target.value) }
-                })}
-                margin="normal"
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-
-      {/* Notifications Settings */}
-      {tabValue === 5 && (
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Cấu hình Notifications
-          </Typography>
-          <Divider sx={{ my: 2 }} />
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.notifications?.emailOnTaskAssigned || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      notifications: { ...settings.notifications, emailOnTaskAssigned: e.target.checked }
-                    })}
-                  />
-                }
-                label="Gửi email khi task được phân công"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.notifications?.emailOnTaskSubmitted || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      notifications: { ...settings.notifications, emailOnTaskSubmitted: e.target.checked }
-                    })}
-                  />
-                }
-                label="Gửi email khi task được nộp để review"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.notifications?.emailOnTaskReviewed || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      notifications: { ...settings.notifications, emailOnTaskReviewed: e.target.checked }
-                    })}
-                  />
-                }
-                label="Gửi email khi task được review"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.notifications?.emailOnTaskRejected || false}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      notifications: { ...settings.notifications, emailOnTaskRejected: e.target.checked }
-                    })}
-                  />
-                }
-                label="Gửi email khi task bị reject"
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-
-      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          variant="contained"
-          size="large"
-          startIcon={<SaveIcon />}
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? 'Đang lưu...' : 'Lưu tất cả cấu hình'}
-        </Button>
-      </Box>
-    </Box>
+      {/* ── Bottom action bar ── */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-700/60">
+        <p className="text-xs text-slate-500">Thay đổi được áp dụng trên toàn bộ dự án và người dùng.</p>
+        <div className="flex gap-2">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-600
+              text-slate-300 text-sm hover:bg-slate-700/60 transition"
+          >
+            <RotateCcw size={15} /> Đặt lại
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500
+              text-white text-sm font-medium transition disabled:opacity-50"
+          >
+            <Save size={15} />
+            {saving ? 'Đang lưu…' : 'Lưu cài đặt'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
