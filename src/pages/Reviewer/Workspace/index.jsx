@@ -38,6 +38,7 @@ const ReviewerWorkspace = () => {
   const [projectName, setProjectName]       = useState('');
   const navigate = useNavigate();
 
+  // Gọi API lấy danh sách tất cả items (pending + reviewed), lọc theo project, áp dụng sample rate
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
@@ -105,6 +106,7 @@ const ReviewerWorkspace = () => {
     }
   }, [projectId]);
 
+  // Gọi API lấy chi tiết một task cụ thể (dùng khi mở từ lịch sử review qua URL ?taskId=...)
   const fetchReviewedTask = useCallback(async (taskId) => {
     setLoading(true);
     setFetchError(null);
@@ -162,6 +164,7 @@ const ReviewerWorkspace = () => {
     else               fetchQueue();
   }, [projectId]);
 
+  // Chọn item làm item hiện tại, tự động focus vào annotator đầu tiên còn pending
   const selectItem = (item) => {
     setCurrentItemId(item.itemId);
     setCurrentItem(item);
@@ -170,19 +173,23 @@ const ReviewerWorkspace = () => {
     else           { setActiveAnnotatorId(null); setVisibleAnnotators([]); }
   };
 
+  // Xử lý khi reviewer chọn item từ queue panel (reset feedback/category trước)
   const handleItemSelect = (item) => { setFeedback(''); setErrorCategory(''); selectItem(item); };
 
+  // Chọn annotator cụ thể để review, load feedback cũ của annotator đó
   const handleAnnotatorSelect = (sub) => {
     setActiveAnnotatorId(sub.annotatorId);
     setFeedback(sub.feedback || '');
     setErrorCategory('');
   };
 
+  // Bật/tắt hiển thị overlay annotation trên ảnh của một annotator
   const handleAnnotatorToggle = (annotatorId) =>
     setVisibleAnnotators(prev =>
       prev.includes(annotatorId) ? prev.filter(id => id !== annotatorId) : [...prev, annotatorId]
     );
 
+  // Cập nhật trạng thái và feedback của một submission trong state local (không gọi API)
   const doUpdateItem = useCallback((updatedSub, newStatus, newFeedback) => {
     const applyUpdate = (item) => {
       const subs    = item.submissions.map(s =>
@@ -196,6 +203,7 @@ const ReviewerWorkspace = () => {
     if (currentItem?.itemId) setCurrentItem(prev => applyUpdate(prev));
   }, [currentItem]);
 
+  // Gọi API approve một submission của annotator, cập nhật state và hiện thông báo
   const handleApprove = async (submission) => {
     if (!submission?.task) return;
     setSaving(true);
@@ -213,11 +221,13 @@ const ReviewerWorkspace = () => {
     finally       { setSaving(false); }
   };
 
+  // Kiểm tra reviewer đã nhập feedback chưa, nếu có thì hiện dialog xác nhận reject
   const handleReject = (submission) => {
     if (!feedback.trim()) { alert('Vui long nhap feedback khi reject.'); return; }
     setShowRejectConfirm(true);
   };
 
+  // Thực hiện reject sau khi reviewer xác nhận, gửi feedback lên API
   const confirmReject = async (submission) => {
     setShowRejectConfirm(false);
     setSaving(true);
@@ -235,6 +245,7 @@ const ReviewerWorkspace = () => {
     finally       { setSaving(false); }
   };
 
+  // Approve nhanh trực tiếp từ queue panel mà không cần nhập feedback
   const handleQuickApprove = async (item, submission) => {
     if (!submission?.task) return;
     setSaving(true);
@@ -261,6 +272,7 @@ const ReviewerWorkspace = () => {
     finally { setSaving(false); }
   };
 
+  // Reject nhanh trực tiếp từ queue panel với lý do mặc định "Rejected"
   const handleQuickReject = async (item, submission) => {
     if (!submission?.task) return;
     setSaving(true);
@@ -287,6 +299,7 @@ const ReviewerWorkspace = () => {
     finally { setSaving(false); }
   };
 
+  // Chuyển sang annotator tiếp theo trong danh sách còn pending (xoay vòng)
   const handleNextAnnotator = () => {
     if (!currentItem) return;
     const pending = currentItem.submissions.filter(s => s.status === 'pending');
@@ -468,6 +481,7 @@ const ReviewerWorkspace = () => {
 
 export default ReviewerWorkspace;
 
+// Nhóm danh sách tasks thành các "item" theo tên file, mỗi item chứa nhiều submissions (annotator)
 function buildItemList(taskList, projectId) {
   const itemMap = new Map();
   taskList.forEach((task) => {

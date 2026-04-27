@@ -5,11 +5,13 @@ import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
 import { normalizeProject } from '../../../utils/taskAdapter';
 
+// Format ngày theo định dạng DD/MM/YYYY tiếng Việt
 const fmtDate = (d) => {
   if (!d) return '';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
+// Tính thống kê tasks của project: tổng số, đã duyệt, chờ review, bị trả lại, % tiến độ
 const getProjStats = (project) => {
   if (!project) return { total: 0, done: 0, waiting: 0, rejected: 0, pct: 0 };
 
@@ -23,7 +25,7 @@ const getProjStats = (project) => {
   return { total, done, waiting, rejected, pct };
 };
 
-// Calculate project-level status for the annotator
+// Xác định trạng thái project cho annotator: hoàn tất / bị trả lại / chờ review / đang làm / quá hạn
 const getProjectStatus = (project) => {
   const { total, done, waiting, rejected } = getProjStats(project);
   if (total === 0) return { label: 'Chua bat dau', color: 'bg-gray-600 text-gray-300', icon: '○' };
@@ -48,6 +50,7 @@ const getProjectStatus = (project) => {
   return { label: 'Chua bat dau', color: 'bg-gray-600/15 text-gray-400 border border-gray-600/30', icon: '○' };
 };
 
+// Component badge hiển thị trạng thái project với icon và màu tương ứng
 const StatusBadge = ({ project }) => {
   const status = getProjectStatus(project);
   return (
@@ -58,6 +61,7 @@ const StatusBadge = ({ project }) => {
   );
 };
 
+// Component card hiển thị thông tin project: tên, stats, tiến độ, deadline, trạng thái
 const ProjectCard = ({ project, onOpen }) => {
   const { total, done, waiting, rejected, pct } = getProjStats(project);
   const overdue = project.deadline && new Date(project.deadline) < new Date();
@@ -149,6 +153,7 @@ const AnnotatorProjectList = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
+  // Gọi API lấy projects và tasks của annotator, gắn tasks vào project tương ứng để tính stats
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -184,12 +189,13 @@ const AnnotatorProjectList = () => {
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
+  // Điều hướng đến trang chi tiết project khi annotator chọn
   const handleOpenProject = (project) => {
     navigate(`/annotator/projects/${project.projectId || project.id}`);
   };
 
+  // Lọc danh sách projects theo tab filter và từ khóa tìm kiếm
   const filtered = projects.filter((p) => {
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = (p.projectName || p.name || '').toLowerCase().includes(q);

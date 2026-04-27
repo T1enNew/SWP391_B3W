@@ -5,8 +5,10 @@ import { API_URL } from "../../../config/api";
 import { getArray } from "../../../utils/api";
 import { getAuthToken } from '../../../utils/reviewerUtils';
 
+// Tạo object headers chứa Bearer token để gửi kèm các API request
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${getAuthToken()}` } });
 
+// Format ngày theo định dạng DD/MM/YYYY tiếng Việt
 const fmtDate = (d) => {
   if (!d) return "";
   return new Date(d).toLocaleDateString("vi-VN", {
@@ -16,6 +18,7 @@ const fmtDate = (d) => {
   });
 };
 
+// Format ngày giờ theo định dạng DD/MM/YYYY HH:MM tiếng Việt
 const fmtDateTime = (d) => {
   if (!d) return "";
   return new Date(d).toLocaleString("vi-VN", {
@@ -27,6 +30,7 @@ const fmtDateTime = (d) => {
   });
 };
 
+// Xác định nhãn trạng thái và màu sắc hiển thị cho project dựa vào stats và deadline
 const getProjectStatus = (stats, deadline) => {
   const deadlinePassed = deadline && new Date(deadline) < new Date();
   if (!stats || stats.total === 0) {
@@ -45,6 +49,7 @@ const getProjectStatus = (stats, deadline) => {
   return { label: "Đang review", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30", icon: "▶" };
 };
 
+// Component badge hiển thị trạng thái project (duyệt xong / đang review / quá hạn…)
 const StatusBadge = ({ stats, deadline }) => {
   const status = getProjectStatus(stats, deadline);
   return (
@@ -55,6 +60,7 @@ const StatusBadge = ({ stats, deadline }) => {
   );
 };
 
+// Component card hiển thị thông tin tổng quan một project: tên, stats, tiến độ, deadline
 const ProjectCard = ({ project, onOpen }) => {
   const stats = project.stats || {};
   const targetCount = stats.targetCount ?? stats.total ?? 0;
@@ -158,6 +164,7 @@ const ReviewerProjectList = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
+  // Gọi API lấy danh sách projects, tasks pending và tasks đã review, rồi tổng hợp stats theo từng project
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -270,10 +277,12 @@ const ReviewerProjectList = () => {
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
+  // Điều hướng đến trang chi tiết project khi reviewer chọn
   const handleOpenProject = (project) => {
     navigate(`/reviewer/projects/${project.id}`);
   };
 
+  // Lọc danh sách projects theo tab filter và từ khóa tìm kiếm
   const filtered = projects.filter((p) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

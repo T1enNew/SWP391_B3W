@@ -10,6 +10,7 @@ const AnnotationArea = ({ task, onAnnotationsChange, onLabelsChange, annotations
   const [selectedTextRange, setSelectedTextRange] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
 
+  // Render nội dung văn bản với các đoạn đã được gán nhãn được highlight bằng màu của nhãn
   const renderTextWithSpans = () => {
     if (!task) return null;
     const textContent = task._textContent || '';

@@ -10,11 +10,13 @@ import { fmtDate, fmtDateTime, getGreeting } from '../../../utils/dateUtils';
 import StatCard from '../../../components/shared/StatCard';
 import MiniPager from '../../../components/shared/MiniPager';
 
+// Trích xuất project ID từ task, hỗ trợ các cấu trúc dữ liệu khác nhau từ backend
 const getTaskProjId = (t) =>
   t.projectId?.id || t.project?.id ||
   (typeof t.projectId === 'string' ? t.projectId : null) ||
   (typeof t.project_id === 'string' ? t.project_id : null);
 
+// Component badge hiển thị trạng thái tiến độ project của annotator
 const ProjectStatusBadge = ({ pct, rejected }) => {
   if (rejected > 0)
     return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 text-[11px] font-semibold text-rose-400">↩ Cần làm lại</span>;
@@ -41,6 +43,7 @@ const AnnotatorOverview = () => {
   const TASK_PAGE_SIZE    = 5;
   const PROJECT_PAGE_SIZE = 5;
 
+  // Gọi API song song lấy danh sách tasks của annotator và danh sách projects được giao
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -70,8 +73,7 @@ const AnnotatorOverview = () => {
   const approved   = tasks.filter(t => t.status === 'approved').length;
   const rejected   = tasks.filter(t => t.status === 'rejected').length;
 
-  // "Cần xử lý": rejected & revised ưu tiên cao, rồi in_progress
-  // Không hiển thị task thuộc project đã quá hạn
+  // Lọc và sắp xếp tasks cần xử lý ngay (rejected > revised > in_progress), bỏ task quá hạn
   const actionTasks = useMemo(() => {
     const priority = ['rejected', 'revised', 'in_progress'];
     const now = new Date();
@@ -86,7 +88,7 @@ const AnnotatorOverview = () => {
       .sort((a, b) => priority.indexOf(a.status) - priority.indexOf(b.status));
   }, [tasks, projects]);
 
-  // Projects with per-project stats
+  // Tính stats (số task done/rejected/submitted) và trạng thái quá hạn cho từng project
   const projectsWithStats = useMemo(() => {
     return projects.map(p => {
       const pid = p.id || p.projectId;

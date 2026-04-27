@@ -33,6 +33,7 @@ const ReviewerTask = () => {
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [fetchError, setFetchError]         = useState(null);
 
+  // Gọi API lấy danh sách pending tasks theo projectId, nhóm theo từng file (item), sắp xếp theo trạng thái
   const fetchQueue = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
@@ -93,6 +94,7 @@ const ReviewerTask = () => {
 
   useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
+  // Chọn item để review, tự động focus vào annotator đầu tiên còn pending
   const selectItem = (item) => {
     setCurrentItemId(item.itemId);
     setCurrentItem(item);
@@ -101,19 +103,23 @@ const ReviewerTask = () => {
     else           { setActiveAnnotatorId(null); setVisibleAnnotators([]); }
   };
 
+  // Reset feedback và error_category trước khi chuyển sang item mới
   const handleItemSelect = (item) => { setFeedback(''); setErrorCategory(''); selectItem(item); };
 
+  // Chọn annotator cụ thể để xem annotation, load lại feedback cũ nếu có
   const handleAnnotatorSelect = (sub) => {
     setActiveAnnotatorId(sub.annotatorId);
     setFeedback(sub.feedback || '');
     setErrorCategory('');
   };
 
+  // Bật/tắt hiển thị overlay annotation của annotator trên ảnh
   const handleAnnotatorToggle = (annotatorId) =>
     setVisibleAnnotators(prev =>
       prev.includes(annotatorId) ? prev.filter(id => id !== annotatorId) : [...prev, annotatorId]
     );
 
+  // Cập nhật trạng thái và feedback của một submission trong state local (không gọi API)
   const doUpdateItem = useCallback((updatedSub, newStatus, newFeedback) => {
     const applyUpdate = (item) => {
       const subs    = item.submissions.map(s =>
@@ -127,6 +133,7 @@ const ReviewerTask = () => {
     if (currentItem?.itemId) setCurrentItem(prev => applyUpdate(prev));
   }, [currentItem]);
 
+  // Gọi API approve submission, cập nhật state local và hiển thị thông báo thành công
   const handleApprove = async (submission) => {
     if (!submission?.task) return;
     setSaving(true);
@@ -144,11 +151,13 @@ const ReviewerTask = () => {
     finally       { setSaving(false); }
   };
 
+  // Kiểm tra feedback bắt buộc trước khi hiện dialog xác nhận reject
   const handleReject = (submission) => {
     if (!feedback.trim()) { alert('Vui long nhap feedback khi reject.'); return; }
     setShowRejectConfirm(true);
   };
 
+  // Gọi API reject submission với feedback và error_category, cập nhật state sau khi thành công
   const confirmReject = async (submission) => {
     setShowRejectConfirm(false);
     setSaving(true);
@@ -166,6 +175,7 @@ const ReviewerTask = () => {
     finally       { setSaving(false); }
   };
 
+  // Chuyển sang annotator tiếp theo còn pending trong vòng lặp, cuộn theo thứ tự tuần hoàn
   const handleNextAnnotator = () => {
     if (!currentItem) return;
     const pending = currentItem.submissions.filter(s => s.status === 'pending');

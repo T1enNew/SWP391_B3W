@@ -4,6 +4,7 @@ import axios from "axios";
 import { API_URL } from "../../../../config/api";
 import { getAuthToken } from "../../../../utils/reviewerUtils";
 
+// Format ngày giờ theo định dạng DD/MM/YYYY HH:MM tiếng Việt
 const fmtDateTime = (d) => {
   if (!d) return "";
   return new Date(d).toLocaleString("vi-VN", {
@@ -30,6 +31,7 @@ const ReviewerProjectDetail = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState("");
 
+  // Gọi API lấy thông tin project và tổng hợp stats review (approved/rejected/pending)
   const fetchData = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
@@ -122,6 +124,7 @@ const ReviewerProjectDetail = () => {
     fetchData();
   }, [fetchData]);
 
+  // Approve toàn bộ project: tự động approve tất cả tasks pending còn lại, sau đó gọi API approve project
   const handleApproveProject = async () => {
     setModalError("");
     setIsSubmitting(true);

@@ -22,10 +22,12 @@ const ReviewPanel = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllOverlay, setShowAllOverlay] = useState(true);
 
+  // Lọc danh sách submissions theo từ khóa tìm kiếm tên annotator
   const filteredSubs = submissions.filter(
     sub => !searchQuery.trim() || (sub.annotatorName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Bật/tắt hiển thị overlay tất cả annotators cùng lúc trên ảnh
   const handleToggleAll = () => {
     const next = !showAllOverlay;
     setShowAllOverlay(next);

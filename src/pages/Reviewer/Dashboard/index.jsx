@@ -8,11 +8,13 @@ import { fmtDate, fmtDateTime, getGreeting } from '../../../utils/dateUtils';
 import StatCard from '../../../components/shared/StatCard';
 import MiniPager from '../../../components/shared/MiniPager';
 
+// Lấy 2 chữ viết tắt từ họ tên (ví dụ: "Nguyen Van A" → "NV")
 const getInitials = (name) => {
   if (!name) return '?';
   return name.split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
+// Giải mã JWT token để lấy tên reviewer hiện tại
 const getReviewerName = () => {
   try {
     const token = getAuthToken();
@@ -23,6 +25,7 @@ const getReviewerName = () => {
   }
 };
 
+// Xác định trạng thái hiển thị của project dựa theo stats và deadline
 const getProjectStatus = (stats, deadline) => {
   const deadlinePassed = deadline && new Date(deadline) < new Date();
   if (!stats || stats.total === 0) {
@@ -57,6 +60,7 @@ const ReviewerOverview = () => {
   const QUEUE_PAGE_SIZE   = 5;
   const PROJECT_PAGE_SIZE = 5;
 
+  // Gọi API song song để lấy danh sách projects, tasks pending và tasks đã review
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -99,12 +103,11 @@ const ReviewerOverview = () => {
   useEffect(() => { setQueuePage(1); }, [pendingTasks]);
   useEffect(() => { setProjectPage(1); }, [allProjects]);
 
-  // Stats
+  // Status
   const approvedCount = reviewedTasks.filter(t => t.status === 'approved').length;
   const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
 
-  // Pending queue grouped by item
-  // Không hiển thị task từ project đã quá hạn
+  // Nhóm pending tasks theo tên file (item), bỏ qua tasks thuộc project đã quá hạn
   const queueItems = useMemo(() => {
     const now = new Date();
     const itemMap = {};
@@ -134,7 +137,7 @@ const ReviewerOverview = () => {
     return Object.values(itemMap);
   }, [pendingTasks, allProjects]);
 
-  // Projects with full review stats (đồng bộ với trang /reviewer/tasks)
+  // Tính stats đầy đủ (pending/reviewed/approved/rejected) cho từng project, rồi sắp xếp ưu tiên
   const projectsWithStats = useMemo(() => {
     const projMap = {};
     allProjects.forEach(p => {
@@ -206,6 +209,7 @@ const ReviewerOverview = () => {
     });
   }, [allProjects, pendingTasks, reviewedTasks]);
 
+  // Điều hướng đến trang project để bắt đầu review item đã chọn
   const handleReview = (item) => {
     if (!item.projectId) return;
     navigate('/reviewer/projects/' + item.projectId);

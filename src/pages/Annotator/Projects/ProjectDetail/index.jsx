@@ -4,11 +4,13 @@ import axios from 'axios';
 import { API_URL } from '../../../../config/api';
 import { getArray } from '../../../../utils/api';
 
+// Lấy header Authorization từ session storage để gửi kèm API request
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+// Format ngày giờ đầy đủ DD/MM/YYYY HH:MM theo tiếng Việt
 const fmtDateTime = (d) => {
   if (!d) return '';
   return new Date(d).toLocaleString('vi-VN', {
@@ -17,6 +19,7 @@ const fmtDateTime = (d) => {
   });
 };
 
+// Chuẩn hóa dữ liệu task từ backend về dạng thống nhất dùng trong component
 const normalizeTask = (t) => {
   const projectId = t?.project_id || t?.projectId?.id || (typeof t?.projectId === 'string' ? t?.projectId : null) || t?.project?.id || null;
   return {
@@ -28,6 +31,7 @@ const normalizeTask = (t) => {
   };
 };
 
+// Chuẩn hóa dữ liệu project từ backend về dạng thống nhất (name, deadline, guidelines...)
 const normalizeProject = (raw) => {
   const p = raw?.project || raw || {};
   return {
@@ -41,6 +45,7 @@ const normalizeProject = (raw) => {
   };
 };
 
+// Trả về label và màu CSS tương ứng cho từng trạng thái task
 const statusConfig = (status) => {
   switch (status) {
     case 'submitted':
@@ -76,6 +81,7 @@ const ProjectDetail = () => {
 
   useEffect(() => { loadData(); }, [projectId]);
 
+  // Gọi API song song lấy chi tiết project và tasks, áp dụng override trạng thái từ localStorage
   const loadData = async () => {
     setLoading(true);
     setError('');
@@ -103,6 +109,7 @@ const ProjectDetail = () => {
     }
   };
 
+  // Lấy danh sách tasks, sắp xếp theo độ ưu tiên và điều hướng vào workspace task đầu tiên
   const handleStart = async () => {
     if (isOverdue) return;
     try {
@@ -122,6 +129,7 @@ const ProjectDetail = () => {
     }
   };
 
+  // Nộp toàn bộ project: submit từng task chưa nộp (start nếu cần), sau đó reload dữ liệu
   const handleSubmitProject = async () => {
     setSubmitting(true);
     setSubmitError('');

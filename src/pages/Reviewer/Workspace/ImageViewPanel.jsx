@@ -15,11 +15,13 @@ const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableL
     setResolvedUrl(item?.imageUrl || '');
   }, [item?.imageUrl]);
 
+  // Lưu kích thước gốc của ảnh khi load thành công để dùng cho việc render bbox
   const handleLoad = (e) => {
     setImgNat({ w: e.target.naturalWidth, h: e.target.naturalHeight });
     setIsLoaded(true);
   };
 
+  // Khi ảnh lỗi, thử lấy signed URL từ API rồi hiển thị lại; nếu vẫn lỗi thì báo không tải được
   const handleError = useCallback(async () => {
     if (datasetId && dataItemId) {
       try {
@@ -39,11 +41,13 @@ const ImageViewPanel = ({ item, visibleAnnotators, activeAnnotatorId, availableL
     setIsLoaded(false);
   }, [datasetId, dataItemId]);
 
+  // Lấy màu hex của nhãn từ danh sách availableLabels (mặc định xám nếu không tìm thấy)
   const getLabelColor = (labelName) => {
     if (!availableLabels || !labelName) return '#888888';
     return availableLabels.find(l => l.name === labelName)?.color || '#888888';
   };
 
+  // Chuyển đổi tọa độ bbox từ phần trăm (%) sang pixel thực tế theo kích thước ảnh gốc
   const toPixel = (bbox) => {
     if (!bbox || bbox.length < 4 || imgNat.w === 0 || imgNat.h === 0) return null;
     const [x1, y1, x2, y2] = bbox;

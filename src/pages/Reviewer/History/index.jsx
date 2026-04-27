@@ -3,16 +3,19 @@ import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getAuthToken, stringToColor } from '../../../utils/reviewerUtils';
 
+// Format ngày giờ ngắn gọn (DD/MM HH:MM) để hiển thị trong bảng
 const fmtShortDate = (d) => {
   if (!d) return '-';
   return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
+// Format ngày giờ đầy đủ (DD/MM/YYYY HH:MM) dùng cho tooltip
 const fmtFullDate = (d) => {
   if (!d) return '-';
   return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
+// Xác định loại file (IMAGE/AUDIO/VIDEO/TEXT/FILE) từ phần mở rộng của tên file
 const getFileType = (filename) => {
   if (!filename) return 'FILE';
   const ext = filename.split('.').pop().toLowerCase();
@@ -25,6 +28,7 @@ const getFileType = (filename) => {
   return map[ext] || 'FILE';
 };
 
+// Lấy 2 chữ viết tắt từ tên annotator để hiển thị avatar
 const getInitials = (name) => {
   if (!name) return '?';
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -32,7 +36,7 @@ const getInitials = (name) => {
 
 const PAGE_SIZE = 10;
 
-// ── Stat Card ────────────────────────────────────────────────────────────────
+// Component card thống kê có thể click để lọc theo trạng thái (Tất cả / Đã duyệt / Từ chối)
 const StatCard = ({ label, value, sub, accent, onClick, active }) => (
   <button
     onClick={onClick}
@@ -49,7 +53,7 @@ const StatCard = ({ label, value, sub, accent, onClick, active }) => (
   </button>
 );
 
-// ── Filter Select ─────────────────────────────────────────────────────────────
+// Component dropdown lọc dùng chung (trạng thái / project / thứ tự sắp xếp)
 const FilterSelect = ({ value, onChange, children }) => (
   <select
     value={value} onChange={e => onChange(e.target.value)}
@@ -93,6 +97,7 @@ const ReviewerHistory = () => {
     fetchData();
   }, []);
 
+  // Trích xuất danh sách projects duy nhất từ tasks đã review, dùng cho dropdown lọc theo project
   const projects = useMemo(() => {
     const map = {};
     reviewedTasks.forEach(t => {
@@ -108,6 +113,7 @@ const ReviewerHistory = () => {
   const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
   const approvalRate  = total > 0 ? Math.round((approvedCount / total) * 100) : 0;
 
+  // Lọc và sắp xếp danh sách tasks theo search, trạng thái, project và thứ tự thời gian
   const filtered = useMemo(() => {
     let result = [...reviewedTasks];
     if (search.trim()) {
@@ -143,9 +149,12 @@ const ReviewerHistory = () => {
 
   const hasFilter   = search || decisionFilter !== 'all' || projectFilter !== 'all';
 
+  // Chuyển trang và cuộn lên đầu danh sách
   const handlePageChange = (p) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  // Xóa tất cả bộ lọc và reset về trang 1
   const clearFilters     = () => { setSearch(''); setDecisionFilter('all'); setProjectFilter('all'); setPage(1); };
 
+  // Điều hướng đến workspace để reviewer xem lại chi tiết bài đã review
   const handleViewDetail = (task) => {
     const pid = task.project?.id || task.projectId?.id || task.projectId;
     window.location.href = '/reviewer/workspace/' + pid + '?taskId=' + task.id;

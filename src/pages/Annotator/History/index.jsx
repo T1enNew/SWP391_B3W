@@ -5,8 +5,10 @@ import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
 import { normalizeTask } from '../../../utils/taskAdapter';
 
+// Lấy JWT token từ session storage để xác thực API request
 const getAuthToken = () => sessionStorage.getItem('token');
 
+// Format ngày giờ theo định dạng DD/MM/YYYY HH:MM tiếng Việt
 const fmtDate = (d) => {
   if (!d) return '';
   return new Date(d).toLocaleString('vi-VN', {
@@ -37,6 +39,7 @@ const AnnotatorHistory = () => {
   const [search, setSearch]   = useState('');
 
   useEffect(() => {
+    // Gọi API lấy tất cả tasks, lọc chỉ lấy các trạng thái có trong lịch sử, sắp xếp mới nhất trước
     const fetchTasks = async () => {
       setLoading(true);
       setError('');
@@ -62,6 +65,7 @@ const AnnotatorHistory = () => {
     fetchTasks();
   }, []);
 
+  // Lọc tasks theo trạng thái và từ khóa tìm kiếm (tên file hoặc tên project)
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
       const matchStatus = filter === 'all' || t.status === filter;
@@ -78,6 +82,7 @@ const AnnotatorHistory = () => {
   const startIdx    = (currentPage - 1) * PAGE_SIZE;
   const pageItems   = filteredTasks.slice(startIdx, startIdx + PAGE_SIZE);
 
+  // Đếm số lượng tasks theo từng trạng thái để hiển thị trên các tab filter
   const counts = useMemo(() => ({
     all:         tasks.length,
     approved:    tasks.filter(t => t.status === 'approved').length,
@@ -87,11 +92,15 @@ const AnnotatorHistory = () => {
     completed:   tasks.filter(t => t.status === 'completed').length,
   }), [tasks]);
 
+  // Đặt filter trạng thái và reset về trang 1
   const handleFilter = (f) => { setFilter(f); setPage(1); };
+  // Xử lý tìm kiếm, reset về trang 1 khi từ khóa thay đổi
   const handleSearch = (e) => { setSearch(e.target.value); setPage(1); };
 
+  // Lấy ngày cập nhật gần nhất của task (updatedAt > submittedAt > createdAt)
   const getTaskDate = (t) => t.updatedAt || t.submittedAt || t.createdAt;
 
+  // Lấy project ID từ task, hỗ trợ cả dạng string và object
   const getProjectId = (t) => {
     const p = t.projectId;
     if (!p) return null;
@@ -99,6 +108,7 @@ const AnnotatorHistory = () => {
     return p.id || p._id || null;
   };
 
+  // Điều hướng đến trang project để annotator xem lại hoặc sửa task đã nộp/bị trả lại
   const handleTaskClick = (task) => {
     const pid = getProjectId(task);
     if (!pid) return;

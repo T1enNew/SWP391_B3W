@@ -21,6 +21,7 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
   const feedback = task?.reviewComments || task?.rejectionReason || '';
   const kind = getTaskKind(task);
 
+  // Gọi AI gợi ý nhãn cho task (Google Gemini); nếu apply=true thì tự động áp dụng gợi ý lên ảnh
   const handleAiPreLabel = async (apply = false) => {
     if (!task?.id) return;
     setAiLoading(true);
@@ -51,6 +52,7 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
     }
   };
 
+  // Gọi AI phát hiện bounding box trên ảnh, trả về tọa độ theo % (0-100) để hiển thị
   const handleAiAssist = async () => {
     if (!task?.id) return;
     setBboxLoading(true);

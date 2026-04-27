@@ -56,7 +56,7 @@ const Workspace = () => {
   // Keep currentTaskIdRef in sync
   useEffect(() => { currentTaskIdRef.current = currentTaskId; }, [currentTaskId]);
 
-  // Load tasks list
+  // Gọi API song song lấy danh sách tasks và thông tin project (tên, deadline, nhãn)
   const loadTasks = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
@@ -126,7 +126,7 @@ const Workspace = () => {
     }
   }, [projectId, initialTaskId]);
 
-  // Load task detail
+  // Gọi API lấy chi tiết task: dữ liệu file, annotations hiện có, signed URL cho ảnh
   const loadTaskDetail = useCallback(async (taskId) => {
     if (!taskId) return;
     setLoading(true);
@@ -251,10 +251,12 @@ const textRes = await axios.get(
     return () => clearInterval(interval);
   }, [task?.status, loadTaskDetail]);
 
-  // Handlers
+  // Cập nhật state annotations khi ImageAnnotator thay đổi (vẽ bbox mới)
   const handleAnnotationsChange = useCallback((newAnnotations) => { setAnnotations(newAnnotations); }, []);
+  // Cập nhật state labels khi AudioAnnotator hoặc loại annotation khác thay đổi
   const handleLabelsChange = useCallback((newLabels) => { setLabels(newLabels); }, []);
 
+  // Kiểm tra task hiện tại có annotation nào chưa (image bbox / text span / audio segment)
   const hasCurrentAnnotations = useCallback(() => {
     if (!task) return false;
     const kind = getTaskKind(task);
@@ -264,6 +266,7 @@ const textRes = await axios.get(
     return false;
   }, [task, annotations, textSpans, annotationNote, labels]);
 
+// Lưu annotations hiện tại lên server theo đúng định dạng của từng loại task (image/text/audio)
 const handleSave = useCallback(async () => {
   if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
 
@@ -307,6 +310,7 @@ const handleSave = useCallback(async () => {
   }
 }, [task, annotations, labels, textSpans, annotationNote]);
 
+  // Xóa toàn bộ annotations của task hiện tại và lưu trạng thái rỗng lên server
   const handleReset = useCallback(() => {
     if (!task || ['submitted', 'resubmitted', 'approved'].includes(task?.status)) return;
     const kind = getTaskKind(task);
@@ -316,6 +320,7 @@ const handleSave = useCallback(async () => {
     handleSave();
   }, [task, handleSave]);
 
+  // Xử lý chuyển sang task khác: lưu/đánh dấu trạng thái task cũ rồi load task mới
   const handleTaskSelect = useCallback(async (taskId) => {
     if (taskId === currentTaskId) return;
     // Handle leaving current task
@@ -333,12 +338,14 @@ const handleSave = useCallback(async () => {
     navigate(`/annotator/workspace/${projectId}?taskId=${taskId}`, { replace: true });
   }, [currentTaskId, task, hasCurrentAnnotations, handleSave, projectId, navigate]);
 
+  // Điều hướng đến task trước (prev) hoặc task tiếp theo (next) trong danh sách
   const handleNavigateTask = useCallback((direction) => {
     const currentIdx = tasks.findIndex((t) => t.id === currentTaskId);
     if (direction === 'prev' && currentIdx > 0) handleTaskSelect(tasks[currentIdx - 1].id);
     else if (direction === 'next' && currentIdx < tasks.length - 1) handleTaskSelect(tasks[currentIdx + 1].id);
   }, [tasks, currentTaskId, handleTaskSelect]);
 
+  // Nộp tất cả tasks đã hoàn thành (status = completed) lên server, sau đó điều hướng về project
   const handleSubmitProject = useCallback(async () => {
     const toSubmit = tasks.filter((t) => (statusOverrides[t.id] ?? t.status) === 'completed');
     if (!toSubmit.length) return;
@@ -355,6 +362,7 @@ const handleSave = useCallback(async () => {
     }
   }, [tasks, statusOverrides, projectId, navigate]);
 
+  // Gán nhãn hàng loạt bằng AI (Google Gemini) cho tất cả tasks chưa hoàn thành trong project
   const handleBulkAiLabel = useCallback(async () => {
     // Only image tasks that aren't already submitted/approved
     const targetTasks = tasks.filter((t) =>
