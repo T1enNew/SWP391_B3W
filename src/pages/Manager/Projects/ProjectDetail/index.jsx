@@ -38,6 +38,7 @@ const ManagerProjectDetail = () => {
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
   const [datasets, setDatasets] = useState([]);
+  const [allDatasets, setAllDatasets] = useState([]);
   const [tasks, setTasks] = useState([]);
   // qualityStats removed — endpoint /quality returns 500 and data is unused in UI
   const [currentTab, setCurrentTab] = useState(0);
@@ -51,7 +52,7 @@ const ManagerProjectDetail = () => {
   const [assignLoading, setAssignLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', description: '', guidelines: '', deadline: '', status: 'draft' });
+  const [editForm, setEditForm] = useState({ name: '', description: '', guidelines: '', deadline: '', status: 'draft', dataset_id: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [qualityStats, setQualityStats] = useState(null);
@@ -67,17 +68,18 @@ const ManagerProjectDetail = () => {
 
         const datasetId = (pData?.dataset?.id || pData?.dataset?._id) || pData?.dataset_id || pData?.datasetId || (typeof pData?.dataset === 'string' ? pData.dataset : null);
 
-        const [datasetsRes, tasksRes] = await Promise.allSettled([
-          datasetId
-            ? axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() })
-            : Promise.reject('No dataset ID'),
+        const [allDatasetsRes, tasksRes] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
           axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() }),
         ]);
 
         let dsList = [];
-        if (datasetsRes.status === 'fulfilled') {
-          const dsData = datasetsRes.value.data?.dataset || datasetsRes.value.data || {};
-          dsList = (dsData.id || dsData._id) ? [normalizeDataset(dsData)] : [];
+        if (allDatasetsRes.status === 'fulfilled') {
+          const dsData = allDatasetsRes.value.data?.datasets || allDatasetsRes.value.data || [];
+          const list = Array.isArray(dsData) ? dsData.map(normalizeDataset) : [];
+          setAllDatasets(list);
+          const currentDs = list.find(ds => ds.id === datasetId || ds._id === datasetId);
+          dsList = currentDs ? [currentDs] : [];
           setDatasets(dsList);
         }
 
@@ -325,6 +327,7 @@ const ManagerProjectDetail = () => {
       guidelines: project?.guidelines || '',
       deadline: project?.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
       status: project?.status || 'draft',
+      dataset_id: project?.dataset_id || (project?.dataset?.id || project?.dataset?._id) || '',
     });
     setEditDialogOpen(true);
   };
@@ -341,6 +344,7 @@ const ManagerProjectDetail = () => {
         guidelines: editForm.guidelines.trim(),
         ...(editForm.deadline ? { deadline: new Date(editForm.deadline).toISOString() } : {}),
         status: editForm.status,
+        dataset_id: editForm.dataset_id,
       };
       const res = await axios.put(`${API_URL}/api/projects/${id}`, payload, { headers: getAuthHeaders() });
       const updated = res.data?.project || res.data;
@@ -348,7 +352,11 @@ const ManagerProjectDetail = () => {
       setEditDialogOpen(false);
       setToast({ open: true, msg: 'Cập nhật project thành công', severity: 'success' });
     } catch (e) {
-      setToast({ open: true, msg: e?.response?.data?.message || 'Cập nhật thất bại', severity: 'error' });
+      let errorMsg = e?.response?.data?.message || e?.response?.data?.error || 'Cập nhật thất bại';
+      if (e?.response?.status === 400 && errorMsg.includes('already assigned')) {
+        errorMsg = 'Dataset này đã được gán cho một project khác. Vui lòng chọn dataset khác.';
+      }
+      setToast({ open: true, msg: errorMsg, severity: 'error' });
     } finally { setEditSaving(false); }
   };
 
@@ -432,6 +440,14 @@ const ManagerProjectDetail = () => {
   // Phải đặt trước early return để không vi phạm Rules of Hooks
   const taskStats = useMemo(() => computeTaskStats(tasks), [tasks]);
   const statusMeta = getCfg(getDisplayStatus(project ?? {}, taskStats));
+
+  const availableDatasets = useMemo(() => {
+    const currentDsId = project?.dataset_id || (project?.dataset?.id || project?.dataset?._id);
+    return allDatasets.filter(ds => {
+      const isCurrent = ds.id === currentDsId || ds._id === currentDsId;
+      return isCurrent || (!ds.project && !ds.project_id);
+    });
+  }, [allDatasets, project]);
 
   if (loading) {
     return (
@@ -629,6 +645,19 @@ const ManagerProjectDetail = () => {
                 MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', color: '#e2e8f0' } } }}>
                 {['draft', 'active', 'in_review', 'waiting_rework', 'finalizing', 'completed', 'archived'].map(s => (
                   <MenuItem key={s} value={s} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>{s}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0' }, '& .MuiInputLabel-root': { color: '#64748b' } }}>
+              <InputLabel>Dataset *</InputLabel>
+              <Select value={editForm.dataset_id} label="Dataset *"
+                onChange={e => setEditForm(p => ({ ...p, dataset_id: e.target.value }))}
+                sx={{ color: '#e2e8f0', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#1e2d47' }, '& .MuiSvgIcon-root': { color: '#64748b' } }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', color: '#e2e8f0' } } }}>
+                {availableDatasets.map(ds => (
+                  <MenuItem key={ds.id} value={ds.id} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>
+                    {ds.name} { (ds.project || ds.project_id) && ds.id !== (project?.dataset_id || project?.dataset?.id) ? '(Đang dùng)' : '' }
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>

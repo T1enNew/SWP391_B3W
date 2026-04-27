@@ -94,6 +94,10 @@ export default function CreateProject() {
     })();
   }, []);
 
+  const availableDatasets = useMemo(() => {
+    return datasets.filter(ds => !ds.project && !ds.project_id);
+  }, [datasets]);
+
   const filteredAnnotators = useMemo(() => {
     const q = annoSearch.toLowerCase();
     return annotators.filter(u => !q || u.fullName.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
@@ -173,10 +177,17 @@ export default function CreateProject() {
     } catch (e) {
       let errorMsg = 'Tạo project thất bại';
       const data = e?.response?.data;
-      if (data?.errors?.length)  errorMsg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
-      else if (data?.message)    errorMsg = data.message;
-      else if (data?.detail)     errorMsg = Array.isArray(data.detail) ? data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ') : String(data.detail);
-      else if (e.message)        errorMsg = e.message;
+      if (e?.response?.status === 400 && (data?.message?.includes('already assigned') || data?.error?.includes('already assigned'))) {
+        errorMsg = 'Dataset này đã được gán cho một project khác. Vui lòng chọn dataset khác.';
+      } else if (data?.errors?.length) {
+        errorMsg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
+      } else if (data?.message) {
+        errorMsg = data.message;
+      } else if (data?.detail) {
+        errorMsg = Array.isArray(data.detail) ? data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ') : String(data.detail);
+      } else if (e.message) {
+        errorMsg = e.message;
+      }
       setError(errorMsg); showToast(errorMsg, 'error');
     } finally { setSaving(false); }
   };
@@ -247,7 +258,7 @@ export default function CreateProject() {
 
               <CreateProjectSection icon={<FolderIcon />} title="Chọn Dataset *"
                 subtitle={selectedDatasetId ? '✓ Đã chọn dataset' : 'Chọn 1 bộ ảnh cho project này'}>
-                <CreateProjectDatasetPicker datasets={datasets} selected={selectedDatasetId} onSelect={setSelectedDatasetId} />
+                <CreateProjectDatasetPicker datasets={availableDatasets} selected={selectedDatasetId} onSelect={setSelectedDatasetId} />
               </CreateProjectSection>
 
               <CreateProjectSection icon={<LabelIcon />} title="Chọn nhãn theo Topic"
