@@ -73,6 +73,12 @@ const ManagerProjectDetail = () => {
           pData?.dataset_id ||
           (typeof pData?.dataset === 'string' ? pData.dataset : null);
 
+        // Nếu backend embed dataset object có name thì dùng ngay, không cần lookup
+        const embeddedDataset =
+          pData?.dataset && typeof pData.dataset === 'object' && pData.dataset.name
+            ? normalizeDataset(pData.dataset)
+            : null;
+
         const [allDatasetsRes, tasksRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
           axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() }),
@@ -84,7 +90,20 @@ const ManagerProjectDetail = () => {
           const list = Array.isArray(dsData) ? dsData.map(normalizeDataset) : [];
           setAllDatasets(list);
           const currentDs = list.find(ds => ds.id === datasetId || ds._id === datasetId);
-          dsList = currentDs ? [currentDs] : [];
+          dsList = currentDs ? [currentDs] : (embeddedDataset ? [embeddedDataset] : []);
+
+          // Nếu vẫn chưa tìm thấy và có datasetId, fetch trực tiếp (dataset đã được linked nên không có trong list chung)
+          if (!dsList.length && datasetId) {
+            try {
+              const dsRes = await axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() });
+              const ds = dsRes.data?.dataset || dsRes.data;
+              if (ds?.name) dsList = [normalizeDataset(ds)];
+            } catch (_) { /* bỏ qua nếu endpoint không hỗ trợ */ }
+          }
+
+          setDatasets(dsList);
+        } else if (embeddedDataset) {
+          dsList = [embeddedDataset];
           setDatasets(dsList);
         }
 

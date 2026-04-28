@@ -387,38 +387,18 @@ const ReviewerProjectDetail = () => {
             </div>
           </div>
 
-          {/* Banner sample rate: chỉ hiện khi project có cấu hình sample (không phải review full).
-              Giúp reviewer biết rõ mình chỉ cần review bao nhiêu task, không phải toàn bộ. */}
-          {sampleRate !== null && (
-            <div className="mt-3 flex flex-col gap-3 rounded-lg bg-violet-500/5 border border-violet-500/20 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                <p className="text-sm text-violet-300">
-                  <span className="font-semibold">Cấu hình mặc định: {sampleRate}%</span>
-                  <span className="text-violet-400/70 ml-1">
-                    — {targetCount}/{projectTotal || (stats?.total ?? 0)} task
-                  </span>
-                </p>
-              </div>
 
-              <div className="flex items-center gap-3 border-t border-violet-500/10 pt-3">
-                <label className="text-xs font-medium text-violet-400/80 uppercase tracking-wider">Review Sample Size:</label>
-                <select
-                  value={overrideSampleRate === null ? 'default' : overrideSampleRate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setOverrideSampleRate(val === 'default' ? null : parseFloat(val));
-                  }}
-                  className="bg-gray-900 border border-violet-500/30 text-violet-200 text-xs rounded-lg focus:ring-violet-500 focus:border-violet-500 block p-1.5 transition-all hover:border-violet-500/60 outline-none"
-                >
-                  <option value="default">Project Default ({sampleRate}%)</option>
-                  <option value="0.5">50%</option>
-                  <option value="0.7">70%</option>
-                  <option value="1.0">100% (Full Review)</option>
-                </select>
-              </div>
+          {sampleRate !== null && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-500/5 border border-violet-500/20 px-4 py-3">
+              <svg className="w-4 h-4 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <p className="text-sm text-violet-300">
+                <span className="font-semibold">Cấu hình mặc định: {sampleRate}%</span>
+                <span className="text-violet-400/70 ml-1">
+                  — {targetCount}/{projectTotal || (stats?.total ?? 0)} task
+                </span>
+              </p>
             </div>
           )}
 

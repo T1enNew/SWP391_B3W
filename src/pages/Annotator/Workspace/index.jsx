@@ -376,6 +376,7 @@ const handleSave = useCallback(async () => {
     let successCount = 0;
     let lastError = '';
 
+    let failCount = 0;
     for (let i = 0; i < targetTasks.length; i++) {
       const t = targetTasks[i];
       try {
@@ -402,6 +403,7 @@ const handleSave = useCallback(async () => {
           successCount++;
         }
       } catch (err) {
+        failCount++;
         const serverMsg = err?.response?.data?.message || '';
         const serverErr = err?.response?.data?.error || '';
         const combined = serverErr ? `${serverMsg} — ${serverErr}` : serverMsg;
@@ -415,14 +417,14 @@ const handleSave = useCallback(async () => {
         console.error(`AI pre-label failed for task ${t.id}:`, err?.response?.data || err.message);
       }
       setBulkAiProgress((prev) => ({ ...prev, done: prev.done + 1 }));
-      // Delay between tasks to avoid Gemini rate limit (free tier ~2 req/min)
+      // Delay between tasks to avoid Gemini rate limit (free tier: ~15s between requests)
       if (i < targetTasks.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 15000));
       }
     }
 
     setBulkAiCount(successCount);
-    if (lastError && successCount === 0) setBulkAiError(lastError);
+    if (lastError && failCount > 0) setBulkAiError(`${failCount} task thất bại: ${lastError}`);
     setBulkAiLoading(false);
     setBulkAiDone(true);
     if (currentTaskId) loadTaskDetail(currentTaskId);

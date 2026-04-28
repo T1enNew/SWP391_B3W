@@ -162,14 +162,17 @@ export default function CreateProject() {
       } catch (assignErr) {
         const status = assignErr?.response?.status;
         const assignMsg = assignErr?.response?.data?.error || assignErr?.response?.data?.message || assignErr.message || '';
-        if (status === 500 || !status) {
+        // "no unassigned items" means backend already auto-assigned during project creation → treat as success
+        if (assignMsg.toLowerCase().includes('no unassigned items')) {
+          showToast('Tạo project và phân công task thành công!');
+          setTimeout(() => navigate(`/manager/projects/${projectId}`), 900);
+        } else if (status === 500 || !status) {
           showToast('Project đã tạo! Phân công task thất bại do lỗi server — vào project và bấm "Assign Tasks" để thử lại.', 'warning');
-        } else if (assignMsg.toLowerCase().includes('no unassigned items')) {
-          showToast('Project đã tạo nhưng dataset không còn ảnh chưa phân công. Dataset này có thể đang được dùng bởi project khác — hãy chọn dataset khác hoặc xóa project cũ.', 'warning');
+          setTimeout(() => navigate(`/manager/projects/${projectId}`), 2500);
         } else {
           showToast(`Project đã tạo nhưng phân công task thất bại: ${assignMsg}`, 'warning');
+          setTimeout(() => navigate(`/manager/projects/${projectId}`), 2500);
         }
-        setTimeout(() => navigate(`/manager/projects/${projectId}`), 2500);
       }
     } catch (e) {
       let errorMsg = 'Tạo project thất bại';
