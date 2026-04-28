@@ -66,7 +66,12 @@ const ManagerProjectDetail = () => {
         const pData = projectRes.data?.project || projectRes.data || {};
         setProject(normalizeProject(pData));
 
-        const datasetId = (pData?.dataset?.id || pData?.dataset?._id) || pData?.dataset_id || pData?.datasetId || (typeof pData?.dataset === 'string' ? pData.dataset : null);
+        // backend có thể trả dataset dưới nhiều dạng: object {id,name}, string UUID, hoặc field khác nhau
+        const datasetId =
+          pData?.dataset?.id || pData?.dataset?._id ||
+          (typeof pData?.datasetId === 'object' ? pData?.datasetId?.id || pData?.datasetId?._id : pData?.datasetId) ||
+          pData?.dataset_id ||
+          (typeof pData?.dataset === 'string' ? pData.dataset : null);
 
         const [allDatasetsRes, tasksRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),

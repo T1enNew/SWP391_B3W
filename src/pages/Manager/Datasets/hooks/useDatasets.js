@@ -303,7 +303,7 @@ export function useDatasets() {
     setCreating(true);
     try {
       await axios.post(`${API_URL}/api/datasets`,
-        { name: createForm.name.trim(), description: createForm.description.trim(), type: 'image' },
+        { name: createForm.name.trim(), description: createForm.description.trim(), type: 'image', status: 'draft' },
         { headers: getAuthHeaders() }
       );
       setCreateOpen(false);
@@ -312,11 +312,13 @@ export function useDatasets() {
       showToast('Tạo dataset thành công');
     } catch (e) {
       const data = e?.response?.data;
+      const status = e?.response?.status;
       let msg = 'Tạo dataset thất bại';
-      if (data?.errors?.length)   msg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
-      else if (data?.message)     msg = data.message;
-      else if (data?.detail)      msg = Array.isArray(data.detail) ? data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ') : String(data.detail);
-      else if (e.message)         msg = e.message;
+      if (data?.errors?.length)        msg = data.errors.map(err => err.message || JSON.stringify(err)).join(', ');
+      else if (data?.message && data.message !== 'Failed to create dataset.') msg = data.message;
+      else if (data?.detail)           msg = Array.isArray(data.detail) ? data.detail.map(err => `${err.loc?.join('.')}: ${err.msg}`).join(', ') : String(data.detail);
+      else if (status === 500)         msg = 'Lỗi server khi tạo dataset. Vui lòng thử lại.';
+      else if (e.message)              msg = e.message;
       showToast(msg, 'error');
     } finally {
       setCreating(false);
