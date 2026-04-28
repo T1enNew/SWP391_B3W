@@ -47,13 +47,13 @@ const Workspace = () => {
   const [bulkAiCount, setBulkAiCount] = useState(0);
   const [bulkAiError, setBulkAiError] = useState('');
 
-  // Mount lifecycle
+  // Đánh dấu component đã mount; cleanup khi unmount để tránh setState trên component đã bị destroy
   useEffect(() => {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
-  // Keep currentTaskIdRef in sync
+  // Đồng bộ ref với state để các callback async không bị stale closure khi đọc currentTaskId
   useEffect(() => { currentTaskIdRef.current = currentTaskId; }, [currentTaskId]);
 
   // Gọi API song song lấy danh sách tasks và thông tin project (tên, deadline, nhãn)
@@ -199,7 +199,7 @@ const textRes = await axios.get(
     }
   }, [projectLabels]);
 
-  // Sync project labels to task if task loaded without labels
+  // Gắn labels của project vào task nếu task được load trước khi project labels sẵn sàng
   useEffect(() => {
     if (task && projectLabels.length > 0 && (!task.availableLabels || task.availableLabels.length === 0)) {
       setTask(prev => ({
@@ -209,19 +209,19 @@ const textRes = await axios.get(
     }
   }, [task?.id, projectLabels]);
 
-  // Load tasks on mount/projectId change
+  // Reset và load lại toàn bộ tasks khi projectId thay đổi (vào project mới)
   useEffect(() => {
     setCurrentTaskId(null);
     setTask(null);
     loadTasks();
   }, [loadTasks]);
 
-  // Load task detail when currentTaskId changes
+  // Load chi tiết task bất cứ khi nào currentTaskId thay đổi (người dùng chọn task khác)
   useEffect(() => {
     if (currentTaskId) loadTaskDetail(currentTaskId);
   }, [currentTaskId, loadTaskDetail]);
 
-  // Persist statusOverrides to localStorage so ProjectDetail can read them
+  // Lưu statusOverrides vào localStorage để ProjectDetail có thể đọc được khi quay lại
   useEffect(() => {
     if (!projectId || Object.keys(statusOverrides).length === 0) return;
     const key = `taskStatus_${projectId}`;
@@ -229,8 +229,7 @@ const textRes = await axios.get(
     localStorage.setItem(key, JSON.stringify({ ...existing, ...statusOverrides }));
   }, [statusOverrides, projectId]);
 
-  // When a task finishes loading: set in_progress override + call start API
-  // Only runs when task.id changes (i.e., different task loaded), not on every re-render
+  // Khi load task mới: đánh dấu in_progress ở local và gọi API start nếu task còn ở assigned/rejected
   useEffect(() => {
     if (!task?.id) return;
     const TERMINAL = ['completed', 'submitted', 'resubmitted', 'approved'];
@@ -238,13 +237,13 @@ const textRes = await axios.get(
       if (TERMINAL.includes(prev[task.id]) || TERMINAL.includes(task.status)) return prev;
       return { ...prev, [task.id]: 'in_progress' };
     });
-    // Call start API for backend if needed (fire and forget)
+    // Gọi start API để backend biết annotator đã bắt đầu làm (fire and forget)
     if (['assigned', 'rejected'].includes(task.status)) {
       axios.put(`${API_URL}/api/tasks/${task.id}/start`, {}, { headers: getAuthHeaders() }).catch(() => {});
     }
-  }, [task?.id]); // only re-run when task ID changes, not on statusOverrides update
+  }, [task?.id]); // chỉ chạy khi task ID thay đổi, không phụ thuộc statusOverrides
 
-  // Poll for status updates when submitted
+  // Poll status mỗi 5 giây khi task đang chờ review để cập nhật kết quả duyệt từ reviewer
   useEffect(() => {
     if (!task || !['submitted', 'resubmitted'].includes(task?.status)) return;
     const interval = setInterval(() => {
@@ -430,7 +429,7 @@ const handleSave = useCallback(async () => {
     if (currentTaskId) loadTaskDetail(currentTaskId);
   }, [tasks, currentTaskId, loadTaskDetail]);
 
-  // Keyboard shortcuts
+  // Bàn phím tắt: mũi tên trái/phải để chuyển task mà không cần click (bỏ qua khi đang nhập liệu)
   useEffect(() => {
     if (loading) return;
     const handleKeyDown = (e) => {
@@ -442,7 +441,7 @@ const handleSave = useCallback(async () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [loading, handleNavigateTask]);
 
-  // Apply local status overrides for display (takes priority over backend status)
+  // Áp dụng local override lên tasks để hiển thị trạng thái tức thì (không chờ backend reload)
   const effectiveTasks = tasks.map((t) => ({ ...t, status: statusOverrides[t.id] ?? t.status }));
   const effectiveTask = task ? { ...task, status: statusOverrides[task.id] ?? task.status } : null;
 

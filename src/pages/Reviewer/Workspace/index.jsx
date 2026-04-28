@@ -160,7 +160,7 @@ const ReviewerWorkspace = () => {
       setItems([item]);
       selectItem(item);
     } catch (err) {
-      setFetchError(err.response?.data?.message || 'Khong tai duoc task');
+      setFetchError(err.response?.data?.message || 'Không tải được task');
     } finally {
       setLoading(false);
     }
@@ -224,13 +224,13 @@ const ReviewerWorkspace = () => {
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Approved!');
       setTimeout(() => setSavingMsg(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    } catch (err) { alert('Lỗi: ' + (err.response?.data?.message || err.message)); }
     finally       { setSaving(false); }
   };
 
   // Kiểm tra reviewer đã nhập feedback chưa, nếu có thì hiện dialog xác nhận reject
   const handleReject = (submission) => {
-    if (!feedback.trim()) { alert('Vui long nhap feedback khi reject.'); return; }
+    if (!feedback.trim()) { alert('Vui lòng nhập feedback khi reject.'); return; }
     setShowRejectConfirm(true);
   };
 
@@ -248,7 +248,7 @@ const ReviewerWorkspace = () => {
       setFeedback(''); setErrorCategory('');
       setSavingMsg('Rejected!');
       setTimeout(() => setSavingMsg(''), 3000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    } catch (err) { alert('Lỗi: ' + (err.response?.data?.message || err.message)); }
     finally       { setSaving(false); }
   };
 
@@ -275,7 +275,7 @@ const ReviewerWorkspace = () => {
       if (currentItem?.itemId === item.itemId) setCurrentItem(prev => applyUpdate(prev));
       setSavingMsg('Approved!');
       setTimeout(() => setSavingMsg(''), 2000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    } catch (err) { alert('Lỗi: ' + (err.response?.data?.message || err.message)); }
     finally { setSaving(false); }
   };
 
@@ -302,7 +302,7 @@ const ReviewerWorkspace = () => {
       if (currentItem?.itemId === item.itemId) setCurrentItem(prev => applyUpdate(prev));
       setSavingMsg('Rejected!');
       setTimeout(() => setSavingMsg(''), 2000);
-    } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
+    } catch (err) { alert('Lỗi: ' + (err.response?.data?.message || err.message)); }
     finally { setSaving(false); }
   };
 
@@ -326,7 +326,7 @@ const ReviewerWorkspace = () => {
       <div className="flex h-screen items-center justify-center bg-slate-900">
         <div className="text-center">
           <div className="h-10 w-10 border-3 border-gray-700 border-t-violet-500 rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-gray-400 text-xs">Dang tai...</p>
+          <p className="mt-3 text-gray-400 text-xs">Đang tải...</p>
         </div>
       </div>
     );
@@ -337,7 +337,7 @@ const ReviewerWorkspace = () => {
       <div className="flex h-screen items-center justify-center bg-slate-900">
         <div className="text-center max-w-xs p-4">
           <p className="text-rose-400 text-xs font-semibold mb-2">{fetchError}</p>
-          <button onClick={fetchQueue} className="rounded bg-violet-600 px-3 py-1.5 text-xs text-white">Thu lai</button>
+          <button onClick={fetchQueue} className="rounded bg-violet-600 px-3 py-1.5 text-xs text-white">Thử lại</button>
         </div>
       </div>
     );
@@ -391,10 +391,10 @@ const ReviewerWorkspace = () => {
               Back
             </button>
             <div className="min-w-0 flex-1">
-              <h2 className="text-xs font-bold text-gray-200 truncate">{currentItem?.filename || 'Chon item'}</h2>
+              <h2 className="text-xs font-bold text-gray-200 truncate">{currentItem?.filename || 'Chọn item'}</h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-[10px] text-gray-500">
-                  {items.length} item &mdash; {pendingCount} can review &mdash; {reviewedCount} da xong
+                  {items.length} item &mdash; {pendingCount} cần review &mdash; {reviewedCount} đã xong
                 </p>
                 {/* Sample rate override ẩn — logic vẫn hoạt động qua URL param */}
               </div>
@@ -407,7 +407,7 @@ const ReviewerWorkspace = () => {
                     onClick={() => { handleAnnotatorSelect(sub); handleAnnotatorToggle(sub.annotatorId); }}
                     className="w-5 h-5 rounded-full border-2 border-gray-900 flex items-center justify-center text-[9px] font-bold text-white transition-all hover:scale-110"
                     style={{ backgroundColor: sub.color || '#3b82f6', opacity: visibleAnnotators.includes(sub.annotatorId) ? 1 : 0.4 }}
-                    title={`${sub.annotatorName} (${visibleAnnotators.includes(sub.annotatorId) ? 'hien' : 'an'})`}
+                    title={`${sub.annotatorName} (${visibleAnnotators.includes(sub.annotatorId) ? 'hiện' : 'ẩn'})`}
                   >
                     {(sub.annotatorName || '?')[0].toUpperCase()}
                   </button>
@@ -430,12 +430,12 @@ const ReviewerWorkspace = () => {
             />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-800">
-              <p className="text-gray-500 text-xs">"{currentItem.kind}" chua ho tro</p>
+              <p className="text-gray-500 text-xs">"{currentItem.kind}" chưa hỗ trợ</p>
             </div>
           )
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-800">
-            <p className="text-gray-500 text-xs">Chon item tu danh sach</p>
+            <p className="text-gray-500 text-xs">Chọn item từ danh sách</p>
           </div>
         )}
       </div>
@@ -463,10 +463,10 @@ const ReviewerWorkspace = () => {
         maxWidth="sm" fullWidth
         PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '12px' } }}
       >
-        <DialogTitle sx={{ fontSize: '14px', fontWeight: 700 }}>Xac nhan Reject</DialogTitle>
+        <DialogTitle sx={{ fontSize: '14px', fontWeight: 700 }}>Xác nhận Reject</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ color: '#94a3b8', fontSize: '12px' }}>
-            Annotator se nhan thong bao va can sua lai bai.
+            Annotator sẽ nhận thông báo và cần sửa lại bài.
           </Typography>
           {feedback && (
             <div className="mt-2 rounded bg-rose-500/10 border border-rose-500/20 p-2">
@@ -475,13 +475,13 @@ const ReviewerWorkspace = () => {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 2, pb: 1.5 }}>
-          <Button onClick={() => setShowRejectConfirm(false)} size="small" sx={{ color: '#94a3b8', fontSize: '11px' }}>Huy</Button>
+          <Button onClick={() => setShowRejectConfirm(false)} size="small" sx={{ color: '#94a3b8', fontSize: '11px' }}>Huỷ</Button>
           <Button
             onClick={() => confirmReject(activeSubmission)}
             variant="contained" size="small" disabled={saving}
             sx={{ bgcolor: '#dc2626', fontSize: '11px' }}
           >
-            {saving ? '...' : 'Xac nhan'}
+            {saving ? '...' : 'Xác nhận'}
           </Button>
         </DialogActions>
       </Dialog>

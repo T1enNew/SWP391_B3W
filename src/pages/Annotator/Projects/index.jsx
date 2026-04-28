@@ -29,26 +29,26 @@ const getProjStats = (project) => {
 // Xác định trạng thái project cho annotator: hoàn tất / bị trả lại / chờ review / đang làm / quá hạn
 const getProjectStatus = (project) => {
   const { total, done, waiting, rejected } = getProjStats(project);
-  if (total === 0) return { label: 'Chua bat dau', color: 'bg-gray-600 text-gray-300', icon: '○' };
+  if (total === 0) return { label: 'Chưa bắt đầu', color: 'bg-gray-600 text-gray-300', icon: '○' };
 
   const overdue = project.deadline && new Date(project.deadline) < new Date();
 
   if (done === total && total > 0) {
-    return { label: 'Hoan tat', color: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', icon: '✓' };
+    return { label: 'Hoàn tất', color: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', icon: '✓' };
   }
   if (rejected > 0) {
-    return { label: 'Co task bi tra lai', color: 'bg-amber-500/15 text-amber-400 border border-amber-500/30', icon: '↩' };
+    return { label: 'Có task bị trả lại', color: 'bg-amber-500/15 text-amber-400 border border-amber-500/30', icon: '↩' };
   }
   if (waiting > 0) {
-    return { label: 'Cho review', color: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30', icon: '⏳' };
+    return { label: 'Chờ review', color: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30', icon: '⏳' };
   }
   if (done > 0) {
-    return { label: 'Dang lam', color: 'bg-blue-500/15 text-blue-400 border border-blue-500/30', icon: '▶' };
+    return { label: 'Đang làm', color: 'bg-blue-500/15 text-blue-400 border border-blue-500/30', icon: '▶' };
   }
   if (overdue) {
-    return { label: 'Qua han', color: 'bg-rose-500/15 text-rose-400 border border-rose-500/30', icon: '⚠' };
+    return { label: 'Quá hạn', color: 'bg-rose-500/15 text-rose-400 border border-rose-500/30', icon: '⚠' };
   }
-  return { label: 'Chua bat dau', color: 'bg-gray-600/15 text-gray-400 border border-gray-600/30', icon: '○' };
+  return { label: 'Chưa bắt đầu', color: 'bg-gray-600/15 text-gray-400 border border-gray-600/30', icon: '○' };
 };
 
 // Component badge hiển thị trạng thái project với icon và màu tương ứng
@@ -89,20 +89,20 @@ const ProjectCard = ({ project, onOpen }) => {
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="rounded-lg bg-gray-900/60 p-2.5">
-          <p className="text-xs text-gray-500">Tong item</p>
+          <p className="text-xs text-gray-500">Tổng item</p>
           <p className="mt-0.5 text-lg font-bold text-gray-200">{total}</p>
         </div>
         <div className="rounded-lg bg-emerald-500/5 p-2.5 border border-emerald-500/10">
-          <p className="text-xs text-emerald-500/70">Da duyet</p>
+          <p className="text-xs text-emerald-500/70">Đã duyệt</p>
           <p className="mt-0.5 text-lg font-bold text-emerald-400">{done}</p>
         </div>
         <div className="rounded-lg bg-yellow-500/5 p-2.5 border border-yellow-500/10">
-          <p className="text-xs text-yellow-500/70">Cho review</p>
+          <p className="text-xs text-yellow-500/70">Chờ review</p>
           <p className="mt-0.5 text-lg font-bold text-yellow-400">{waiting}</p>
         </div>
         {rejected > 0 && (
           <div className="col-span-3 rounded-lg bg-amber-500/5 p-2.5 border border-amber-500/10">
-            <p className="text-xs text-amber-500/70">Bi tra ve (lam lai)</p>
+            <p className="text-xs text-amber-500/70">Bị trả về (làm lại)</p>
             <p className="mt-0.5 text-lg font-bold text-amber-400">{rejected} item</p>
           </div>
         )}
@@ -111,7 +111,7 @@ const ProjectCard = ({ project, onOpen }) => {
       {/* Progress bar */}
       <div className="mb-3">
         <div className="flex items-center justify-between text-xs mb-1.5">
-          <span className="text-gray-500">Tien do</span>
+          <span className="text-gray-500">Tiến độ</span>
           <span className="font-semibold text-gray-300">{pct}%</span>
         </div>
         <div className="h-2 w-full rounded-full bg-gray-700/60 overflow-hidden">
@@ -129,14 +129,14 @@ const ProjectCard = ({ project, onOpen }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           Deadline: {fmtDate(project.deadline)}
-          {overdue && <span className="ml-1 font-semibold">(Qua han)</span>}
+          {overdue && <span className="ml-1 font-semibold">(Quá hạn)</span>}
         </div>
       )}
 
       {/* Hover CTA */}
       <div className="mt-4 flex items-center justify-end">
         <span className="inline-flex items-center gap-1 rounded-lg bg-blue-600/0 px-3 py-1.5 text-xs font-semibold text-blue-400 opacity-0 group-hover:opacity-100 transition-all duration-200 group-hover:bg-blue-600/10">
-          Mo project
+          Mở project
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -181,7 +181,7 @@ const AnnotatorProjectList = () => {
       });
       setProjects(projectsWithTasks);
     } catch (err) {
-      setError(err.response?.data?.message || 'Khong tai duoc danh sach project');
+      setError(err.response?.data?.message || 'Không tải được danh sách project');
     } finally {
       setLoading(false);
     }
@@ -228,12 +228,12 @@ const AnnotatorProjectList = () => {
   };
 
   const filterTabs = [
-    { key: 'all', label: 'Tat ca' },
-    { key: 'active', label: 'Dang lam' },
-    { key: 'waiting_review', label: 'Cho review' },
-    { key: 'has_rejected', label: 'Bi tra lai' },
-    { key: 'completed', label: 'Hoan tat' },
-    { key: 'overdue', label: 'Qua han' },
+    { key: 'all', label: 'Tất cả' },
+    { key: 'active', label: 'Đang làm' },
+    { key: 'waiting_review', label: 'Chờ review' },
+    { key: 'has_rejected', label: 'Bị trả lại' },
+    { key: 'completed', label: 'Hoàn tất' },
+    { key: 'overdue', label: 'Quá hạn' },
   ];
 
   if (loading) {
@@ -241,7 +241,7 @@ const AnnotatorProjectList = () => {
       <div className="flex min-h-screen items-center justify-center bg-slate-900">
         <div className="text-center">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500 mx-auto" />
-          <p className="mt-4 text-gray-400 text-sm">Dang tai danh sach project...</p>
+          <p className="mt-4 text-gray-400 text-sm">Đang tải danh sách project...</p>
         </div>
       </div>
     );
@@ -253,8 +253,8 @@ const AnnotatorProjectList = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-100">Cong viec cua toi</h1>
-            <p className="mt-1 text-sm text-gray-400">{projects.length} project duoc phan cong</p>
+            <h1 className="text-2xl font-bold text-gray-100">Công việc của tôi</h1>
+            <p className="mt-1 text-sm text-gray-400">{projects.length} project được phân công</p>
           </div>
         </div>
 
@@ -266,7 +266,7 @@ const AnnotatorProjectList = () => {
             </svg>
             <input
               type="text"
-              placeholder="Tim kiem project, dataset, topic..."
+              placeholder="Tìm kiếm project, dataset, topic..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full rounded-xl border border-gray-700 bg-gray-800/80 py-3 pl-11 pr-4 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
@@ -310,8 +310,8 @@ const AnnotatorProjectList = () => {
             </svg>
             <p className="text-gray-400">
               {filter === 'all' && !searchQuery
-                ? 'Ban chua co project nao duoc phan cong.'
-                : `Khong co project nao phu hop voi "${filter === 'all' ? searchQuery : filter}".`}
+                ? 'Bạn chưa có project nào được phân công.'
+                : `Không có project nào phù hợp với "${filter === 'all' ? searchQuery : filter}".`}
             </p>
           </div>
         ) : (

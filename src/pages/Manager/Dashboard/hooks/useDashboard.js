@@ -115,10 +115,23 @@ export function useDashboard() {
           else if (t.status === 'submitted') annotatorMap[aId].submitted++;
         }
 
+        // Lấy reviewer từ task-level (reviewerId) — đây là field chính backend trả về
+        const rIdTask   = t.reviewerId?._id || t.reviewerId?.id || (typeof t.reviewerId === 'string' ? t.reviewerId : null)
+                       || t.reviewer?._id   || t.reviewer?.id   || (typeof t.reviewer   === 'string' ? t.reviewer   : null);
+        const rNameTask = t.reviewerId?.full_name || t.reviewerId?.username || t.reviewerId?.name
+                       || t.reviewer?.full_name   || t.reviewer?.username   || t.reviewer?.name || 'Reviewer';
+        if (rIdTask && (t.status === 'approved' || t.status === 'rejected')) {
+          if (!reviewerMap[rIdTask]) reviewerMap[rIdTask] = { name: rNameTask, reviewed: 0, approved: 0, rejected: 0 };
+          reviewerMap[rIdTask].reviewed++;
+          if (t.status === 'approved') reviewerMap[rIdTask].approved++;
+          else                         reviewerMap[rIdTask].rejected++;
+        }
+
+        // Fallback: nếu backend trả về mảng t.reviewers thì vẫn đọc được
         (t.reviewers || []).forEach((rv) => {
           const rId   = rv?.reviewerId?._id || rv?.reviewerId?.id || (typeof rv?.reviewerId === 'string' ? rv.reviewerId : null);
           const rName = rv?.reviewerId?.full_name || rv?.reviewerId?.username || rv?.reviewerId?.name || 'Reviewer';
-          if (rId) {
+          if (rId && rId !== rIdTask) {
             if (!reviewerMap[rId]) reviewerMap[rId] = { name: rName, reviewed: 0, approved: 0, rejected: 0 };
             if (rv.status === 'approved' || rv.status === 'rejected') {
               reviewerMap[rId].reviewed++;

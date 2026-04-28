@@ -1,9 +1,11 @@
 import { API_URL } from '../../../config/api';
 
+// Lấy data item của task, hỗ trợ nhiều dạng key khác nhau từ backend
 export const getTaskDataItem = (t) => {
   return t?.dataItem || t?.data_item || t?.datasetItemId || t?.itemId || null;
 };
 
+// Tạo URL file để hiển thị: ưu tiên signed URL, fallback về storage URL rồi tự ghép path
 export const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
 
@@ -35,10 +37,9 @@ export const buildFileUrl = (dataItem) => {
   return `${baseUrl}/${rawPath}`;
 };
 
+// Xác định loại file của task dựa vào mimeType hoặc tên file: 'image' | 'audio' | 'text' | 'other'
 export const getTaskKind = (t) => {
   const item = getTaskDataItem(t);
-console.log('ITEM =', item);
-console.log('URL =', buildFileUrl(item));
   const mt = (item?.mimeType || item?.mime_type || '').toLowerCase();
 
   const fileName = (

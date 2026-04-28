@@ -268,7 +268,7 @@ const ReviewerProjectList = () => {
         setProjects([]);
         setError("");
       } else {
-        setError(err.response?.data?.message || "Khong tai duoc danh sach project");
+        setError(err.response?.data?.message || "Không tải được danh sách project");
       }
     } finally {
       setLoading(false);

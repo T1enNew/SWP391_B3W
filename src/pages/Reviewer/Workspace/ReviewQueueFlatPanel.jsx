@@ -7,7 +7,7 @@ const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect, onQuickApprove, 
       <h3 className="text-sm font-bold text-gray-200">Review Queue</h3>
       <p className="text-xs text-gray-500 mt-0.5">
         {items.length} item &mdash;{' '}
-        {items.filter(i => i.status === 'pending_review' || i.status === 'partially_reviewed').length} can review
+        {items.filter(i => i.status === 'pending_review' || i.status === 'partially_reviewed').length} cần review
       </p>
     </div>
     <div className="flex-1 overflow-y-auto">
@@ -80,7 +80,7 @@ const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect, onQuickApprove, 
         );
       })}
       {items.length === 0 && (
-        <div className="p-4 text-center text-gray-500 text-xs">Khong co item</div>
+        <div className="p-4 text-center text-gray-500 text-xs">Không có item</div>
       )}
     </div>
   </div>

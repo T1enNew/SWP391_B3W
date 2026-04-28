@@ -1,9 +1,10 @@
+// Trạng thái của item trong queue reviewer: mỗi trạng thái có label hiển thị và màu chấm
 export const ITEM_STATUS = {
-  pending_review:     { label: 'Cho review',      dot: 'bg-yellow-400' },
-  partially_reviewed: { label: 'Mot phan',         dot: 'bg-orange-400' },
-  fully_reviewed:     { label: 'Da review xong',   dot: 'bg-emerald-400' },
-  waiting_rework:     { label: 'Cho sua lai',       dot: 'bg-amber-400' },
-  finalized:          { label: 'Da finalize',       dot: 'bg-purple-400' },
+  pending_review:     { label: 'Chờ review',      dot: 'bg-yellow-400' },
+  partially_reviewed: { label: 'Một phần',         dot: 'bg-orange-400' },
+  fully_reviewed:     { label: 'Đã review xong',   dot: 'bg-emerald-400' },
+  waiting_rework:     { label: 'Chờ sửa lại',      dot: 'bg-amber-400' },
+  finalized:          { label: 'Đã finalize',       dot: 'bg-purple-400' },
 };
 
 export const SUBMISSION_STATUS = {
@@ -12,12 +13,13 @@ export const SUBMISSION_STATUS = {
   rejected: { label: 'Rejected',   color: 'bg-rose-600' },
 };
 
+// Danh mục lỗi khi reviewer reject bài, dùng trong dropdown chọn loại lỗi
 export const FEEDBACK_CATEGORIES = [
-  { value: 'incorrect_label',          label: 'Nhan sai' },
-  { value: 'missing_label',            label: 'Thieu nhan' },
-  { value: 'poor_quality',             label: 'Chat luong thap' },
-  { value: 'does_not_follow_guidelines', label: 'Khong dung guideline' },
-  { value: 'other',                    label: 'Khac' },
+  { value: 'incorrect_label',          label: 'Nhãn sai' },
+  { value: 'missing_label',            label: 'Thiếu nhãn' },
+  { value: 'poor_quality',             label: 'Chất lượng thấp' },
+  { value: 'does_not_follow_guidelines', label: 'Không đúng guideline' },
+  { value: 'other',                    label: 'Khác' },
 ];
 
 export const ITEM_STATUS_ORDER = {

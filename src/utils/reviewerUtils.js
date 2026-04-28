@@ -1,21 +1,25 @@
 import { API_URL } from '../config/api';
 import { ANNOTATOR_COLORS, ITEM_STATUS_ORDER } from '../constants/reviewer';
 
+// Lấy JWT token từ sessionStorage (ưu tiên) hoặc localStorage
 export const getAuthToken = () =>
   sessionStorage.getItem('token') || localStorage.getItem('token');
 
+// Chuyển chuỗi bất kỳ (thường là annotator ID) thành màu hex nhất quán từ bảng ANNOTATOR_COLORS
 export const stringToColor = (str = '') => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
   return ANNOTATOR_COLORS[Math.abs(hash) % ANNOTATOR_COLORS.length];
 };
 
+// Ánh xạ trạng thái task sang trạng thái submission cho reviewer: approved/rejected/pending
 export const getAnnotatorStatus = (task) => {
   if (task.status === 'approved') return 'approved';
   if (task.status === 'rejected' || task.status === 'waiting_rework') return 'rejected';
   return 'pending';
 };
 
+// Tính lại trạng thái tổng của một item dựa vào các submissions con (mutates item.status)
 export const updateItemStatus = (item) => {
   const subs = item.submissions || [];
   const approved = subs.filter(s => s.status === 'approved').length;
@@ -31,9 +35,11 @@ export const updateItemStatus = (item) => {
   }
 };
 
+// Sắp xếp items theo thứ tự ưu tiên: pending → partially → waiting_rework → reviewed → finalized
 export const sortByStatus = (items) =>
   [...items].sort((a, b) => (ITEM_STATUS_ORDER[a.status] ?? 5) - (ITEM_STATUS_ORDER[b.status] ?? 5));
 
+// Xác định loại file của task dựa vào mimeType hoặc tên file: 'image' | 'audio' | 'text' | 'other'
 export const getTaskKind = (t) => {
   const di = t?.dataItem || t?.data_item || {};
   const mt = (di.mimeType || di.mime_type || '').toLowerCase();

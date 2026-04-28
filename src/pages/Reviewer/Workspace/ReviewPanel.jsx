@@ -41,15 +41,15 @@ const ReviewPanel = ({
   if (!item) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 border-l border-gray-700">
-        <p className="text-gray-500 text-xs">Chon item</p>
+        <p className="text-gray-500 text-xs">Chọn item</p>
       </div>
     );
   }
 
   const TABS = [
     { key: 'review', label: 'Review' },
-    { key: 'info',   label: 'Thong tin' },
-    { key: 'guide',  label: 'Huong dan' },
+    { key: 'info',   label: 'Thông tin' },
+    { key: 'guide',  label: 'Hướng dẫn' },
   ];
 
   return (
@@ -123,7 +123,7 @@ const ReviewPanel = ({
                       <span className={`shrink-0 rounded-full px-1 py-0.5 text-[9px] font-semibold ${sc.color} text-white`}>
                         {sc.label}
                       </span>
-                      <label onClick={(e) => e.stopPropagation()} className="shrink-0 cursor-pointer" title="Hien thi overlay">
+                      <label onClick={(e) => e.stopPropagation()} className="shrink-0 cursor-pointer" title="Hiển thị overlay">
                         <input
                           type="checkbox"
                           checked={isVisible}
@@ -135,7 +135,7 @@ const ReviewPanel = ({
                   );
                 })}
                 {filteredSubs.length === 0 && (
-                  <p className="text-[11px] text-gray-500 text-center py-2">Khong tim thay</p>
+                  <p className="text-[11px] text-gray-500 text-center py-2">Không tìm thấy</p>
                 )}
               </div>
             </div>
@@ -152,7 +152,7 @@ const ReviewPanel = ({
 
                 {activeSubmission.feedback && (
                   <div className="rounded bg-rose-500/10 border border-rose-500/20 p-2">
-                    <p className="text-[9px] font-bold text-rose-400 mb-0.5">Feedback cu:</p>
+                    <p className="text-[9px] font-bold text-rose-400 mb-0.5">Feedback cũ:</p>
                     <p className="text-[10px] text-rose-300 italic leading-snug">"{activeSubmission.feedback}"</p>
                   </div>
                 )}
@@ -164,7 +164,7 @@ const ReviewPanel = ({
                       onChange={(e) => setErrorCategory(e.target.value)}
                       className="w-full rounded border border-gray-700 bg-gray-800 text-[11px] text-gray-300 px-2 py-1.5 focus:outline-none focus:border-violet-500/50"
                     >
-                      <option value="">-- Loai loi (neu reject) --</option>
+                      <option value="">-- Loại lỗi (nếu reject) --</option>
                       {FEEDBACK_CATEGORIES.map((cat) => (
                         <option key={cat.value} value={cat.value}>{cat.label}</option>
                       ))}
@@ -207,7 +207,7 @@ const ReviewPanel = ({
                         disabled={saving}
                         className="w-full rounded border border-gray-700 hover:border-gray-600 text-gray-500 hover:text-gray-300 px-2 py-1 text-[10px] font-medium transition-all disabled:opacity-50"
                       >
-                        Chuyen annotator tiep
+                        Chuyển annotator tiếp
                       </button>
                     )}
                   </>
@@ -215,18 +215,18 @@ const ReviewPanel = ({
 
                 {activeSubmission.status === 'approved' && (
                   <div className="rounded bg-emerald-500/10 border border-emerald-500/20 p-2 text-center">
-                    <p className="text-[11px] text-emerald-400 font-semibold">Da approved</p>
+                    <p className="text-[11px] text-emerald-400 font-semibold">Đã approved</p>
                   </div>
                 )}
                 {activeSubmission.status === 'rejected' && (
                   <div className="rounded bg-rose-500/10 border border-rose-500/20 p-2 text-center">
-                    <p className="text-[11px] text-rose-400 font-semibold">Da rejected</p>
+                    <p className="text-[11px] text-rose-400 font-semibold">Đã rejected</p>
                   </div>
                 )}
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center p-4">
-                <p className="text-[11px] text-gray-500">Chon annotator de review</p>
+                <p className="text-[11px] text-gray-500">Chọn annotator để review</p>
               </div>
             )}
           </div>
@@ -253,7 +253,7 @@ const ReviewPanel = ({
             {item.guideline ? (
               <p className="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed">{item.guideline}</p>
             ) : (
-              <p className="text-[11px] text-gray-500 italic">Khong co guideline.</p>
+              <p className="text-[11px] text-gray-500 italic">Không có guideline.</p>
             )}
           </div>
         )}

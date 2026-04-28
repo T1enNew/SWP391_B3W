@@ -207,7 +207,7 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
             {task?.dataItem && (
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">File</h4>
-                <p className="text-sm text-gray-300 break-all">{task.dataItem.originalName || task.dataItem.filename || 'Khong co ten'}</p>
+                <p className="text-sm text-gray-300 break-all">{task.dataItem.originalName || task.dataItem.filename || 'Không có tên'}</p>
                 {task.dataItem.mimeType && <p className="text-xs text-gray-500 mt-0.5">{task.dataItem.mimeType}</p>}
               </div>
             )}
@@ -217,10 +217,10 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
-                  Phan hoi tu Reviewer
+                  Phản hồi từ Reviewer
                 </h4>
                 <p className="text-sm text-rose-300 leading-relaxed">{feedback}</p>
-                <p className="text-xs text-rose-500/70 mt-2">Vui long doc phan hoi va chinh sua truoc khi nop lai.</p>
+                <p className="text-xs text-rose-500/70 mt-2">Vui lòng đọc phản hồi và chỉnh sửa trước khi nộp lại.</p>
               </div>
             )}
             {task?.status && (
@@ -234,7 +234,7 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
             )}
             {labels.length > 0 && (
               <div>
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Nhan co san ({labels.length})</h4>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Nhãn có sẵn ({labels.length})</h4>
                 <div className="flex flex-wrap gap-1.5">
                   {labels.map((lbl) => (
                     <span key={lbl.name} className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
@@ -250,9 +250,9 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
         {rightTab === 'labels' && (
           <div className="p-4 space-y-4">
             <div>
-              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Danh sach Nhan</h4>
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Danh sách Nhãn</h4>
               {labels.length === 0 ? (
-                <p className="text-sm text-gray-500">Khong co nhan nao duoc dinh nghia.</p>
+                <p className="text-sm text-gray-500">Không có nhãn nào được định nghĩa.</p>
               ) : (
                 <div className="space-y-2">
                   {labels.map((lbl) => (
@@ -272,11 +272,11 @@ const InfoPanel = ({ task, onReset, saving, allDone, onSubmitProject, annotation
         )}
         {rightTab === 'guide' && (
           <div className="p-4">
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Huong dan</h4>
-            <p className="text-sm text-gray-500 italic">Khong co huong dan.</p>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Hướng dẫn</h4>
+            <p className="text-sm text-gray-500 italic">Không có hướng dẫn.</p>
             {task?.projectId?.questions && task.projectId.questions.length > 0 && (
               <div className="mt-4">
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Cau hoi</h4>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Câu hỏi</h4>
                 <div className="space-y-2">
                   {task.projectId.questions.map((q, idx) => (
                     <div key={idx} className="rounded-lg border border-gray-700/60 bg-gray-800/40 p-3">
