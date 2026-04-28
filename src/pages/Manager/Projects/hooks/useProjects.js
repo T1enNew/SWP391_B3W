@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API_URL } from "../../../../config/api";
 import { getArray } from "../../../../utils/api";
+import { getAuthHeaders } from "../../../../utils/auth";
 import {
   normalizeProject,
   computeTaskStats,
@@ -14,14 +15,9 @@ import {
   OVERDUE_STATUSES,
 } from "../projectStatusUtils";
 
-const getAuthHeaders = () => {
-  const token = sessionStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
 // Hook chính — dùng ở trang Projects/index.jsx
 // Trả về: danh sách project, dataset, trạng thái loading, taskStatsMap (đếm task theo project),
-//          counts (đếm project theo từng status để hiển thị StatTile), hàm loadData để refresh
+// counts (đếm project theo từng status để hiển thị StatTile), hàm loadData để refresh
 export function useProjects() {
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
@@ -38,7 +34,7 @@ export function useProjects() {
     setLoading(true);
     setTaskStatsMap({});
     try {
-      const [projectRes, datasetRes] = await Promise.allSettled([
+      const [projectRes, datasetRes] = await Promise.allSettled([// Bước 1: Fetch project list + dataset list song song
         axios.get(`${API_URL}/api/projects`, {
           params: { page: 1, limit: 100 },
           headers: getAuthHeaders(),
@@ -51,6 +47,8 @@ export function useProjects() {
         const pData = projectRes.value.data;
         pList = pData?.data ? pData.data : getArray(pData);
         setProjects(pList.map(normalizeProject));
+        //Tức là dữ liệu project từ backend có thể
+        //  là _id, id, name, title khác nhau thì được đưa về format thống nhất.
       } else {
         setError("Không tải được danh sách project");
       }
@@ -62,6 +60,7 @@ export function useProjects() {
         const taskResults = await Promise.allSettled(
           pList.map((p) =>
             axios.get(`${API_URL}/api/tasks/project/${p.id || p._id}`, {
+              // vơ8í mỗi pj gọi task của nó
               headers: getAuthHeaders(),
             })
           )
@@ -74,7 +73,7 @@ export function useProjects() {
               : res.value.data?.data || res.value.data?.tasks || [];
             const pid = pList[i].id || pList[i]._id;
             const stats = computeTaskStats(raw);
-            if (stats) statsMap[pid] = stats;
+            if (stats) statsMap[pid] = stats; //lấy raw rồi tính thống kê
           }
         });
         setTaskStatsMap(statsMap);
@@ -93,8 +92,9 @@ export function useProjects() {
 
   // Đếm project theo từng status hiển thị — dùng để render các StatTile ở đầu trang.
   // Phụ thuộc vào taskStatsMap: khi taskStatsMap thay đổi, counts tự cập nhật.
-  const counts = useMemo(() => {
-    const ds = (p) => getDisplayStatus(p, taskStatsMap[p.id] || null);
+  const counts = useMemo(() => { //Cái này giúp UI biết project đó thực tế đang chạy tới đâu.
+    const ds = (p) => getDisplayStatus(p, taskStatsMap[p.id || p._id] || null);
+    //Có nghĩa là lấy status hiển thị của project.
     return {
       all: projects.length,
       active: projects.filter((p) => ds(p) === "active").length,

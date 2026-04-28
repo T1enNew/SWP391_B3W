@@ -7,10 +7,11 @@ import { BG, BORDER, MUTED, PANEL, PRIMARY, SUCCESS, TEXT, WARNING } from './con
 import { useDatasets } from './hooks/useDatasets';
 import DatasetListPanel from './DatasetListPanel';
 import DatasetDetailPanel from './DatasetDetailPanel';
-import ItemDetailDialog from './ItemDetailDialog';
+import DatasetItemViewer from './DatasetItemViewer';
 import {
   CreateDatasetDialog, EditDatasetDialog, DeleteDatasetDialog, InfoDialog,
 } from './DatasetDialogs';
+import { coerceId } from './utils';
 
 const StatBadge = ({ label, value, color = PRIMARY }) => (
   <Box sx={{ textAlign: 'center', px: 2 }}>
@@ -28,6 +29,7 @@ export default function DatasetsPage() {
     selectedDs, setSelectedDs, dsItems, itemsLoading,
     uploading, uploadProgress, deleteTarget, setDeleteTarget, deleting,
     infoDs, setInfoDs, deletingItemId, detailItem, detailDialogOpen, setDetailDialogOpen, setDetailItem,
+    viewerOpen, setViewerOpen, viewerInitialItem, approvedItemsMap,
     dsStatusMap, fileInputRef,
     /* computed */
     filtered, isComplete, dsStats, getTasksForItem,
@@ -71,38 +73,50 @@ export default function DatasetsPage() {
 
       {/* ── Two-panel layout ── */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <DatasetListPanel
-          loading={loading}
-          filtered={filtered}
-          search={search}
-          setSearch={setSearch}
-          selectedDs={selectedDs}
-          isComplete={isComplete}
-          dsItems={dsItems}
-          dsStatusMap={dsStatusMap}
-          onSelect={setSelectedDs}
-          onOpenInfo={setInfoDs}
-          onOpenEdit={openEdit}
-          onDeleteTarget={setDeleteTarget}
-        />
+        {!viewerOpen && (
+          <DatasetListPanel
+            loading={loading}
+            filtered={filtered}
+            search={search}
+            setSearch={setSearch}
+            selectedDs={selectedDs}
+            isComplete={isComplete}
+            dsItems={dsItems}
+            dsStatusMap={dsStatusMap}
+            onSelect={setSelectedDs}
+            onOpenInfo={setInfoDs}
+            onOpenEdit={openEdit}
+            onDeleteTarget={setDeleteTarget}
+          />
+        )}
 
-        <DatasetDetailPanel
-          selectedDs={selectedDs}
-          dsItems={dsItems}
-          isComplete={isComplete}
-          dsStats={dsStats}
-          uploading={uploading}
-          uploadProgress={uploadProgress}
-          itemsLoading={itemsLoading}
-          deletingItemId={deletingItemId}
-          fileInputRef={fileInputRef}
-          getTasksForItem={getTasksForItem}
-          onUpload={handleUpload}
-          onDeleteItem={handleDeleteItem}
-          onItemClick={handleItemClick}
-          onExport={handleExport}
-          onDrop={handleDrop}
-        />
+        {viewerOpen ? (
+          <DatasetItemViewer
+            items={dsItems}
+            initialItem={viewerInitialItem}
+            approvedItemsMap={approvedItemsMap}
+            datasetId={coerceId(selectedDs)}
+            onClose={() => setViewerOpen(false)}
+          />
+        ) : (
+          <DatasetDetailPanel
+            selectedDs={selectedDs}
+            dsItems={dsItems}
+            isComplete={isComplete}
+            dsStats={dsStats}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            itemsLoading={itemsLoading}
+            deletingItemId={deletingItemId}
+            fileInputRef={fileInputRef}
+            getTasksForItem={getTasksForItem}
+            onUpload={handleUpload}
+            onDeleteItem={handleDeleteItem}
+            onItemClick={handleItemClick}
+            onExport={handleExport}
+            onDrop={handleDrop}
+          />
+        )}
       </Box>
 
       {/* ── Dialogs ── */}
@@ -132,12 +146,6 @@ export default function DatasetsPage() {
         infoDs={infoDs}
         onClose={() => setInfoDs(null)}
       />
-      <ItemDetailDialog
-        open={detailDialogOpen}
-        onClose={() => { setDetailDialogOpen(false); setDetailItem(null); }}
-        item={detailItem}
-      />
-
       {/* ── Toast ── */}
       <Snackbar open={toast.open} autoHideDuration={3500} onClose={() => setToast(p => ({ ...p, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>

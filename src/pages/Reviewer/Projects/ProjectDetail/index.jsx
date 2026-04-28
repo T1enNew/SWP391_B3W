@@ -27,9 +27,10 @@ const ReviewerProjectDetail = () => {
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [toast, setToast] = useState(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
-  const [reviewComment, setReviewComment] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [modalError, setModalError] = useState("");
+  const [reviewComment, setReviewComment]       = useState('');
+  const [isSubmitting, setIsSubmitting]         = useState(false);
+  const [modalError, setModalError]             = useState('');
+  const [overrideSampleRate, setOverrideSampleRate] = useState(null);
 
   // Gọi API lấy thông tin project và tổng hợp stats review (approved/rejected/pending)
   const fetchData = useCallback(async () => {
@@ -41,23 +42,16 @@ const ReviewerProjectDetail = () => {
 
       const [projRes, statsRes, pendingRes, reviewedRes] = await Promise.all([
         axios.get(`${API_URL}/api/projects/${projectId}`, { headers }),
-        axios
-          .get(`${API_URL}/api/reviews/projects/${projectId}/stats`, {
-            headers,
-          })
-          .catch(() => ({ data: null })),
-        axios
-          .get(`${API_URL}/api/reviews/pending`, {
-            headers,
-            params: { limit: 1000 },
-          })
-          .catch(() => ({ data: [] })),
-        axios
-          .get(`${API_URL}/api/reviews/reviewed`, {
-            headers,
-            params: { limit: 1000 },
-          })
-          .catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/api/reviews/projects/${projectId}/stats`, { headers }).catch(() => ({ data: null })),
+        axios.get(`${API_URL}/api/reviews/pending`, {
+          headers,
+          params: {
+            limit: 1000,
+            project_id: projectId,
+            ...(overrideSampleRate !== null ? { override_sample_rate: overrideSampleRate } : {})
+          }
+        }).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/api/reviews/reviewed`, { headers, params: { limit: 1000, project_id: projectId } }).catch(() => ({ data: [] })),
       ]);
 
       const projData = projRes.data?.project || projRes.data;
@@ -118,11 +112,9 @@ const ReviewerProjectDetail = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, overrideSampleRate]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // Approve toàn bộ project: tự động approve tất cả tasks pending còn lại, sau đó gọi API approve project
   const handleApproveProject = async () => {
@@ -131,14 +123,13 @@ const ReviewerProjectDetail = () => {
     try {
       const headers = { Authorization: `Bearer ${getAuthToken()}` };
 
-      // Auto-approve ALL remaining pending submissions in this project
-      // This ensures 100% approval rate before calling project approve
-      const pendingRes = await axios
-        .get(`${API_URL}/api/reviews/pending`, {
-          headers,
-          params: { limit: 1000 },
-        })
-        .catch(() => ({ data: [] }));
+      // Auto-approve toàn bộ task pending còn lại trong project.
+      // Lý do: reviewer chỉ review một phần (sample), phần còn lại cần được approve tự động
+      // trước khi gọi project approve — nếu không backend sẽ báo còn task chưa xử lý.
+      const pendingRes = await axios.get(`${API_URL}/api/reviews/pending`, {
+        headers,
+        params: { limit: 1000 },
+      }).catch(() => ({ data: [] }));
       const rawPending = pendingRes.data;
       const pendingList = Array.isArray(rawPending)
         ? rawPending
@@ -173,7 +164,7 @@ const ReviewerProjectDetail = () => {
         }
       }
 
-      // Approve the project (all tasks approved → backend approval rate = 100%)
+      // Sau khi auto-approve xong → gọi project approve để chuyển status → "completed"
       await axios.post(
         `${API_URL}/api/projects/${projectId}/approve`,
         { comment: reviewComment },
@@ -220,40 +211,33 @@ const ReviewerProjectDetail = () => {
   }
 
   const deadlinePassed = !!project?.deadline && new Date(project.deadline) < new Date();
-  const overdue = deadlinePassed && project?.status !== "completed";
-  const guideline = project?.guidelines || "";
-  const sampleRate =
-    project?.review_policy?.sample_rate != null
-      ? Math.round(project.review_policy.sample_rate * 100)
-      : null;
-  // project_total = tổng task thực của project (không phải chỉ submitted)
-  const projectTotal = stats?.project_total || stats?.total || 0;
-  // How many tasks the reviewer is required to review based on sample rate
-  const targetCount =
-    sampleRate !== null && projectTotal > 0
-      ? Math.max(1, Math.ceil((projectTotal * sampleRate) / 100))
-      : (stats?.total ?? 0);
-  // reviewedRaw = tổng đã review theo backend (bao gồm cả auto-approve)
-  const reviewedRaw = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
-  // reviewed chỉ tính trong phạm vi sample (cap ở targetCount)
-  const reviewed =
-    sampleRate !== null ? Math.min(reviewedRaw, targetCount) : reviewedRaw;
-  const pendingDisplay = Math.max(0, targetCount - reviewed);
-  const progressPct =
-    targetCount > 0
-      ? Math.min(100, Math.round((reviewed / targetCount) * 100))
-      : 0;
-  // Tỷ lệ approve = dựa trên tổng thực tế (reviewedRaw) vì backend tính đúng
-  const approvalRate =
-    reviewedRaw > 0
-      ? Math.round(((stats?.approved ?? 0) / reviewedRaw) * 100)
-      : 0;
-  const canFinalize =
-    (stats?.total ?? 0) > 0 &&
-    reviewed >= targetCount &&
-    !["completed", "waiting_rework"].includes(project?.status);
-  const hasSubmissions = (stats?.total ?? 0) > 0 || (stats?.pending ?? 0) > 0;
-  // deadline đã qua + còn pending = reviewer chưa chấm kịp (bất kể project.status)
+  const overdue       = deadlinePassed && project?.status !== 'completed';
+  const guideline     = project?.guidelines || '';
+
+  const sampleRate    = project?.review_policy?.sample_rate != null
+    ? Math.round(project.review_policy.sample_rate * 100)
+    : null;
+
+  const projectTotal    = stats?.project_total || stats?.total || 0;
+
+  const targetCount     = (sampleRate !== null && projectTotal > 0)
+    ? Math.max(1, Math.ceil(projectTotal * sampleRate / 100))
+    : (stats?.total ?? 0);
+
+  const reviewedRaw     = (stats?.approved ?? 0) + (stats?.rejected ?? 0);
+
+  const reviewed        = sampleRate !== null ? Math.min(reviewedRaw, targetCount) : reviewedRaw;
+
+  const pendingDisplay  = Math.max(0, targetCount - reviewed);
+
+  const progressPct     = targetCount > 0 ? Math.min(100, Math.round((reviewed / targetCount) * 100)) : 0;
+
+  const approvalRate    = reviewedRaw > 0 ? Math.round(((stats?.approved ?? 0) / reviewedRaw) * 100) : 0;
+
+  const canFinalize     = (stats?.total ?? 0) > 0 && reviewed >= targetCount && !['completed', 'waiting_rework'].includes(project?.status);
+
+  const hasSubmissions  = (stats?.total ?? 0) > 0;
+
   const reviewerAtFault = deadlinePassed && pendingDisplay > 0;
 
   return (
@@ -293,11 +277,9 @@ const ReviewerProjectDetail = () => {
                   {project?.name}
                 </h1>
                 {(() => {
-                  // "Đã hoàn thành" chỉ khi đã review đủ số lượng yêu cầu (reviewed >= targetCount > 0)
-                  const isReallyCompleted =
-                    project?.status === "completed" &&
-                    reviewed >= targetCount &&
-                    targetCount > 0;
+                  const isReallyCompleted = project?.status === 'completed'
+                    && reviewed >= targetCount
+                    && targetCount > 0;
 
                   if (isReallyCompleted)
                     return (
@@ -405,31 +387,38 @@ const ReviewerProjectDetail = () => {
             </div>
           </div>
 
+          {/* Banner sample rate: chỉ hiện khi project có cấu hình sample (không phải review full).
+              Giúp reviewer biết rõ mình chỉ cần review bao nhiêu task, không phải toàn bộ. */}
           {sampleRate !== null && (
-            <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-500/5 border border-violet-500/20 px-4 py-2.5">
-              <svg
-                className="w-4 h-4 text-violet-400 shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                />
-              </svg>
-              <p className="text-sm text-violet-300">
-                <span className="font-semibold">
-                  Sample rate: {sampleRate}%
-                </span>
-                <span className="text-violet-400/70 ml-1">
-                  — chỉ cần review {targetCount}/
-                  {projectTotal || (stats?.total ?? 0)} task ({sampleRate}%
-                  tổng)
-                </span>
-              </p>
+            <div className="mt-3 flex flex-col gap-3 rounded-lg bg-violet-500/5 border border-violet-500/20 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <p className="text-sm text-violet-300">
+                  <span className="font-semibold">Cấu hình mặc định: {sampleRate}%</span>
+                  <span className="text-violet-400/70 ml-1">
+                    — {targetCount}/{projectTotal || (stats?.total ?? 0)} task
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 border-t border-violet-500/10 pt-3">
+                <label className="text-xs font-medium text-violet-400/80 uppercase tracking-wider">Review Sample Size:</label>
+                <select
+                  value={overrideSampleRate === null ? 'default' : overrideSampleRate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setOverrideSampleRate(val === 'default' ? null : parseFloat(val));
+                  }}
+                  className="bg-gray-900 border border-violet-500/30 text-violet-200 text-xs rounded-lg focus:ring-violet-500 focus:border-violet-500 block p-1.5 transition-all hover:border-violet-500/60 outline-none"
+                >
+                  <option value="default">Project Default ({sampleRate}%)</option>
+                  <option value="0.5">50%</option>
+                  <option value="0.7">70%</option>
+                  <option value="1.0">100% (Full Review)</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -503,7 +492,7 @@ const ReviewerProjectDetail = () => {
               </p>
             </div>
             <button
-              onClick={() => navigate(`/reviewer/workspace/${projectId}`)}
+              onClick={() => navigate(`/reviewer/workspace/${projectId}${overrideSampleRate !== null ? `?override_sample_rate=${overrideSampleRate}` : ''}`)}
               disabled={!hasSubmissions || overdue}
               className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
                 hasSubmissions && !overdue

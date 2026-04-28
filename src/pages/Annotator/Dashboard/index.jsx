@@ -3,14 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../../config/api';
 import { getArray } from '../../../utils/api';
+import { getAuthHeaders } from '../../../utils/auth';
 import { normalizeProject } from '../../../utils/taskAdapter';
 import { useAuth } from '../../../context/AuthContext';
-import { getAuthToken } from '../../../utils/auth';
-import { fmtDate, fmtDateTime, getGreeting } from '../../../utils/dateUtils';
 import StatCard from '../../../components/shared/StatCard';
 import MiniPager from '../../../components/shared/MiniPager';
 
-// Trích xuất project ID từ task, hỗ trợ các cấu trúc dữ liệu khác nhau từ backend
+const fmtDate = (d) => {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const fmtDateTime = (d) => {
+  if (!d) return '';
+  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Chào buổi sáng';
+  if (h < 18) return 'Chào buổi chiều';
+  return 'Chào buổi tối';
+};
 const getTaskProjId = (t) =>
   t.projectId?.id || t.project?.id ||
   (typeof t.projectId === 'string' ? t.projectId : null) ||
@@ -48,9 +62,9 @@ const AnnotatorOverview = () => {
     setLoading(true);
     setError('');
     try {
-      const headers = { Authorization: `Bearer ${getAuthToken()}` };
+      const headers = getAuthHeaders();
       const [tasksRes, projRes] = await Promise.all([
-        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers }).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/api/tasks/my-tasks`, { headers, params: { limit: 500 } }).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/api/projects`, { headers, params: { limit: 100 } }).catch(() => ({ data: [] })),
       ]);
       setTasks(getArray(tasksRes.data));

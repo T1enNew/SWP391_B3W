@@ -3,12 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../../../context/AuthContext';
 import axios from 'axios';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid,
-  IconButton, LinearProgress, Paper, Snackbar, Stack, Tab, Tabs, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog,
+  DialogActions, DialogContent, DialogTitle, FormControl, Grid,
+  IconButton, InputLabel, LinearProgress, MenuItem, Paper, Select,
+  Snackbar, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
   Assignment as AssignmentIcon,
+  Download as DownloadIcon,
+  Edit as EditIcon,
   InfoOutlined as InfoOutlinedIcon,
   PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
@@ -34,8 +38,9 @@ const ManagerProjectDetail = () => {
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
   const [datasets, setDatasets] = useState([]);
+  const [allDatasets, setAllDatasets] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [qualityStats, setQualityStats] = useState(null);
+  // qualityStats removed — endpoint /quality returns 500 and data is unused in UI
   const [currentTab, setCurrentTab] = useState(0);
   const [projectInfoDialogOpen, setProjectInfoDialogOpen] = useState(false);
   const [approvedItemDialogOpen, setApprovedItemDialogOpen] = useState(false);
@@ -45,6 +50,13 @@ const ManagerProjectDetail = () => {
   const [textContentMap, setTextContentMap] = useState({});
   const [textContentLoadingMap, setTextContentLoadingMap] = useState({});
   const [assignLoading, setAssignLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', description: '', guidelines: '', deadline: '', status: 'draft', dataset_id: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
+  const [qualityStats, setQualityStats] = useState(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
   const [toast, setToast] = useState({ open: false, msg: '', severity: 'success' });
 
   useEffect(() => {
@@ -54,20 +66,20 @@ const ManagerProjectDetail = () => {
         const pData = projectRes.data?.project || projectRes.data || {};
         setProject(normalizeProject(pData));
 
-        const datasetId = pData?.dataset?.id || pData?.dataset?._id || pData?.dataset_id || pData?.datasetId || null;
+        const datasetId = (pData?.dataset?.id || pData?.dataset?._id) || pData?.dataset_id || pData?.datasetId || (typeof pData?.dataset === 'string' ? pData.dataset : null);
 
-        const [datasetsRes, tasksRes, qualityRes] = await Promise.allSettled([
-          datasetId
-            ? axios.get(`${API_URL}/api/datasets/${datasetId}`, { headers: getAuthHeaders() })
-            : Promise.reject('No dataset ID'),
+        const [allDatasetsRes, tasksRes] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/datasets`, { headers: getAuthHeaders() }),
           axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() }),
-          axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: getAuthHeaders() }),
         ]);
 
         let dsList = [];
-        if (datasetsRes.status === 'fulfilled') {
-          const dsData = datasetsRes.value.data?.dataset || datasetsRes.value.data || {};
-          dsList = (dsData.id || dsData._id) ? [normalizeDataset(dsData)] : [];
+        if (allDatasetsRes.status === 'fulfilled') {
+          const dsData = allDatasetsRes.value.data?.datasets || allDatasetsRes.value.data || [];
+          const list = Array.isArray(dsData) ? dsData.map(normalizeDataset) : [];
+          setAllDatasets(list);
+          const currentDs = list.find(ds => ds.id === datasetId || ds._id === datasetId);
+          dsList = currentDs ? [currentDs] : [];
           setDatasets(dsList);
         }
 
@@ -123,7 +135,6 @@ const ManagerProjectDetail = () => {
           setTasks(mappedTasks);
         }
 
-        if (qualityRes.status === 'fulfilled') setQualityStats(qualityRes.value.data || null);
       } catch (err) {
         console.error('Project detail fetch failed:', err);
       } finally {
@@ -173,6 +184,13 @@ const ManagerProjectDetail = () => {
 
       const approvedAt = task.reviewed_at || task.updated_at || null;
 
+      const reviewers = (task.reviewers || [])
+        .filter(rv => rv.status === 'approved')
+        .map(rv => ({
+          name: rv.reviewerId?.fullName || rv.reviewerId?.full_name || rv.reviewerId?.username || 'Reviewer',
+          approvedAt: rv.reviewed_at || task.reviewed_at || null
+        }));
+
       if (!map.has(key)) {
         map.set(key, {
           key, dataItem,
@@ -183,11 +201,16 @@ const ManagerProjectDetail = () => {
           approvedAt,
           annotators: [annotatorName],
           annotatorLabels: [{ name: annotatorName, labels, annotations, isPrimary }],
+          reviewers, // Added reviewer info
         });
       } else {
         const entry = map.get(key);
         if (!entry.annotators.includes(annotatorName)) entry.annotators.push(annotatorName);
         entry.annotatorLabels.push({ name: annotatorName, labels, annotations, isPrimary });
+        // Merge unique reviewers
+        reviewers.forEach(r => {
+          if (!entry.reviewers.some(er => er.name === r.name)) entry.reviewers.push(r);
+        });
       }
     });
     return Array.from(map.values());
@@ -228,10 +251,37 @@ const ManagerProjectDetail = () => {
   }, [selectedApprovedItemKey]);
 
   const handleReassign = async () => {
-    if (!project || !datasets[0]) return;
-    const annotatorIds = (project.annotators || []).map(a => a?.id || a?._id || a).filter(Boolean);
-    const reviewerId = project.reviewer?.id || project.reviewer?._id || project.reviewer || null;
-    if (!annotatorIds.length) { setToast({ open: true, msg: 'Project chưa có annotator để phân công', severity: 'warning' }); return; }
+    if (!project) return;
+    if (!datasets[0]) {
+      setToast({ open: true, msg: 'Không tìm thấy dataset của project — vui lòng tải lại trang', severity: 'error' });
+      return;
+    }
+
+    // GET /api/projects/:id không trả về annotators → fallback lấy từ tasks đã load
+    let annotatorIds = (project.annotators || []).map(a => a?.id || a?._id || a).filter(Boolean);
+    if (!annotatorIds.length) {
+      const seen = new Set();
+      tasks.forEach(t => {
+        const aid = t.annotator?.id || t.annotator?._id || t.annotator?.userId;
+        if (aid) seen.add(aid);
+      });
+      annotatorIds = Array.from(seen);
+    }
+
+    let reviewerId = project.reviewer?.id || project.reviewer?._id || project.reviewer || null;
+    if (!reviewerId) {
+      // Fallback: lấy reviewer đầu tiên từ tasks
+      for (const t of tasks) {
+        const rv = (t.reviewers || [])[0];
+        const rid = rv?.reviewerId?.id || rv?.reviewerId?._id || rv?.reviewerId;
+        if (rid) { reviewerId = rid; break; }
+      }
+    }
+
+    if (!annotatorIds.length) {
+      setToast({ open: true, msg: 'Project chưa có annotator — không thể phân công. Hãy xóa project này và tạo lại với annotator được chọn.', severity: 'warning' });
+      return;
+    }
     setAssignLoading(true);
     try {
       const assignPayload = {
@@ -242,12 +292,106 @@ const ManagerProjectDetail = () => {
       };
       await axios.post(`${API_URL}/api/tasks/assign`, assignPayload, { headers: getAuthHeaders() });
       setToast({ open: true, msg: 'Phân công task thành công!', severity: 'success' });
+      
+      // Reload data to reflect changes
+      const [pRes, tRes] = await Promise.all([
+        axios.get(`${API_URL}/api/projects/${id}`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/tasks/project/${id}`, { headers: getAuthHeaders() })
+      ]);
+      const pData = pRes.data?.project || pRes.data || {};
+      setProject(normalizeProject(pData));
+      const raw = Array.isArray(tRes.data) ? tRes.data : tRes.data?.data || tRes.data?.tasks || [];
+      setTasks(raw.map(normalizeTask));
+      
     } catch (e) {
-      const msg = e?.response?.data?.message || 'Phân công task thất bại';
-      setToast({ open: true, msg, severity: 'error' });
+      const msg = e?.response?.data?.error || e?.response?.data?.message || 'Phân công task thất bại';
+      if (msg.includes('No unassigned items left') || msg.includes('no unassigned items')) {
+        // Thông báo chi tiết hơn để user hiểu đây không phải lỗi hệ thống mà là do dữ liệu đã hết
+        setToast({ 
+          open: true, 
+          msg: 'Dự án đã được phân công hoàn tất! Toàn bộ dữ liệu trong dataset đã có người phụ trách. Không còn mục nào chưa gán để chia thêm cho annotator mới.', 
+          severity: 'info' 
+        });
+      } else {
+        setToast({ open: true, msg, severity: 'error' });
+      }
     } finally {
       setAssignLoading(false);
     }
+  };
+
+  const openEdit = () => {
+    setEditForm({
+      name: project?.name || '',
+      description: project?.description || '',
+      guidelines: project?.guidelines || '',
+      deadline: project?.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
+      status: project?.status || 'draft',
+      dataset_id: project?.dataset_id || (project?.dataset?.id || project?.dataset?._id) || '',
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editForm.name.trim()) {
+      setToast({ open: true, msg: 'Tên project không được để trống', severity: 'warning' }); return;
+    }
+    setEditSaving(true);
+    try {
+      const payload = {
+        name: editForm.name.trim(),
+        description: editForm.description.trim(),
+        guidelines: editForm.guidelines.trim(),
+        ...(editForm.deadline ? { deadline: new Date(editForm.deadline).toISOString() } : {}),
+        status: editForm.status,
+        dataset_id: editForm.dataset_id,
+      };
+      const res = await axios.put(`${API_URL}/api/projects/${id}`, payload, { headers: getAuthHeaders() });
+      const updated = res.data?.project || res.data;
+      setProject(prev => normalizeProject({ ...(prev || {}), ...updated }));
+      setEditDialogOpen(false);
+      setToast({ open: true, msg: 'Cập nhật project thành công', severity: 'success' });
+    } catch (e) {
+      let errorMsg = e?.response?.data?.message || e?.response?.data?.error || 'Cập nhật thất bại';
+      if (e?.response?.status === 400 && errorMsg.includes('already assigned')) {
+        errorMsg = 'Dataset này đã được gán cho một project khác. Vui lòng chọn dataset khác.';
+      }
+      setToast({ open: true, msg: errorMsg, severity: 'error' });
+    } finally { setEditSaving(false); }
+  };
+
+  const fetchQuality = async () => {
+    setQualityLoading(true);
+    setQualityDialogOpen(true);
+    setQualityStats(null);
+    try {
+      const res = await axios.get(`${API_URL}/api/projects/${id}/quality`, { headers: getAuthHeaders() });
+      setQualityStats(res.data);
+    } catch (e) {
+      setToast({ open: true, msg: e?.response?.data?.message || 'Không tải được quality stats', severity: 'error' });
+      setQualityDialogOpen(false);
+    } finally { setQualityLoading(false); }
+  };
+
+  const handleExport = async (format = 'JSON') => {
+    setExportLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/api/projects/${id}/export`, {
+        params: { format },
+        headers: getAuthHeaders(),
+        responseType: 'blob',
+      });
+      const ext = format === 'CSV' ? 'csv' : format === 'COCO' ? 'json' : 'json';
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(project?.name || 'project').replace(/\s+/g, '_')}_export.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setToast({ open: true, msg: `Export ${format} thành công`, severity: 'success' });
+    } catch (e) {
+      setToast({ open: true, msg: e?.response?.data?.message || 'Export thất bại', severity: 'error' });
+    } finally { setExportLoading(false); }
   };
 
   const groupedByAnnotator = useMemo(() => {
@@ -297,6 +441,14 @@ const ManagerProjectDetail = () => {
   const taskStats = useMemo(() => computeTaskStats(tasks), [tasks]);
   const statusMeta = getCfg(getDisplayStatus(project ?? {}, taskStats));
 
+  const availableDatasets = useMemo(() => {
+    const currentDsId = project?.dataset_id || (project?.dataset?.id || project?.dataset?._id);
+    return allDatasets.filter(ds => {
+      const isCurrent = ds.id === currentDsId || ds._id === currentDsId;
+      return isCurrent || (!ds.project && !ds.project_id);
+    });
+  }, [allDatasets, project]);
+
   if (loading) {
     return (
       <Box sx={{ ...pageSx, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -325,6 +477,9 @@ const ManagerProjectDetail = () => {
             <Button sx={secondaryBtnSx} startIcon={<InfoOutlinedIcon />} onClick={() => setProjectInfoDialogOpen(true)}>
               Project info
             </Button>
+            <Button sx={secondaryBtnSx} startIcon={<EditIcon />} onClick={openEdit}>
+              Edit
+            </Button>
             <Button
               sx={secondaryBtnSx}
               startIcon={assignLoading ? <CircularProgress size={14} sx={{ color: '#e2e8f0' }} /> : <PlayArrowIcon />}
@@ -333,7 +488,17 @@ const ManagerProjectDetail = () => {
             >
               {assignLoading ? 'Đang phân công...' : 'Assign Tasks'}
             </Button>
-            <Button sx={secondaryBtnSx} startIcon={<AssignmentIcon />} disabled>Analytics</Button>
+            <Button sx={secondaryBtnSx} startIcon={<AssignmentIcon />} onClick={fetchQuality}>
+              Analytics
+            </Button>
+            <Button
+              sx={secondaryBtnSx}
+              startIcon={exportLoading ? <CircularProgress size={14} sx={{ color: '#e2e8f0' }} /> : <DownloadIcon />}
+              onClick={() => handleExport('JSON')}
+              disabled={exportLoading}
+            >
+              {exportLoading ? 'Exporting...' : 'Export'}
+            </Button>
           </Stack>
         </Box>
 
@@ -453,6 +618,89 @@ const ManagerProjectDetail = () => {
         datasets={datasets}
         statusMeta={statusMeta}
       />
+
+      {/* ── Edit Project Dialog ── */}
+      <Dialog open={editDialogOpen} onClose={() => !editSaving && setEditDialogOpen(false)} fullWidth maxWidth="sm"
+        PaperProps={{ sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', borderRadius: 3, color: '#e2e8f0' } }}>
+        <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #1e2d47', pb: 2 }}>Chỉnh sửa project</DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Stack spacing={2.5}>
+            <TextField fullWidth label="Tên project *" value={editForm.name}
+              onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0', '& fieldset': { borderColor: '#1e2d47' } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
+            <TextField fullWidth label="Mô tả" multiline minRows={2} value={editForm.description}
+              onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
+              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0', '& fieldset': { borderColor: '#1e2d47' } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
+            <TextField fullWidth label="Guidelines" multiline minRows={2} value={editForm.guidelines}
+              onChange={e => setEditForm(p => ({ ...p, guidelines: e.target.value }))}
+              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0', '& fieldset': { borderColor: '#1e2d47' } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
+            <TextField fullWidth type="datetime-local" label="Deadline" InputLabelProps={{ shrink: true }}
+              value={editForm.deadline} onChange={e => setEditForm(p => ({ ...p, deadline: e.target.value }))}
+              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0', '& fieldset': { borderColor: '#1e2d47' } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
+            <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0' }, '& .MuiInputLabel-root': { color: '#64748b' } }}>
+              <InputLabel>Status</InputLabel>
+              <Select value={editForm.status} label="Status"
+                onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}
+                sx={{ color: '#e2e8f0', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#1e2d47' }, '& .MuiSvgIcon-root': { color: '#64748b' } }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', color: '#e2e8f0' } } }}>
+                {['draft', 'active', 'in_review', 'waiting_rework', 'finalizing', 'completed', 'archived'].map(s => (
+                  <MenuItem key={s} value={s} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>{s}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#08121f', color: '#e2e8f0' }, '& .MuiInputLabel-root': { color: '#64748b' } }}>
+              <InputLabel>Dataset *</InputLabel>
+              <Select value={editForm.dataset_id} label="Dataset *"
+                onChange={e => setEditForm(p => ({ ...p, dataset_id: e.target.value }))}
+                sx={{ color: '#e2e8f0', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#1e2d47' }, '& .MuiSvgIcon-root': { color: '#64748b' } }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', color: '#e2e8f0' } } }}>
+                {availableDatasets.map(ds => (
+                  <MenuItem key={ds.id} value={ds.id} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>
+                    {ds.name} { (ds.project || ds.project_id) && ds.id !== (project?.dataset_id || project?.dataset?.id) ? '(Đang dùng)' : '' }
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #1e2d47', px: 3, py: 2, gap: 1 }}>
+          <Button onClick={() => setEditDialogOpen(false)} disabled={editSaving} sx={{ color: '#64748b', textTransform: 'none' }}>Hủy</Button>
+          <Button variant="contained" onClick={handleSaveEdit} disabled={editSaving || !editForm.name.trim()}
+            startIcon={editSaving ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <EditIcon />}
+            sx={{ bgcolor: '#3b82f6', textTransform: 'none', fontWeight: 700, borderRadius: 2, '&:hover': { bgcolor: '#2563eb' } }}>
+            {editSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Quality / Analytics Dialog ── */}
+      <Dialog open={qualityDialogOpen} onClose={() => setQualityDialogOpen(false)} fullWidth maxWidth="xs"
+        PaperProps={{ sx: { bgcolor: '#0d1829', border: '1px solid #1e2d47', borderRadius: 3, color: '#e2e8f0' } }}>
+        <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #1e2d47', pb: 2 }}>Quality / Analytics</DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          {qualityLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+          ) : qualityStats ? (
+            <Stack spacing={1.5}>
+              {Object.entries(qualityStats).map(([k, v]) => (
+                <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e2d47', pb: 1 }}>
+                  <Typography sx={{ color: '#94a3b8', fontSize: 13, textTransform: 'capitalize' }}>
+                    {k.replace(/_/g, ' ')}
+                  </Typography>
+                  <Typography sx={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13 }}>
+                    {typeof v === 'number' && k.includes('rate') ? `${(v * 100).toFixed(1)}%` : String(v)}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Typography sx={{ color: '#64748b', textAlign: 'center', py: 2 }}>Không có dữ liệu</Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #1e2d47', px: 3, py: 2 }}>
+          <Button onClick={() => setQualityDialogOpen(false)} sx={{ color: '#64748b', textTransform: 'none' }}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={toast.open}

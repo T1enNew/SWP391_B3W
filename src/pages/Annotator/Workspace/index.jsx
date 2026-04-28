@@ -84,6 +84,8 @@ const Workspace = () => {
 
         // Labels can live at various paths depending on backend populate depth
         const rawLabels =
+          pData.label_sets ||
+          pData.labelSets ||
           pData.labels ||
           pData.labelsets ||
           pData.label_ids ||
@@ -405,6 +407,8 @@ const handleSave = useCallback(async () => {
         const combined = serverErr ? `${serverMsg} — ${serverErr}` : serverMsg;
         if (combined.includes('GoogleGenerativeAI') || combined.includes('generativelanguage')) {
           lastError = 'Gemini API bị giới hạn tốc độ (rate limit). Thử lại sau vài phút.';
+        } else if (combined.includes('no associated project labels')) {
+          lastError = 'Dự án này chưa có nhãn nào. Vui lòng thêm nhãn vào Dataset trước khi dùng AI.';
         } else {
           lastError = combined || `Lỗi server (${err?.response?.status || 'unknown'})`;
         }

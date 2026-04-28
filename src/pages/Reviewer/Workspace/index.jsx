@@ -21,6 +21,9 @@ const ReviewerWorkspace = () => {
   const { projectId } = useParams();
   const [searchParams] = useSearchParams();
   const taskIdFromUrl = searchParams.get('taskId');
+  const overrideFromUrl = searchParams.get('override_sample_rate');
+
+  const [overrideSampleRate, setOverrideSampleRate] = useState(overrideFromUrl ? parseFloat(overrideFromUrl) : null);
 
   const [items, setItems]                   = useState([]);
   const [currentItemId, setCurrentItemId]   = useState(null);
@@ -47,7 +50,11 @@ const ReviewerWorkspace = () => {
     setCurrentItem(null);
     try {
       const headers = { Authorization: `Bearer ${getAuthToken()}` };
-      const params = { limit: 1000 };
+      const params = { 
+        limit: 1000,
+        project_id: projectId,
+        ...(overrideSampleRate !== null ? { override_sample_rate: overrideSampleRate } : {})
+      };
 
       const [pendingRes, reviewedRes, projRes, statsRes] = await Promise.allSettled([
         axios.get(`${API_URL}/api/reviews/pending`, { headers, params }),
@@ -81,7 +88,7 @@ const ReviewerWorkspace = () => {
         const projData = projRes.value.data?.project || projRes.value.data;
         setProjectDeadline(projData?.deadline || null);
         setProjectName(projData?.name || '');
-        const rawRate = projData?.review_policy?.sample_rate;
+        const rawRate = overrideSampleRate !== null ? overrideSampleRate : projData?.review_policy?.sample_rate;
         if (rawRate != null && rawRate < 1) {
           // Use total_tasks from project (all tasks), not just submitted ones
           const projectTotal = projData?.total_tasks || projData?.totalTasks || 0;
@@ -162,7 +169,7 @@ const ReviewerWorkspace = () => {
   useEffect(() => {
     if (taskIdFromUrl) fetchReviewedTask(taskIdFromUrl);
     else               fetchQueue();
-  }, [projectId]);
+  }, [projectId, overrideSampleRate]);
 
   // Chọn item làm item hiện tại, tự động focus vào annotator đầu tiên còn pending
   const selectItem = (item) => {
@@ -385,9 +392,34 @@ const ReviewerWorkspace = () => {
             </button>
             <div className="min-w-0 flex-1">
               <h2 className="text-xs font-bold text-gray-200 truncate">{currentItem?.filename || 'Chon item'}</h2>
-              <p className="text-[10px] text-gray-500">
-                {items.length} item &mdash; {pendingCount} can review &mdash; {reviewedCount} da xong
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-[10px] text-gray-500">
+                  {items.length} item &mdash; {pendingCount} can review &mdash; {reviewedCount} da xong
+                </p>
+                <div className="h-3 w-[1px] bg-gray-700 mx-1" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-gray-500 uppercase">Sample:</span>
+                  <select
+                    value={overrideSampleRate === null ? 'default' : overrideSampleRate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const newRate = val === 'default' ? null : parseFloat(val);
+                      setOverrideSampleRate(newRate);
+                      // Update URL
+                      const newParams = new URLSearchParams(searchParams);
+                      if (newRate === null) newParams.delete('override_sample_rate');
+                      else newParams.set('override_sample_rate', newRate);
+                      navigate({ search: newParams.toString() }, { replace: true });
+                    }}
+                    className="bg-transparent border-none text-violet-400 text-[10px] font-bold p-0 cursor-pointer outline-none focus:ring-0"
+                  >
+                    <option value="default" className="bg-gray-900 text-gray-200">Default</option>
+                    <option value="0.5" className="bg-gray-900 text-gray-200">50%</option>
+                    <option value="0.7" className="bg-gray-900 text-gray-200">70%</option>
+                    <option value="1.0" className="bg-gray-900 text-gray-200">100%</option>
+                  </select>
+                </div>
+              </div>
             </div>
             {currentItem && (
               <div className="flex items-center gap-1 shrink-0">
