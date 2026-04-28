@@ -12,7 +12,7 @@ export const stringToColor = (str = '') => {
 
 export const getAnnotatorStatus = (task) => {
   if (task.status === 'approved') return 'approved';
-  if (task.status === 'rejected') return 'rejected';
+  if (task.status === 'rejected' || task.status === 'waiting_rework') return 'rejected';
   return 'pending';
 };
 

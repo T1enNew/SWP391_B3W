@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   Alert, Box, Button, Card, CardContent, CircularProgress,
-  Grid, IconButton, Snackbar, Stack, TextField, Typography,
+  FormControl, Grid, IconButton, InputLabel, MenuItem, Select,
+  Snackbar, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon, CheckCircle as CheckCircleIcon,
@@ -126,15 +127,8 @@ export default function CreateProject() {
     if (!selectedTopicId || selectedLabelsetIds.length === 0) {
       showToast('Vui lòng chọn 1 Topic và ít nhất 1 Nhãn', 'warning'); return;
     }
-    // Validate: 1% là mức tối thiểu (phải review ít nhất 1 task), 100% là tối đa (review tất cả)
-    if (form.sampleRate < 1 || form.sampleRate > 100) {
-      showToast('Sample Rate phải nằm trong khoảng từ 1% đến 100%', 'warning'); return;
-    }
     setSaving(true); setError('');
     try {
-      // Không gửi annotator_ids/reviewer_id ở bước tạo project:
-      // backend POST /api/projects cố insert tasks ngay trong handler → RLS Supabase chặn → 500.
-      // Task assignment sẽ được gọi riêng qua POST /api/tasks/assign bên dưới.
       const payload = {
         name: form.name.trim(), description: form.description.trim(),
         guidelines: form.guidelines.trim() || 'No guidelines',
@@ -152,7 +146,9 @@ export default function CreateProject() {
       const projectId = coerceId(project);
       if (!projectId) throw new Error('Server không trả về project ID');
 
-      // Gán tasks cho annotators (chia đều items trong dataset)
+      // Gán tasks cho annotators (chia đều items trong dataset).
+      // Backend có thể đã tự assign trong POST /api/projects — nếu vậy sẽ trả "No unassigned items",
+      // coi đó là thành công vì tasks đã sẵn sàng.
       try {
         const assignPayload = {
           project_id: projectId,
@@ -166,9 +162,10 @@ export default function CreateProject() {
       } catch (assignErr) {
         const status = assignErr?.response?.status;
         const assignMsg = assignErr?.response?.data?.error || assignErr?.response?.data?.message || assignErr.message || '';
-        // 500 = backend RLS / server error → project đã tạo, chuyển sang detail để manager retry Assign Tasks
         if (status === 500 || !status) {
           showToast('Project đã tạo! Phân công task thất bại do lỗi server — vào project và bấm "Assign Tasks" để thử lại.', 'warning');
+        } else if (assignMsg.toLowerCase().includes('no unassigned items')) {
+          showToast('Project đã tạo nhưng dataset không còn ảnh chưa phân công. Dataset này có thể đang được dùng bởi project khác — hãy chọn dataset khác hoặc xóa project cũ.', 'warning');
         } else {
           showToast(`Project đã tạo nhưng phân công task thất bại: ${assignMsg}`, 'warning');
         }
@@ -239,11 +236,28 @@ export default function CreateProject() {
                     <TextField fullWidth type="datetime-local" label="Deadline" InputLabelProps={{ shrink: true }}
                       value={form.deadline} onChange={e => setForm(p => ({ ...p, deadline: e.target.value }))}
                       sx={{ ...inputSx, flex: 2 }} />
-                    <TextField fullWidth type="number" label="Sample Rate (%)"
-                      InputProps={{ inputProps: { min: 1, max: 100 } }}
-                      value={form.sampleRate}
-                      onChange={e => setForm(p => ({ ...p, sampleRate: e.target.value ? Number(e.target.value) : '' }))}
-                      placeholder="VD: 10" sx={{ ...inputSx, flex: 1 }} />
+                    <FormControl sx={{ flex: 1 }}>
+                      <InputLabel sx={{ color: MUTED }}>Sample Rate</InputLabel>
+                      <Select
+                        label="Sample Rate"
+                        value={form.sampleRate}
+                        onChange={e => setForm(p => ({ ...p, sampleRate: Number(e.target.value) }))}
+                        sx={{
+                          bgcolor: '#08121f', color: TEXT, borderRadius: '10px',
+                          '& .MuiOutlinedInput-notchedOutline': { borderColor: BORDER },
+                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#2d4060' },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: PRIMARY },
+                          '& .MuiSvgIcon-root': { color: MUTED },
+                        }}
+                        MenuProps={{ PaperProps: { sx: { bgcolor: '#0d1829', color: TEXT } } }}
+                      >
+                        {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(v => (
+                          <MenuItem key={v} value={v} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.1)' } }}>
+                            {v}%
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                   </Box>
                   {/* Chỉ hiện cảnh báo khi sample rate < 100%: nhắc manager biết annotator vẫn làm full,
                       chỉ reviewer được giảm tải. Nếu = 100% thì không cần thông báo thêm. */}

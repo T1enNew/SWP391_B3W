@@ -90,17 +90,17 @@ const ReviewerWorkspace = () => {
         setProjectName(projData?.name || '');
         const rawRate = overrideSampleRate !== null ? overrideSampleRate : projData?.review_policy?.sample_rate;
         if (rawRate != null && rawRate < 1) {
-          // Use total_tasks from project (all tasks), not just submitted ones
           const projectTotal = projData?.total_tasks || projData?.totalTasks || 0;
           const totalTasks = projectTotal || (statsRes.status === 'fulfilled'
             ? (statsRes.value.data?.total ?? itemList.length)
             : itemList.length);
           const targetCount = Math.max(1, Math.ceil(totalTasks * rawRate));
-          const reviewedItems = itemList.filter(item => item.status !== 'pending_review' && item.status !== 'partially_reviewed');
+          // waiting_rework = task bị reject, annotator đang làm lại → luôn giữ trong queue
+          const reworkItems   = itemList.filter(item => item.status === 'waiting_rework');
+          const reviewedItems = itemList.filter(item => item.status !== 'pending_review' && item.status !== 'partially_reviewed' && item.status !== 'waiting_rework');
           const pendingItems  = itemList.filter(item => item.status === 'pending_review' || item.status === 'partially_reviewed');
           const remaining     = Math.max(0, targetCount - reviewedItems.length);
-          // Chỉ giữ đúng targetCount tasks: reviewed (capped) + pending còn lại trong sample
-          itemList = [...reviewedItems.slice(0, targetCount), ...pendingItems.slice(0, remaining)];
+          itemList = [...reviewedItems.slice(0, targetCount), ...pendingItems.slice(0, remaining), ...reworkItems];
         }
       }
 
@@ -111,7 +111,7 @@ const ReviewerWorkspace = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, overrideSampleRate]);
 
   // Gọi API lấy chi tiết một task cụ thể (dùng khi mở từ lịch sử review qua URL ?taskId=...)
   const fetchReviewedTask = useCallback(async (taskId) => {
@@ -396,29 +396,7 @@ const ReviewerWorkspace = () => {
                 <p className="text-[10px] text-gray-500">
                   {items.length} item &mdash; {pendingCount} can review &mdash; {reviewedCount} da xong
                 </p>
-                <div className="h-3 w-[1px] bg-gray-700 mx-1" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-500 uppercase">Sample:</span>
-                  <select
-                    value={overrideSampleRate === null ? 'default' : overrideSampleRate}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const newRate = val === 'default' ? null : parseFloat(val);
-                      setOverrideSampleRate(newRate);
-                      // Update URL
-                      const newParams = new URLSearchParams(searchParams);
-                      if (newRate === null) newParams.delete('override_sample_rate');
-                      else newParams.set('override_sample_rate', newRate);
-                      navigate({ search: newParams.toString() }, { replace: true });
-                    }}
-                    className="bg-transparent border-none text-violet-400 text-[10px] font-bold p-0 cursor-pointer outline-none focus:ring-0"
-                  >
-                    <option value="default" className="bg-gray-900 text-gray-200">Default</option>
-                    <option value="0.5" className="bg-gray-900 text-gray-200">50%</option>
-                    <option value="0.7" className="bg-gray-900 text-gray-200">70%</option>
-                    <option value="1.0" className="bg-gray-900 text-gray-200">100%</option>
-                  </select>
-                </div>
+                {/* Sample rate override ẩn — logic vẫn hoạt động qua URL param */}
               </div>
             </div>
             {currentItem && (
@@ -559,6 +537,22 @@ function buildItemList(taskList, projectId) {
     });
     updateItemStatus(itemMap.get(itemKey));
   });
+
+  // Dedup: nếu cùng annotator có submission pending + rejected/approved (do resubmit sau reject),
+  // chỉ giữ submission pending để reviewer thấy bài nộp lại, không phải bài cũ.
+  for (const item of itemMap.values()) {
+    const byAnnotator = new Map();
+    for (const sub of item.submissions) {
+      const existing = byAnnotator.get(sub.annotatorId);
+      if (!existing) {
+        byAnnotator.set(sub.annotatorId, sub);
+      } else if (sub.status === 'pending' && existing.status !== 'pending') {
+        byAnnotator.set(sub.annotatorId, sub);
+      }
+    }
+    item.submissions = Array.from(byAnnotator.values());
+    updateItemStatus(item);
+  }
 
   return sortByStatus(Array.from(itemMap.values()));
 }
