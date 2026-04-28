@@ -1,7 +1,26 @@
+// useDashboard.js
+// Custom hook cung cấp toàn bộ data và thống kê cho trang Manager Dashboard.
+//
+// Luồng fetch dữ liệu (chạy một lần khi mount):
+//   1. Fetch song song: danh sách datasets + danh sách projects
+//   2. Với mỗi project → fetch tasks của project đó (Promise.allSettled)
+//   3. Từ tasks → build statusList (gom count theo trạng thái cho từng dataset)
+//
+// Thống kê trả về (stats — được tính bằng useMemo, tự cập nhật khi data thay đổi):
+//   - KPI tổng: totalDatasets, totalProjects, totalTasks, totalApproved, totalRejected...
+//   - approvalRate, completionRate
+//   - datasetHealth[]   — trạng thái + tiến độ từng dataset
+//   - projectStats[]    — tiến độ, deadline, status từng project (sắp xếp theo rủi ro)
+//   - annotatorPerf[]   — hiệu suất từng annotator (top 6)
+//   - reviewerPerf[]    — hiệu suất từng reviewer (top 6)
+//   - alerts[]          — cảnh báo tự động (reject cao, overdue, at risk, pending review)
+//   - pipeline          — phân bổ tasks theo từng stage
+
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../../config/api';
 
+// Lấy JWT token từ sessionStorage (ưu tiên) hoặc localStorage (fallback)
 const getAuthToken = () =>
   sessionStorage.getItem('token') || localStorage.getItem('token') || '';
 
@@ -56,6 +75,8 @@ export function useDashboard() {
         });
         setProjectTaskMap(ptMap);
 
+        // Build statusList: không có API trực tiếp dataset→tasks,
+        // nên tính ngược: với mỗi dataset → tìm các project dùng dataset đó → gom tasks
         const syntheticStatuses = dsList.map((ds) => {
           const dsId          = ds._id || ds.id;
           const linkedProjects = pjList.filter((p) => {
@@ -91,6 +112,8 @@ export function useDashboard() {
     fetchAll();
   }, []);
 
+  // stats — tính toán từ raw data, chỉ tính lại khi datasets/projects/statusList/projectTaskMap thay đổi.
+  // Không gọi API ở đây, chỉ xử lý thuần JavaScript.
   const stats = useMemo(() => {
     const totalDatasets = datasets.length;
     const totalProjects = projects.length;
@@ -155,6 +178,8 @@ export function useDashboard() {
     const approvalRate   = reviewed      > 0 ? Math.round((totalApproved / reviewed)      * 100) : 0;
     const completionRate = totalRawItems > 0 ? Math.round((totalApproved / totalRawItems) * 100) : 0;
 
+    // datasetHealth: tính state hiển thị cho từng dataset dựa trên tỷ lệ approved/rejected/submitted.
+    // Thứ tự ưu tiên: Ready > Needs Attention > Reviewing > Annotating > Not Started
     const datasetHealth = statusList.map((s) => {
       const raw               = s.totalRawItems              || 0;
       const approved          = s.counts?.approved           || 0;
@@ -173,6 +198,8 @@ export function useDashboard() {
       return { id: s.datasetId, name: s.datasetName, type: s.datasetType, raw, approved, submitted, pendingAnnotation, rejected, progress, rejRate, state, stateColor, stateBg };
     });
 
+    // projectStats: tính progress, rejRate, deadline status cho từng project.
+    // Sắp xếp theo mức rủi ro giảm dần: Overdue → At Risk → Needs Review → On Track
     const now = new Date();
     const projectStats = projects.map((p) => {
       const pid      = p._id || p.id;
@@ -199,6 +226,8 @@ export function useDashboard() {
       return (o[a.status] ?? 4) - (o[b.status] ?? 4);
     });
 
+    // annotatorPerf / reviewerPerf: lấy top 6 theo số task/review nhiều nhất,
+    // tính approvalRate = approved / (approved + rejected) * 100
     const annotatorPerf = Object.values(annotatorMap)
       .sort((a, b) => b.tasks - a.tasks).slice(0, 6)
       .map((a) => ({ ...a, approvalRate: (a.approved + a.rejected) > 0 ? Math.round((a.approved / (a.approved + a.rejected)) * 100) : 0 }));
@@ -207,6 +236,8 @@ export function useDashboard() {
       .sort((a, b) => b.reviewed - a.reviewed).slice(0, 6)
       .map((r) => ({ ...r, approvalRate: r.reviewed > 0 ? Math.round((r.approved / r.reviewed) * 100) : 0 }));
 
+    // alerts: tự động sinh cảnh báo từ data (không cần cấu hình).
+    // Ưu tiên: reject cao → overdue → at risk → pending review
     const alerts = [];
     datasetHealth.filter((ds) => ds.rejRate > 30 && ds.raw > 0)
       .forEach((ds) => alerts.push({ type: 'rejection', msg: `Dataset "${ds.name}" có tỷ lệ reject ${ds.rejRate}%`, sev: 'error' }));

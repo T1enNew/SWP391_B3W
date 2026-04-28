@@ -1,5 +1,20 @@
+// DashboardComponents.jsx
+// Tập hợp các UI component tái sử dụng cho trang Manager Dashboard.
+// Không chứa logic nghiệp vụ — chỉ nhận props và render.
+//
+// Danh sách export:
+//   StatCard        — Thẻ KPI hiển thị 1 chỉ số (tổng, tỷ lệ...) với màu accent và icon
+//   ProgressBar     — Thanh tiến độ có nhãn giá trị và % bên dưới
+//   MiniBar         — Thanh tiến độ thu gọn dạng 1 hàng (label | bar | value)
+//   StatusPill      — Nhãn badge tròn với chấm màu (trạng thái dataset/project)
+//   SectionHeader   — Tiêu đề + mô tả phụ của từng section trong dashboard
+//   AlertItem       — Dòng cảnh báo màu theo severity (error/warning/info)
+//   QuickActionCard — Nút điều hướng nhanh dạng card (icon + label + mô tả)
+//   PipelineStage   — Ô đại diện 1 bước trong Task Pipeline, nối bởi mũi tên ›
+
 import React from 'react';
 
+// Màu nền/border/chữ dùng chung trong tất cả component của file này
 const C = {
   panel:  '#0d1829',
   border: '#1a2740',
@@ -7,6 +22,9 @@ const C = {
   muted:  '#64748b',
 };
 
+// StatCard — Thẻ chỉ số KPI
+// Props: title (nhãn), value (giá trị hiển thị lớn), hint (mô tả nhỏ bên dưới),
+//        accent (màu thanh trái + highlight), icon (emoji nền mờ góc phải)
 export const StatCard = ({ title, value, hint, accent, icon }) => (
   <div style={{
     background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16,
@@ -25,6 +43,8 @@ export const StatCard = ({ title, value, hint, accent, icon }) => (
   </div>
 );
 
+// ProgressBar — Thanh tiến độ đầy đủ: bar + chú thích "value/max  X%"
+// Tự clamp pct về [0, 100] để tránh bar tràn khỏi container
 export const ProgressBar = ({ value, max, color }) => {
   const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((value / max) * 100))) : 0;
   return (
@@ -39,6 +59,8 @@ export const ProgressBar = ({ value, max, color }) => {
   );
 };
 
+// MiniBar — Dạng thu gọn: "label | bar | count" trên 1 hàng
+// Dùng trong bảng so sánh nhiều annotator/reviewer (Team Performance)
 export const MiniBar = ({ label, value, max, color }) => {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
@@ -52,12 +74,15 @@ export const MiniBar = ({ label, value, max, color }) => {
   );
 };
 
+// StatusPill — Badge tròn với chấm màu bên trái nhãn
+// Dùng để hiển thị trạng thái dataset (Ready / Reviewing / Annotating / Needs Attention...)
 export const StatusPill = ({ label, color, bg }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, color, background: bg, border: `1px solid ${color}40` }}>
     <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />{label}
   </span>
 );
 
+// SectionHeader — Tiêu đề section: bên trái là title + subtitle, bên phải là action (nút tùy chọn)
 export const SectionHeader = ({ title, subtitle, action }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
     <div>
@@ -68,6 +93,8 @@ export const SectionHeader = ({ title, subtitle, action }) => (
   </div>
 );
 
+// AlertItem — Dòng cảnh báo có màu nền, border và icon theo mức độ nghiêm trọng (sev)
+//   sev: 'error' | 'warning' | 'info'  (mặc định là xám nếu không khớp)
 export const AlertItem = ({ type, msg, sev }) => {
   const cfg = {
     error:   { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   icon: '🔴', color: '#fca5a5' },
@@ -83,6 +110,8 @@ export const AlertItem = ({ type, msg, sev }) => {
   );
 };
 
+// QuickActionCard — Nút điều hướng nhanh dạng card (icon + tên + mô tả ngắn)
+// Hover đổi border và nền theo màu accent của từng action
 export const QuickActionCard = ({ icon, label, desc, color, onClick }) => (
   <button
     onClick={onClick}
@@ -102,6 +131,8 @@ export const QuickActionCard = ({ icon, label, desc, color, onClick }) => (
   </button>
 );
 
+// PipelineStage — Ô đại diện 1 bước trong luồng Task Pipeline
+// isLast=true → bỏ mũi tên › ở cuối (không thêm separator sau ô cuối)
 export const PipelineStage = ({ label, value, color, isLast }) => (
   <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
     <div style={{ flex: 1, background: '#060d1a', border: `1px solid ${color}40`, borderRadius: 12, padding: '14px 12px', textAlign: 'center', position: 'relative' }}>

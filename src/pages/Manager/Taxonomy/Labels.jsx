@@ -1,3 +1,27 @@
+// Taxonomy/Labels.jsx
+// Trang quản lý Nhãn (Labels) và Chủ đề (Topics) dành cho Manager.
+//
+// Khái niệm:
+//   Topic  — nhóm chủ đề (VD: "Animal", "Vehicle") để phân loại nhãn
+//   Label  — nhãn annotation cụ thể (VD: "dog", "cat") thuộc về 1 topic
+//   Nhãn master này được tất cả project annotation dùng chung.
+//
+// Layout:
+//   Header     — tên trang, nút "Tạo topic" + "Tạo nhãn"
+//   Stats row  — số topic, tổng nhãn, có phím tắt, số màu duy nhất
+//   Topics bar — chip lọc theo topic (All / từng topic / Chưa có topic)
+//                Mỗi topic chip có nút: thêm nhãn vào topic / sửa topic / xóa topic
+//   Search     — tìm nhãn theo tên hoặc mô tả
+//   Grid       — lưới LabelCard + ô "+" để thêm nhãn mới
+//
+// Dialogs:
+//   LabelFormDialog  — tạo mới / sửa nhãn (tên, màu, phím tắt, chọn topic)
+//   DeleteLabelDialog — xác nhận xóa nhãn
+//   TopicFormDialog  — tạo mới / sửa topic
+//
+// Data: fetch từ LabelService + TopicService (REST API),
+//       cache được sync qua syncLabelsCache() để các màn hình khác dùng ngay.
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress,
@@ -21,6 +45,8 @@ const BG = '#080f1e', PANEL = '#0d1829', BORDER = '#1e2d47';
 const PRIMARY = '#3b82f6', TEXT = '#e2e8f0', MUTED = '#64748b';
 const PURPLE = '#8b5cf6';
 
+// StatTile — Ô thống kê nhỏ trong header (topics, tổng nhãn, có phím tắt, màu sắc)
+// accent: màu gạch chân trên top border và icon
 const StatTile = ({ icon, value, label, accent }) => (
   <Box sx={{
     bgcolor: PANEL, border: `1px solid ${BORDER}`, borderRadius: 3,
@@ -37,6 +63,7 @@ const StatTile = ({ icon, value, label, accent }) => (
   </Box>
 );
 
+// Labels — Component trang chính quản lý nhãn và topic
 export default function Labels() {
   const [labels, setLabels]             = useState([]);
   const [topics, setTopics]             = useState([]);
@@ -55,6 +82,8 @@ export default function Labels() {
 
   const showToast = (msg, sev = 'success') => setToast({ open: true, msg, sev });
 
+  // fetchData — tải song song labels + topics khi mount hoặc user bấm "Làm mới"
+  // getLabelsWithFallback: thử API trước, nếu lỗi trả về cache local
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -73,6 +102,8 @@ export default function Labels() {
   useEffect(() => { fetchData(); }, []);
 
   // ── Label CRUD ────────────────────────────────────────────────
+  // handleSaveLabelForm — xử lý chung cho cả tạo mới (editTarget=null) và sửa (editTarget có giá trị).
+  // Sau khi thành công: update state labels local + sync cache (không fetch lại từ server để tránh lag).
   const handleSaveLabelForm = async (form) => {
     if (!form.name.trim()) return;
     setSaving(true);
@@ -111,6 +142,7 @@ export default function Labels() {
     } finally { setSaving(false); }
   };
 
+  // handleDeleteLabel — xóa nhãn đang được set làm deleteTarget, sync cache sau khi xóa
   const handleDeleteLabel = async () => {
     if (!deleteTarget) return;
     setSaving(true);
@@ -129,6 +161,7 @@ export default function Labels() {
   };
 
   // ── Topic CRUD ────────────────────────────────────────────────
+  // handleSaveTopic — tạo mới hoặc cập nhật topic (tên + mô tả)
   const handleSaveTopic = async (form) => {
     if (!form.name.trim()) return;
     setSaving(true);
@@ -148,6 +181,8 @@ export default function Labels() {
     } finally { setSaving(false); }
   };
 
+  // handleDeleteTopic — xóa topic, nhưng chặn nếu còn nhãn chưa được chuyển/xóa
+  // Bảo vệ data integrity: không để nhãn mồ côi không có topic
   const handleDeleteTopic = async (topic) => {
     const labelsInTopic = labels.filter(l => (l.topic_id || l.topic?.id) === topic.id);
     if (labelsInTopic.length > 0) {
@@ -166,6 +201,8 @@ export default function Labels() {
   };
 
   // ── Derived data ──────────────────────────────────────────────
+  // filtered — labels hiển thị sau khi lọc theo search text + topic đang chọn
+  // matchTopic: 'all' = hiện tất cả, 'none' = chỉ nhãn chưa gán topic, id cụ thể = nhãn của topic đó
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return labels.filter(l => {
@@ -181,11 +218,13 @@ export default function Labels() {
   const withShortcut  = useMemo(() => labels.filter(l => l.shortcut).length, [labels]);
   const labelsNoTopic = useMemo(() => labels.filter(l => !l.topic_id && !l.topic).length, [labels]);
 
+  // openCreate — mở dialog tạo nhãn mới, tùy chọn điền sẵn topic (khi bấm nút + trên topic chip)
   const openCreate = (topicId) => {
-    setEditTarget(null);                    // Luôn null = chế độ tạo mới
-    setPrefillTopicId(topicId || '');       // Lưu topic cần điền sẵn riêng
+    setEditTarget(null);             // null = chế độ tạo mới
+    setPrefillTopicId(topicId || ''); // điền sẵn topic nếu có
     setFormOpen(true);
   };
+  // openEdit — mở dialog sửa nhãn đã có, xóa prefillTopicId để không ghi đè
   const openEdit = (l) => {
     setEditTarget(l);
     setPrefillTopicId('');

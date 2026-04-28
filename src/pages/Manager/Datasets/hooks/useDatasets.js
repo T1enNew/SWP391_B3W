@@ -1,7 +1,30 @@
 // useDatasets.js
 // Hook trung tâm quản lý toàn bộ logic trang Datasets của Manager.
-// Bao gồm: fetch danh sách dataset, xem items, upload, xóa, edit, export JSON annotation,
-//   tính trạng thái hoàn thành (isComplete) và map task theo item (approvedItemsMap).
+//
+// State chính:
+//   datasets         — danh sách tất cả dataset
+//   selectedDs       — dataset đang được chọn trong left panel
+//   dsItems          — danh sách file ảnh/text trong selectedDs
+//   linkedTasks      — tất cả tasks liên kết với selectedDs (qua các project)
+//   dsStatusMap      — bản đồ {dsId → {isComplete, inProgress, approved, total}} cho badge trong DatasetCard
+//   viewerOpen       — true khi đang ở chế độ xem annotation (3-panel viewer)
+//
+// Computed (useMemo):
+//   filtered         — datasets lọc theo từ khóa tìm kiếm
+//   isComplete       — dataset đang xem đã approved toàn bộ items chưa
+//   dsStats          — đếm task theo status {approved, reviewing, rework, annotating}
+//   tasksByItemId    — Map tra nhanh task theo itemId hoặc tên file
+//   approvedItemsMap — Map {key → annotation đã approved} dùng cho viewer
+//
+// Handlers:
+//   handleCreate     — tạo dataset mới (POST /api/datasets)
+//   handleSaveEdit   — cập nhật tên/mô tả dataset (PUT /api/datasets/:id)
+//   handleUpload     — upload nhiều file ảnh (multipart, có progress bar)
+//   handleDelete     — xóa dataset (DELETE /api/datasets/:id)
+//   handleDeleteItem — xóa 1 ảnh khỏi dataset
+//   handleItemClick  — click ảnh: mở viewer (nếu isComplete) hoặc navigate sang detail page
+//   handleExport     — export annotation đã approved ra file JSON và tải về máy
+//   handleDrop       — kéo-thả file → gọi handleUpload
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -295,6 +318,7 @@ export function useDatasets() {
   }, [selectedDs, fetchDatasetItems, fetchLinkedTasks, dsStatusMap]);
 
   /* ── handlers ── */
+  // showToast — helper hiển thị thông báo nhanh (Snackbar) ở góc dưới phải
   const showToast = useCallback((msg, sev = 'success') => setToast({ open: true, msg, sev }), []);
 
   // Tạo dataset mới với type mặc định là "image"
@@ -325,6 +349,7 @@ export function useDatasets() {
     }
   };
 
+  // openEdit — mở dialog sửa tên dataset, dừng event bubble để không chọn dataset bên dưới
   const openEdit = (e, ds) => {
     e.stopPropagation();
     setEditDs(ds);

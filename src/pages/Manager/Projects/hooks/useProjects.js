@@ -1,7 +1,17 @@
 // useProjects.js
 // Custom hook quản lý toàn bộ dữ liệu trang danh sách Projects của Manager.
-// Fetch song song project list + dataset list, sau đó fetch task stats cho từng project
-// để tính trạng thái hiển thị chính xác (không chỉ dựa vào project.status từ backend).
+//
+// Luồng fetch (loadData):
+//   Bước 1: Fetch song song projects + datasets (Promise.allSettled)
+//   Bước 2: Với mỗi project → fetch task list của project đó → computeTaskStats
+//   → taskStatsMap: {projectId → {total, approved, submitted, rejected, ...}}
+//
+// Tại sao cần taskStatsMap?
+//   Backend trả project.status có thể không phản ánh đúng thực tế.
+//   getDisplayStatus() kết hợp project.status + taskStats để tính status hiển thị chính xác.
+//
+// counts: đếm project theo từng displayStatus → dùng để render StatTile header
+// normalizeProject: chuẩn hóa các field id/_id, name/title, v.v. từ backend về format thống nhất
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -72,8 +82,9 @@ export function useProjects() {
               ? res.value.data
               : res.value.data?.data || res.value.data?.tasks || [];
             const pid = pList[i].id || pList[i]._id;
+            // computeTaskStats: đếm task theo status → trả về {total, approved, submitted, rejected, annotating}
             const stats = computeTaskStats(raw);
-            if (stats) statsMap[pid] = stats; //lấy raw rồi tính thống kê
+            if (stats) statsMap[pid] = stats;
           }
         });
         setTaskStatsMap(statsMap);
@@ -90,11 +101,11 @@ export function useProjects() {
     loadData();
   }, [loadData]);
 
-  // Đếm project theo từng status hiển thị — dùng để render các StatTile ở đầu trang.
-  // Phụ thuộc vào taskStatsMap: khi taskStatsMap thay đổi, counts tự cập nhật.
-  const counts = useMemo(() => { //Cái này giúp UI biết project đó thực tế đang chạy tới đâu.
+  // counts — đếm project theo từng displayStatus, tự cập nhật khi taskStatsMap thay đổi.
+  // Dùng để render các ô StatTile ở đầu trang Projects.
+  // OVERDUE_STATUSES gồm nhiều sub-status (overdue, at_risk...) → gom vào 1 bucket "overdue"
+  const counts = useMemo(() => {
     const ds = (p) => getDisplayStatus(p, taskStatsMap[p.id || p._id] || null);
-    //Có nghĩa là lấy status hiển thị của project.
     return {
       all: projects.length,
       active: projects.filter((p) => ds(p) === "active").length,

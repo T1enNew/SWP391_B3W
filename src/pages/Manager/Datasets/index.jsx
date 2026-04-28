@@ -1,3 +1,19 @@
+// Datasets/index.jsx
+// Trang quản lý Dataset dành cho Manager.
+//
+// Layout chính (2-panel):
+//   Left panel  — DatasetListPanel: danh sách dataset, có tìm kiếm, badge trạng thái
+//   Right panel — DatasetDetailPanel (bình thường) hoặc DatasetItemViewer (khi xem annotation)
+//
+// Luồng sử dụng:
+//   1. Manager chọn dataset → DatasetDetailPanel hiện danh sách ảnh + thống kê tiến độ
+//   2. Manager upload ảnh mới (drag-drop hoặc nút) → gọi handleUpload
+//   3. Khi dataset hoàn thành (isComplete) → click ảnh mở DatasetItemViewer 3-panel (ảnh + annotation)
+//   4. Khi chưa hoàn thành → click ảnh navigate sang trang DatasetItemDetail
+//
+// Dialogs: Tạo dataset / Sửa tên / Xóa dataset / Xem thông tin chi tiết
+// Toast: phản hồi thành công/lỗi cho mọi thao tác
+
 import React from 'react';
 import {
   Alert, Box, Button, IconButton, Snackbar, Stack, Tooltip, Typography,
@@ -13,6 +29,7 @@ import {
 } from './DatasetDialogs';
 import { coerceId } from './utils';
 
+// StatBadge — Badge thống kê nhỏ trong header (tổng datasets, đang chọn, số ảnh trong dataset)
 const StatBadge = ({ label, value, color = PRIMARY }) => (
   <Box sx={{ textAlign: 'center', px: 2 }}>
     <Typography sx={{ fontSize: 28, fontWeight: 800, color, lineHeight: 1 }}>{value}</Typography>
@@ -20,6 +37,8 @@ const StatBadge = ({ label, value, color = PRIMARY }) => (
   </Box>
 );
 
+// DatasetsPage — Component trang chính.
+// Tất cả logic và state được quản lý bởi useDatasets() hook — component này chỉ render UI.
 export default function DatasetsPage() {
   const {
     /* state */
@@ -71,7 +90,10 @@ export default function DatasetsPage() {
 
       {error && <Alert severity="error" sx={{ mx: 3, mt: 2, borderRadius: 2 }}>{error}</Alert>}
 
-      {/* ── Two-panel layout ── */}
+      {/* ── Two-panel layout ──
+            viewerOpen=true  → ẩn ListPanel, chiếm toàn bộ không gian cho viewer
+            viewerOpen=false → hiện ListPanel + DetailPanel song song
+      ── */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {!viewerOpen && (
           <DatasetListPanel

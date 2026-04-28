@@ -1,8 +1,23 @@
+// Dashboard/index.jsx
+// Trang tổng quan dành cho Manager — hiển thị toàn cảnh hệ thống annotation.
+//
+// Layout từ trên xuống:
+//   1. Header          — tên dashboard + ngày + bảng chú thích màu
+//   2. KPI Cards       — 7 chỉ số tổng quan (datasets, projects, tasks, approved, review, rework, completion)
+//   3. Task Pipeline   — phân bổ tasks theo từng stage (Raw → Annotating → Submitted → Approved / Rework)
+//   4. Quality + Alerts + Quick Actions  — 3 cột: chất lượng, cảnh báo, điều hướng nhanh
+//   5. Project Overview — bảng danh sách project, sắp xếp theo rủi ro
+//   6. Dataset Health  — bảng trạng thái từng dataset, có phân trang
+//   7. Team Performance — hiệu suất annotator vs reviewer
+//
+// Tất cả data lấy từ useDashboard() — component này chỉ render.
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatCard, ProgressBar, StatusPill, SectionHeader, AlertItem, QuickActionCard, PipelineStage } from './DashboardComponents';
 import { useDashboard } from './hooks/useDashboard';
 
+// Bảng màu toàn cục của dashboard — tất cả component inline dùng object này
 const C = {
   bg:      '#080f1e',
   panel:   '#0d1829',
@@ -12,12 +27,17 @@ const C = {
   primary: '#3b82f6',
 };
 
+// Style chung cho các card section (nền tối, viền, bo góc, đổ bóng)
 const card = { background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.25)' };
 
+// Số dataset hiển thị mỗi trang trong bảng Dataset Health
 const PAGE_SIZE = 5;
 
 // ── Dataset Health Table ──────────────────────────────────────────────────────
 
+// DatasetRow — 1 hàng trong bảng Dataset Health
+// Hiển thị: tên dataset, loại, thanh tiến độ approved%, các số approved/submitted/annotating/rejected, trạng thái
+// Có cảnh báo ⚠️ nếu tỷ lệ reject > 30%
 const DatasetRow = ({ ds, index, offset }) => {
   const pct = ds.raw > 0 ? Math.round((ds.approved / ds.raw) * 100) : 0;
   return (
@@ -48,6 +68,7 @@ const DatasetRow = ({ ds, index, offset }) => {
   );
 };
 
+// DatasetTableHeader — Header cố định của bảng Dataset Health, căn chỉnh theo grid của DatasetRow
 const DatasetTableHeader = () => (
   <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 120px 64px 64px 64px 64px 110px', gap: 12, padding: '10px 16px', borderBottom: `1px solid ${C.border}`, background: 'rgba(6,13,26,0.6)', borderRadius: '12px 12px 0 0' }}>
     <span style={{ color: C.muted, fontSize: 11, textAlign: 'center' }}>#</span>
@@ -61,6 +82,8 @@ const DatasetTableHeader = () => (
   </div>
 );
 
+// Pagination — Điều hướng trang cho bảng Dataset Health
+// Ẩn hoàn toàn nếu chỉ có 1 trang (total <= 1)
 const Pagination = ({ page, total, onChange }) => {
   if (total <= 1) return null;
   return (
@@ -81,6 +104,7 @@ const Pagination = ({ page, total, onChange }) => {
 
 // ── Project Row ───────────────────────────────────────────────────────────────
 
+// Màu sắc badge trạng thái project — dùng trong ProjectRow
 const statusCfg = {
   'On Track':     { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)'   },
   'At Risk':      { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)'  },
@@ -88,6 +112,8 @@ const statusCfg = {
   'Overdue':      { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)'   },
 };
 
+// ProjectRow — 1 hàng trong bảng Project Overview
+// Hiển thị: số thứ tự, tên project, thanh tiến độ, deadline (format dd/mm/yyyy), status badge, approved/total
 const ProjectRow = ({ p, index }) => {
   const cfg = statusCfg[p.status] || statusCfg['On Track'];
   const barColor = p.progress >= 80 ? '#22c55e' : p.progress >= 40 ? '#3b82f6' : '#f59e0b';
@@ -127,6 +153,10 @@ const ProjectRow = ({ p, index }) => {
 
 // ── Team Performance Row ──────────────────────────────────────────────────────
 
+// TeamRow — 1 hàng trong bảng Annotator/Reviewer Performance
+// type='annotator': icon ✏️, hiển thị tasks/approved/rejected
+// type='reviewer' : icon 👁️, hiển thị reviewed/approved/rejected
+// approvalRate được tô màu: xanh ≥80%, vàng 50–79%, đỏ <50%
 const TeamRow = ({ member, type }) => {
   const rateColor = member.approvalRate >= 80 ? '#22c55e' : member.approvalRate >= 50 ? '#f59e0b' : '#ef4444';
   const mainVal   = type === 'annotator' ? member.tasks    : member.reviewed;
@@ -154,6 +184,9 @@ const TeamRow = ({ member, type }) => {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+// ManagerDashboard — Component gốc của trang, render toàn bộ các section.
+// dsPage: trang hiện tại của bảng Dataset Health (phân trang phía client)
+// activeProjects: lọc bỏ archived, lấy tối đa 8 dự án đang hoạt động cho bảng Project Overview
 const ManagerDashboard = () => {
   const { loading, stats } = useDashboard();
   const navigate           = useNavigate();

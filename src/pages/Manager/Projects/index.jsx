@@ -1,3 +1,20 @@
+// Projects/index.jsx
+// Trang quản lý danh sách Project dành cho Manager.
+//
+// Layout:
+//   Header     — tên trang, nút "New Project", nút làm mới
+//   StatTiles  — các ô đếm project theo status (All / Active / Completed / Draft / Chờ reviewer / Quá hạn / Archived)
+//                Click vào tile → lọc danh sách bên dưới theo status đó
+//   Search     — tìm theo tên project, mô tả, hoặc tên dataset
+//   Grid       — lưới ProjectCard (3 cột trên lg, 2 cột trên sm)
+//
+// Dialogs:
+//   DeleteDialog      — xác nhận xóa project (action không thể hoàn tác)
+//   ProjectInfoListDialog — xem thông tin đầy đủ của 1 project (fetch thêm tasks để lấy annotator/reviewer)
+//
+// Data đến từ useProjects() hook — component này chỉ render + xử lý local dialog state.
+// taskStatsMap được truyền vào ProjectCard để tính displayStatus chính xác từ task thực tế.
+
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -41,7 +58,7 @@ import { getCfg, getDisplayStatus, fmtDateTime, getDeadlineState, OVERDUE_STATUS
 import { useProjects } from "./hooks/useProjects";
 import ProjectInfoListDialog from "./ProjectInfoListDialog";
 
-// Projects/index.jsx
+// Bảng màu chính của trang (tối, dark theme)
 const BG = "#080f1e", PANEL = "#0d1829", BORDER = "#1e2d47";
 const TEXT = "#e2e8f0", MUTED = "#64748b", PRIMARY = "#3b82f6";
 
@@ -215,7 +232,7 @@ const ProjectCard = ({ project, taskStats, taskStatsLoading, datasets, onInfo, o
   );
 };
 
-// Component trang chính — layout toàn trang Projects
+// Projects — Component trang chính, render toàn bộ layout và kết nối dialog state
 export default function Projects() {
   const navigate = useNavigate();
   const { projects, datasets, loading, taskStatsMap, taskStatsLoading, error, counts, loadData } = useProjects();
@@ -331,6 +348,8 @@ export default function Projects() {
       : []),
   ];
 
+  // mergedInfoProject: gộp dữ liệu project từ danh sách (có taskStats) + detail từ API (có annotators đầy đủ).
+  // Dùng spread để không mất field nào, detail API override field trùng tên nếu có
   const mergedInfoProject = infoDialog.project
     ? infoDialog.detail
       ? { ...infoDialog.project, ...infoDialog.detail }
