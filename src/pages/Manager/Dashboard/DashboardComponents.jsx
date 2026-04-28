@@ -1,18 +1,27 @@
 import React from 'react';
 
-const cardStyle = {
-  background: '#1e293b',
-  border: '1px solid #334155',
-  borderRadius: 16,
-  boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+const C = {
+  panel:  '#0d1829',
+  border: '#1a2740',
+  text:   '#e2e8f0',
+  muted:  '#64748b',
 };
 
-export const StatCard = ({ title, value, hint, accent }) => (
-  <div style={{ ...cardStyle, padding: 20, minHeight: 118, position: 'relative', overflow: 'hidden' }}>
-    <div style={{ position: 'absolute', inset: '0 auto 0 0', width: 5, background: accent }} />
-    <div style={{ color: '#94a3b8', fontSize: 14, marginBottom: 10 }}>{title}</div>
-    <div style={{ color: '#f8fafc', fontSize: 34, fontWeight: 800, lineHeight: 1.1 }}>{value}</div>
-    <div style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>{hint}</div>
+export const StatCard = ({ title, value, hint, accent, icon }) => (
+  <div style={{
+    background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.3)', padding: '18px 20px',
+    minHeight: 110, position: 'relative', overflow: 'hidden',
+    transition: 'transform 0.15s, box-shadow 0.15s',
+  }}
+    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px ${accent}40`; }}
+    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)';    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)'; }}
+  >
+    <div style={{ position: 'absolute', inset: '0 auto 0 0', width: 4, background: `linear-gradient(180deg, ${accent}, ${accent}80)`, borderRadius: '16px 0 0 16px' }} />
+    <div style={{ position: 'absolute', top: 14, right: 14, fontSize: 22, opacity: 0.15 }}>{icon}</div>
+    <div style={{ color: C.muted, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>{title}</div>
+    <div style={{ color: '#f8fafc', fontSize: 32, fontWeight: 800, lineHeight: 1 }}>{value}</div>
+    <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>{hint}</div>
   </div>
 );
 
@@ -20,12 +29,11 @@ export const ProgressBar = ({ value, max, color }) => {
   const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((value / max) * 100))) : 0;
   return (
     <div style={{ width: '100%' }}>
-      <div style={{ height: 10, background: '#0f172a', borderRadius: 999, overflow: 'hidden', border: '1px solid #1e293b' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 999, transition: 'width 0.5s ease' }} />
+      <div style={{ height: 8, background: '#060d1a', borderRadius: 999, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${color}, ${color}cc)`, borderRadius: 999, transition: 'width 0.6s ease' }} />
       </div>
-      <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
-        <span>{value}/{max}</span>
-        <span>{pct}%</span>
+      <div style={{ marginTop: 5, fontSize: 12, color: C.muted, display: 'flex', justifyContent: 'space-between' }}>
+        <span>{value}/{max}</span><span style={{ color, fontWeight: 700 }}>{pct}%</span>
       </div>
     </div>
   );
@@ -34,21 +42,77 @@ export const ProgressBar = ({ value, max, color }) => {
 export const MiniBar = ({ label, value, max, color }) => {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 50px', gap: 12, alignItems: 'center' }}>
-      <div style={{ color: '#cbd5e1', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={label}>
-        {label}
+    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 44px', gap: 10, alignItems: 'center' }}>
+      <div style={{ color: '#cbd5e1', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={label}>{label}</div>
+      <div style={{ height: 8, background: '#060d1a', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 999, transition: 'width 0.5s' }} />
       </div>
-      <div style={{ height: 12, background: '#0f172a', borderRadius: 999, overflow: 'hidden', border: '1px solid #1e293b' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 999 }} />
-      </div>
-      <div style={{ color: '#94a3b8', fontSize: 12, textAlign: 'right' }}>{value}</div>
+      <div style={{ color: C.muted, fontSize: 12, textAlign: 'right', fontWeight: 600 }}>{value}</div>
     </div>
   );
 };
 
 export const StatusPill = ({ label, color, bg }) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, color, background: bg, border: `1px solid ${color}40` }}>
-    <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-    {label}
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, color, background: bg, border: `1px solid ${color}40` }}>
+    <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />{label}
   </span>
+);
+
+export const SectionHeader = ({ title, subtitle, action }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+    <div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>{subtitle}</div>}
+    </div>
+    {action}
+  </div>
+);
+
+export const AlertItem = ({ type, msg, sev }) => {
+  const cfg = {
+    error:   { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   icon: '🔴', color: '#fca5a5' },
+    warning: { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  icon: '🟡', color: '#fcd34d' },
+    info:    { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)',  icon: '🔵', color: '#93c5fd' },
+  }[sev] || { bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.25)', icon: '⚪', color: C.muted };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 10, marginBottom: 8 }}>
+      <span style={{ fontSize: 14, lineHeight: '20px', flexShrink: 0 }}>{cfg.icon}</span>
+      <span style={{ fontSize: 13, color: cfg.color, lineHeight: 1.5 }}>{msg}</span>
+    </div>
+  );
+};
+
+export const QuickActionCard = ({ icon, label, desc, color, onClick }) => (
+  <button
+    onClick={onClick}
+    style={{
+      background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14,
+      padding: '16px 18px', cursor: 'pointer', textAlign: 'left', width: '100%',
+      transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 14,
+    }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.background = `${color}10`; }}
+    onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.panel; }}
+  >
+    <div style={{ width: 42, height: 42, borderRadius: 12, background: `${color}20`, border: `1px solid ${color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{icon}</div>
+    <div>
+      <div style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{label}</div>
+      <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{desc}</div>
+    </div>
+  </button>
+);
+
+export const PipelineStage = ({ label, value, color, isLast }) => (
+  <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+    <div style={{ flex: 1, background: '#060d1a', border: `1px solid ${color}40`, borderRadius: 12, padding: '14px 12px', textAlign: 'center', position: 'relative' }}>
+      <div style={{ color: C.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>{label}</div>
+      <div style={{ color, fontSize: 26, fontWeight: 800, lineHeight: 1 }}>{value}</div>
+      <div style={{ marginTop: 8, height: 3, borderRadius: 999, background: `${color}30`, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: '100%', background: `linear-gradient(90deg, ${color}80, ${color})`, borderRadius: 999 }} />
+      </div>
+    </div>
+    {!isLast && (
+      <div style={{ color: C.muted, fontSize: 18, padding: '0 6px', flexShrink: 0 }}>›</div>
+    )}
+  </div>
 );

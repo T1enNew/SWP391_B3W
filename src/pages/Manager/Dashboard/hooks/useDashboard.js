@@ -1,7 +1,3 @@
-// useDashboard.js
-// Hook cung cấp toàn bộ dữ liệu thống kê cho trang Dashboard của Manager.
-// Không dùng endpoint riêng cho dashboard — tổng hợp từ datasets + projects + tasks.
-
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../../config/api';
@@ -9,55 +5,59 @@ import { API_URL } from '../../../../config/api';
 const getAuthToken = () =>
   sessionStorage.getItem('token') || localStorage.getItem('token') || '';
 
-// Hook chính — trả về { loading, stats }
-// stats chứa: số liệu tổng quan, pipeline stages, datasetHealth, topLabels, topAnnotators
 export function useDashboard() {
-  const [loading, setLoading]     = useState(true);
-  const [datasets, setDatasets]   = useState([]);
-  const [projects, setProjects]   = useState([]);
-  const [statusList, setStatusList] = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [datasets, setDatasets]         = useState([]);
+  const [projects, setProjects]         = useState([]);
+  const [statusList, setStatusList]     = useState([]);
+  const [projectTaskMap, setProjectTaskMap] = useState({});
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const token = getAuthToken();
+        const token   = getAuthToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-        // Bước 1: Fetch datasets + projects song song
         const [datasetsRes, projectsRes] = await Promise.allSettled([
           axios.get(`${API_URL}/api/datasets`, { headers }),
           axios.get(`${API_URL}/api/projects`, { params: { page: 1, limit: 100 }, headers }),
         ]);
 
-        const dsList =
-          datasetsRes.status === 'fulfilled'
-            ? Array.isArray(datasetsRes.value.data)
+        const dsList = datasetsRes.status === 'fulfilled'
+          ? (Array.isArray(datasetsRes.value.data)
               ? datasetsRes.value.data
-              : datasetsRes.value.data?.data || []
-            : [];
+              : datasetsRes.value.data?.data || [])
+          : [];
 
-        const pjList =
-          projectsRes.status === 'fulfilled'
-            ? Array.isArray(projectsRes.value.data)
+        const pjList = projectsRes.status === 'fulfilled'
+          ? (Array.isArray(projectsRes.value.data)
               ? projectsRes.value.data
-              : projectsRes.value.data?.data || projectsRes.value.data?.projects || []
-            : [];
+              : projectsRes.value.data?.data || projectsRes.value.data?.projects || [])
+          : [];
 
         setDatasets(dsList);
         setProjects(pjList);
 
-        // Bước 2: Fetch tasks của từng project song song để tính số liệu annotation
         const taskResults = await Promise.allSettled(
-          pjList.map((p) => {
-            const pid = p._id || p.id;
-            return axios.get(`${API_URL}/api/tasks/project/${pid}`, { headers });
-          })
+          pjList.map((p) =>
+            axios.get(`${API_URL}/api/tasks/project/${p._id || p.id}`, { headers })
+          )
         );
 
-        // Bước 3: Gom task theo dataset → tạo statusList để useMemo tính stats
-        // Mỗi entry trong statusList = 1 dataset + số task approved/submitted/rejected/pending
+        const ptMap = {};
+        pjList.forEach((p, idx) => {
+          const pid     = p._id || p.id;
+          const taskRes = taskResults[idx];
+          ptMap[pid] = taskRes?.status === 'fulfilled'
+            ? (Array.isArray(taskRes.value.data)
+                ? taskRes.value.data
+                : taskRes.value.data?.data || taskRes.value.data?.tasks || [])
+            : [];
+        });
+        setProjectTaskMap(ptMap);
+
         const syntheticStatuses = dsList.map((ds) => {
-          const dsId = ds._id || ds.id;
+          const dsId          = ds._id || ds.id;
           const linkedProjects = pjList.filter((p) => {
             const did = p.dataset?.id || p.dataset?._id || p.dataset_id || p.datasetId;
             return did === dsId;
@@ -67,145 +67,151 @@ export function useDashboard() {
           const counts = { approved: 0, submitted: 0, rejected: 0, pendingAnnotation: 0 };
 
           linkedProjects.forEach((p) => {
-            const pidx = pjList.indexOf(p);
-            const taskRes = taskResults[pidx];
-            if (taskRes?.status !== 'fulfilled') return;
-            const tasks = Array.isArray(taskRes.value.data)
-              ? taskRes.value.data
-              : taskRes.value.data?.data || taskRes.value.data?.tasks || [];
+            const tasks = ptMap[p._id || p.id] || [];
             tasks.forEach((t) => {
-              if (t.status === 'approved')  counts.approved++;
+              if      (t.status === 'approved')  counts.approved++;
               else if (t.status === 'submitted') counts.submitted++;
               else if (t.status === 'rejected')  counts.rejected++;
-              else counts.pendingAnnotation++;
+              else                               counts.pendingAnnotation++;
             });
             if (!totalRaw) totalRaw = tasks.length;
           });
 
-          return {
-            datasetId: dsId,
-            datasetName: ds.name || 'Unnamed dataset',
-            datasetType: ds.type || 'image',
-            totalRawItems: totalRaw,
-            counts,
-            votes: {},
-            finalItems: [],
-            annotators: [],
-          };
+          return { datasetId: dsId, datasetName: ds.name || 'Unnamed', datasetType: ds.type || 'image', totalRawItems: totalRaw, counts, votes: {}, finalItems: [], annotators: [] };
         });
 
         setStatusList(syntheticStatuses);
       } catch (err) {
         console.error('Dashboard fetch failed:', err);
-        setDatasets([]);
-        setProjects([]);
-        setStatusList([]);
+        setDatasets([]); setProjects([]); setStatusList([]); setProjectTaskMap({});
       } finally {
         setLoading(false);
       }
     };
-
     fetchAll();
   }, []);
 
-  // Tổng hợp toàn bộ số liệu để hiển thị trên Dashboard.
-  // Chạy lại mỗi khi statusList / datasets / projects thay đổi.
-  // Output gồm: tổng quan (counts), pipeline (raw→annotating→reviewing→approved),
-  //   datasetHealth (trạng thái từng dataset), topLabels, topAnnotators
   const stats = useMemo(() => {
-    const totalDatasets  = datasets.length;
-    const totalProjects  = projects.length;
-    let totalRawItems    = 0;
-    let totalApproved    = 0;
-    let totalPending     = 0;
-    let totalRejected    = 0;
-    let totalSubmitted   = 0;
-    let approveVotes     = 0;
-    let rejectVotes      = 0;
+    const totalDatasets = datasets.length;
+    const totalProjects = projects.length;
 
-    const labelMap     = {};
+    let totalRawItems = 0, totalApproved = 0, totalPending = 0, totalRejected = 0, totalSubmitted = 0, totalTasks = 0;
+
     const annotatorMap = {};
+    const reviewerMap  = {};
 
-    statusList.forEach((s) => {
-      totalRawItems  += s.totalRawItems || 0;
-      totalApproved  += s.counts?.approved || 0;
-      totalPending   += s.counts?.pendingAnnotation || 0;
-      totalRejected  += s.counts?.rejected || 0;
-      totalSubmitted += s.counts?.submitted || 0;
-      approveVotes   += s.votes?.approveVotes || 0;
-      rejectVotes    += s.votes?.rejectVotes  || 0;
+    Object.entries(projectTaskMap).forEach(([, tasks]) => {
+      totalTasks += tasks.length;
+      tasks.forEach((t) => {
+        const aId   = t.annotatorId?._id || t.annotatorId?.id || (typeof t.annotatorId === 'string' ? t.annotatorId : null)
+                   || t.annotator?._id   || t.annotator?.id   || (typeof t.annotator   === 'string' ? t.annotator   : null);
+        const aName = t.annotatorId?.full_name || t.annotatorId?.username || t.annotatorId?.name
+                   || t.annotator?.full_name   || t.annotator?.username   || t.annotator?.name || 'Unknown';
+        if (aId) {
+          if (!annotatorMap[aId]) annotatorMap[aId] = { name: aName, tasks: 0, approved: 0, rejected: 0, submitted: 0 };
+          annotatorMap[aId].tasks++;
+          if      (t.status === 'approved')  annotatorMap[aId].approved++;
+          else if (t.status === 'rejected')  annotatorMap[aId].rejected++;
+          else if (t.status === 'submitted') annotatorMap[aId].submitted++;
+        }
 
-      (s.finalItems || []).forEach((item) => {
-        const buckets = [
-          ...(Array.isArray(item?.labels?.objects)  ? item.labels.objects  : []),
-          ...(Array.isArray(item?.labels?.spans)    ? item.labels.spans    : []),
-          ...(Array.isArray(item?.labels?.segments) ? item.labels.segments : []),
-        ];
-        buckets.forEach((x) => {
-          const key = (typeof x === 'string' && x) || x?.label || x?.text || x?.name || 'unknown';
-          labelMap[key] = (labelMap[key] || 0) + 1;
+        (t.reviewers || []).forEach((rv) => {
+          const rId   = rv?.reviewerId?._id || rv?.reviewerId?.id || (typeof rv?.reviewerId === 'string' ? rv.reviewerId : null);
+          const rName = rv?.reviewerId?.full_name || rv?.reviewerId?.username || rv?.reviewerId?.name || 'Reviewer';
+          if (rId) {
+            if (!reviewerMap[rId]) reviewerMap[rId] = { name: rName, reviewed: 0, approved: 0, rejected: 0 };
+            if (rv.status === 'approved' || rv.status === 'rejected') {
+              reviewerMap[rId].reviewed++;
+              if (rv.status === 'approved') reviewerMap[rId].approved++;
+              else                          reviewerMap[rId].rejected++;
+            }
+          }
         });
       });
-
-      (s.annotators || []).forEach((a) => {
-        const key = a.annotatorId || a.annotatorName || 'unknown';
-        if (!annotatorMap[key]) {
-          annotatorMap[key] = { name: a.annotatorName || 'Unknown', total: 0, approved: 0, rejected: 0, pending: 0 };
-        }
-        annotatorMap[key].total    += a.total    || 0;
-        annotatorMap[key].approved += a.approved || 0;
-        annotatorMap[key].rejected += a.rejected || 0;
-        annotatorMap[key].pending  += a.pending  || 0;
-      });
     });
 
-    const reviewed        = approveVotes + rejectVotes;
-    const approvalRate    = reviewed > 0 ? Math.round((approveVotes / reviewed) * 100) : 0;
-    const completionRate  = totalRawItems > 0 ? Math.round((totalApproved / totalRawItems) * 100) : 0;
+    statusList.forEach((s) => {
+      totalRawItems  += s.totalRawItems       || 0;
+      totalApproved  += s.counts?.approved    || 0;
+      totalPending   += s.counts?.pendingAnnotation || 0;
+      totalRejected  += s.counts?.rejected    || 0;
+      totalSubmitted += s.counts?.submitted   || 0;
+    });
 
-    const topLabels = Object.entries(labelMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-
-    const topAnnotators = Object.values(annotatorMap)
-      .map((a) => ({
-        ...a,
-        passRate: a.approved + a.rejected > 0 ? Math.round((a.approved / (a.approved + a.rejected)) * 100) : 0,
-      }))
-      .sort((a, b) => b.approved - a.approved)
-      .slice(0, 5);
+    const reviewed       = totalApproved + totalRejected;
+    const approvalRate   = reviewed      > 0 ? Math.round((totalApproved / reviewed)      * 100) : 0;
+    const completionRate = totalRawItems > 0 ? Math.round((totalApproved / totalRawItems) * 100) : 0;
 
     const datasetHealth = statusList.map((s) => {
-      const raw               = s.totalRawItems || 0;
-      const approved          = s.counts?.approved          || 0;
-      const pendingAnnotation = s.counts?.pendingAnnotation || 0;
-      const submitted         = s.counts?.submitted         || 0;
-      const rejected          = s.counts?.rejected          || 0;
-      const progress          = raw > 0 ? Math.round((approved / raw) * 100) : 0;
+      const raw               = s.totalRawItems              || 0;
+      const approved          = s.counts?.approved           || 0;
+      const pendingAnnotation = s.counts?.pendingAnnotation  || 0;
+      const submitted         = s.counts?.submitted          || 0;
+      const rejected          = s.counts?.rejected           || 0;
+      const progress          = raw > 0 ? Math.round((approved          / raw) * 100) : 0;
+      const rejRate           = raw > 0 ? Math.round((rejected          / raw) * 100) : 0;
 
-      let state = 'Not started', stateColor = '#94a3b8', stateBg = 'rgba(148,163,184,0.12)';
-      if (approved > 0 && progress >= 100) {
-        state = 'Ready';     stateColor = '#22c55e'; stateBg = 'rgba(34,197,94,0.12)';
-      } else if (submitted > 0) {
-        state = 'Reviewing'; stateColor = '#f59e0b'; stateBg = 'rgba(245,158,11,0.12)';
-      } else if (pendingAnnotation > 0 || rejected > 0) {
-        state = 'Annotating';stateColor = '#3b82f6'; stateBg = 'rgba(59,130,246,0.12)';
-      }
+      let state = 'Not Started', stateColor = '#94a3b8', stateBg = 'rgba(148,163,184,0.12)';
+      if (approved > 0 && progress >= 100)   { state = 'Ready';           stateColor = '#22c55e'; stateBg = 'rgba(34,197,94,0.12)';   }
+      else if (rejRate > 30)                 { state = 'Needs Attention'; stateColor = '#ef4444'; stateBg = 'rgba(239,68,68,0.12)';   }
+      else if (submitted > 0)                { state = 'Reviewing';       stateColor = '#f59e0b'; stateBg = 'rgba(245,158,11,0.12)';  }
+      else if (pendingAnnotation > 0 || rejected > 0) { state = 'Annotating'; stateColor = '#3b82f6'; stateBg = 'rgba(59,130,246,0.12)'; }
 
-      return { id: s.datasetId, name: s.datasetName, type: s.datasetType, raw, approved, submitted, pendingAnnotation, rejected, progress, state, stateColor, stateBg };
+      return { id: s.datasetId, name: s.datasetName, type: s.datasetType, raw, approved, submitted, pendingAnnotation, rejected, progress, rejRate, state, stateColor, stateBg };
     });
 
+    const now = new Date();
+    const projectStats = projects.map((p) => {
+      const pid      = p._id || p.id;
+      const tasks    = projectTaskMap[pid] || [];
+      const total    = tasks.length;
+      const approved = tasks.filter((t) => t.status === 'approved').length;
+      const rejected = tasks.filter((t) => t.status === 'rejected').length;
+      const submitted = tasks.filter((t) => t.status === 'submitted').length;
+      const progress = total > 0 ? Math.round((approved / total)  * 100) : 0;
+      const rejRate  = total > 0 ? Math.round((rejected  / total) * 100) : 0;
+
+      const deadline     = p.deadline || p.due_date || null;
+      const deadlineDate = deadline ? new Date(deadline) : null;
+      const daysLeft     = deadlineDate ? Math.ceil((deadlineDate - now) / 86400000) : null;
+
+      let status = 'On Track';
+      if      (daysLeft !== null && daysLeft < 0 && progress < 100) status = 'Overdue';
+      else if (daysLeft !== null && daysLeft <= 3 && progress < 90) status = 'At Risk';
+      else if (rejRate > 30)                                         status = 'Needs Review';
+
+      return { id: pid, name: p.name || 'Untitled', progress, rejRate, deadline, daysLeft, status, total, approved, rejected, submitted, taskStatus: p.status || 'active' };
+    }).sort((a, b) => {
+      const o = { Overdue: 0, 'At Risk': 1, 'Needs Review': 2, 'On Track': 3 };
+      return (o[a.status] ?? 4) - (o[b.status] ?? 4);
+    });
+
+    const annotatorPerf = Object.values(annotatorMap)
+      .sort((a, b) => b.tasks - a.tasks).slice(0, 6)
+      .map((a) => ({ ...a, approvalRate: (a.approved + a.rejected) > 0 ? Math.round((a.approved / (a.approved + a.rejected)) * 100) : 0 }));
+
+    const reviewerPerf = Object.values(reviewerMap)
+      .sort((a, b) => b.reviewed - a.reviewed).slice(0, 6)
+      .map((r) => ({ ...r, approvalRate: r.reviewed > 0 ? Math.round((r.approved / r.reviewed) * 100) : 0 }));
+
+    const alerts = [];
+    datasetHealth.filter((ds) => ds.rejRate > 30 && ds.raw > 0)
+      .forEach((ds) => alerts.push({ type: 'rejection', msg: `Dataset "${ds.name}" có tỷ lệ reject ${ds.rejRate}%`, sev: 'error' }));
+    projectStats.filter((p) => p.status === 'Overdue')
+      .forEach((p) => alerts.push({ type: 'overdue', msg: `Project "${p.name}" đã quá hạn deadline`, sev: 'error' }));
+    projectStats.filter((p) => p.status === 'At Risk')
+      .forEach((p) => alerts.push({ type: 'deadline', msg: `Project "${p.name}" còn ${p.daysLeft} ngày — tiến độ ${p.progress}%`, sev: 'warning' }));
+    if (totalSubmitted > 0)
+      alerts.push({ type: 'review', msg: `${totalSubmitted} task đang chờ reviewer xét duyệt`, sev: 'info' });
+
     return {
-      totalDatasets, totalProjects, totalRawItems, totalApproved, totalPending,
-      totalRejected, totalSubmitted, approvalRate, completionRate,
-      topLabels, topAnnotators, datasetHealth,
-      pipeline: {
-        raw: totalRawItems,
-        annotating: totalPending + totalRejected,
-        reviewing: totalSubmitted,
-        approved: totalApproved,
-        rework: totalRejected,
-      },
+      totalDatasets, totalProjects, totalTasks, totalRawItems,
+      totalApproved, totalPending, totalRejected, totalSubmitted,
+      approvalRate, completionRate,
+      datasetHealth, projectStats, annotatorPerf, reviewerPerf, alerts,
+      pipeline: { raw: totalRawItems, annotating: totalPending, submitted: totalSubmitted, approved: totalApproved, rework: totalRejected },
     };
-  }, [datasets, projects, statusList]);
+  }, [datasets, projects, statusList, projectTaskMap]);
 
   return { loading, stats };
 }
